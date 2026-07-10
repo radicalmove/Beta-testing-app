@@ -57,6 +57,31 @@ class DashboardComment:
         return self.latest_reply_at is not None and (self.read_at is None or self.latest_reply_at > self.read_at)
 
 
+@dataclass(frozen=True)
+class PageComment:
+    comment: Comment
+    location: PageLocation
+    author: User
+    replies: tuple[tuple[CommentReply, User], ...]
+    status_events: tuple[tuple[CommentStatusEvent, User], ...]
+
+
+def normalized_page_url(value: str) -> str:
+    clean = value.strip()
+    if len(clean) > 4096:
+        raise ValueError("page_url must be at most 4096 characters")
+    parsed = urlsplit(clean)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:
+        raise ValueError("page_url must be an absolute http or https URL")
+    return clean
+
+
+def _reply_visible_to(viewer: User, comment: Comment, reply_author: User) -> bool:
+    if viewer.role is UserRole.BETA_TESTER:
+        return reply_author.id == viewer.id or reply_author.role is UserRole.LD_DCD
+    return True
+
+
 def dashboard_comments_for(db: DbSession, user: User) -> list[DashboardComment]:
     """Project all visible dashboard data without loading reply or user records."""
     author = aliased(User)
@@ -104,6 +129,46 @@ def visible_comments_for(db: DbSession, user: User, course_id: uuid.UUID) -> lis
     query = select(Comment).where(Comment.course_id == course_id)
     query = query.where(_visibility_clause(user))
     return list(db.scalars(query.order_by(Comment.created_at)))
+
+
+def visible_page_comments_for(db: DbSession, user: User, course_id: uuid.UUID, page_url: str) -> list[PageComment]:
+    """Load one exact page's visible threads and conversation data in bounded queries."""
+    normalized = normalized_page_url(page_url)
+    author = aliased(User)
+    rows = db.execute(
+        select(Comment, PageLocation, author)
+        .join(PageLocation, PageLocation.id == Comment.location_id)
+        .join(author, author.id == Comment.author_user_id)
+        .where(Comment.course_id == course_id, PageLocation.page_url == normalized, _visibility_clause(user))
+        .order_by(Comment.created_at)
+    ).all()
+    if not rows:
+        return []
+    comments = [row[0] for row in rows]
+    comments_by_id = {comment.id: comment for comment in comments}
+    comment_ids = [comment.id for comment in comments]
+    reply_author = aliased(User)
+    reply_rows = db.execute(
+        select(CommentReply, reply_author)
+        .join(reply_author, reply_author.id == CommentReply.author_user_id)
+        .where(CommentReply.comment_id.in_(comment_ids))
+        .order_by(CommentReply.created_at, CommentReply.id)
+    ).all()
+    event_actor = aliased(User)
+    event_rows = db.execute(
+        select(CommentStatusEvent, event_actor)
+        .join(event_actor, event_actor.id == CommentStatusEvent.actor_user_id)
+        .where(CommentStatusEvent.comment_id.in_(comment_ids))
+        .order_by(CommentStatusEvent.created_at, CommentStatusEvent.id)
+    ).all()
+    replies_by_comment: dict[uuid.UUID, list[tuple[CommentReply, User]]] = {comment_id: [] for comment_id in comment_ids}
+    for reply, reply_by in reply_rows:
+        if _reply_visible_to(user, comments_by_id[reply.comment_id], reply_by):
+            replies_by_comment[reply.comment_id].append((reply, reply_by))
+    events_by_comment: dict[uuid.UUID, list[tuple[CommentStatusEvent, User]]] = {comment_id: [] for comment_id in comment_ids}
+    for event, actor in event_rows:
+        events_by_comment[event.comment_id].append((event, actor))
+    return [PageComment(comment, location, thread_author, tuple(replies_by_comment[comment.id]), tuple(events_by_comment[comment.id])) for comment, location, thread_author in rows]
 
 
 def visible_comment_for(db: DbSession, user: User, comment_id: uuid.UUID) -> Comment | None:

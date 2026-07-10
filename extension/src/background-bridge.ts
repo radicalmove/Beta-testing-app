@@ -2,6 +2,7 @@ export type ResolveCoursePayload = { course_url: string; title: string; moodle_c
 export type CreateCommentPayload = { course_id: string; page_url: string; page_title: string; body: string; category: string; anchor_type: "text_highlight" | "visual_pin"; selected_quote?: string; prefix?: string; suffix?: string; css_selector?: string; dom_selector?: string; relative_x?: number; relative_y?: number };
 export type UploadScreenshotPayload = { comment_id: string; data_url: string };
 export type CancelScreenshotPayload = { comment_id: string };
+export type PageComment = { id: string; body: string; category: string; status: string; author_user_id: string; author_role: string; author_email: string; page_url: string; page_title: string; anchor_type: "text_highlight" | "visual_pin"; selected_quote: string | null; prefix: string | null; suffix: string | null; css_selector: string | null; dom_selector: string | null; relative_x: number | null; relative_y: number | null; replies: Array<{ id: string; body: string; author_user_id: string; author_role: string; author_email: string }>; status_history: Array<{ status: string; actor_user_id: string; actor_role: string }> };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function normalizeErrorMessage(error: unknown): string {
@@ -11,6 +12,56 @@ export function normalizeErrorMessage(error: unknown): string {
 }
 
 const own = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
+
+function exactHttpUrl(value: unknown, max = 4096): value is string {
+  if (typeof value !== "string" || value.length < 1 || value.length > max) return false;
+  try { const url = new URL(value); return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password && url.href === value; } catch { return false; }
+}
+
+export function validateListPageCommentsMessage(message: unknown): { page_url: string } {
+  if (!message || typeof message !== "object" || Array.isArray(message)) throw new Error("Invalid LIST_PAGE_COMMENTS message");
+  const record = message as Record<string, unknown>;
+  if (Object.keys(record).sort().join() !== "page_url,type" || record.type !== "LIST_PAGE_COMMENTS" || !exactHttpUrl(record.page_url)) throw new Error("Invalid LIST_PAGE_COMMENTS message");
+  return { page_url: record.page_url };
+}
+
+const bounded = (value: unknown, max: number, nullable = false): boolean => (nullable && value === null) || (typeof value === "string" && value.length <= max);
+const exactKeys = (value: Record<string, unknown>, keys: string[]) => Object.keys(value).sort().join() === [...keys].sort().join();
+
+export function validatePageCommentsResponse(value: unknown, requestedPageUrl: string): PageComment[] {
+  const invalid = (): never => { throw new Error("Invalid page comments response"); };
+  if (!Array.isArray(value) || value.length > 500) return invalid();
+  const commentKeys = ["id", "body", "category", "status", "author_user_id", "author_role", "author_email", "page_url", "page_title", "anchor_type", "selected_quote", "prefix", "suffix", "css_selector", "dom_selector", "relative_x", "relative_y", "replies", "status_history"];
+  const roles = ["beta_tester", "sme", "ld_dcd", "admin"];
+  const statuses = ["open", "in_progress", "awaiting_sme", "resolved", "deferred"];
+  return value.map((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return invalid();
+    const row = entry as Record<string, unknown>;
+    if (!exactKeys(row, commentKeys) || !uuid.test(row.id as string) || !uuid.test(row.author_user_id as string) || row.page_url !== requestedPageUrl || !exactHttpUrl(row.page_url) || !bounded(row.body, 10000) || !(row.body as string).trim() || !bounded(row.page_title, 512) || !(row.page_title as string).trim() || !bounded(row.author_email, 320) || !roles.includes(row.author_role as string) || !statuses.includes(row.status as string) || !bounded(row.category, 64)) return invalid();
+    if (!["text_highlight", "visual_pin"].includes(row.anchor_type as string) || !bounded(row.selected_quote, 20000, true) || !bounded(row.prefix, 2000, true) || !bounded(row.suffix, 2000, true) || !bounded(row.css_selector, 4000, true) || !bounded(row.dom_selector, 4000, true)) return invalid();
+    for (const coordinate of [row.relative_x, row.relative_y]) if (coordinate !== null && (typeof coordinate !== "number" || !Number.isFinite(coordinate) || coordinate < 0 || coordinate > 1)) return invalid();
+    if (!Array.isArray(row.replies) || row.replies.length > 1000 || !Array.isArray(row.status_history) || row.status_history.length > 1000) return invalid();
+    for (const item of row.replies) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return invalid(); const reply = item as Record<string, unknown>;
+      if (!exactKeys(reply, ["id", "body", "author_user_id", "author_role", "author_email"]) || !uuid.test(reply.id as string) || !uuid.test(reply.author_user_id as string) || !bounded(reply.body, 10000) || !roles.includes(reply.author_role as string) || !bounded(reply.author_email, 320)) return invalid();
+    }
+    for (const item of row.status_history) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return invalid(); const event = item as Record<string, unknown>;
+      if (!exactKeys(event, ["status", "actor_user_id", "actor_role"]) || !statuses.includes(event.status as string) || !uuid.test(event.actor_user_id as string) || !roles.includes(event.actor_role as string)) return invalid();
+    }
+    return row as PageComment;
+  });
+}
+
+export async function handleListPageCommentsBridge(message: unknown, sender: { id?: string; url?: string }, dependencies: { authorize(sender: { id?: string; url?: string }): Promise<boolean>; courseId(sender: { id?: string; url?: string }): string | undefined; list(courseId: string, pageUrl: string): Promise<unknown> }): Promise<PageComment[]> {
+  const { page_url } = validateListPageCommentsMessage(message);
+  let senderUrl: URL; try { senderUrl = new URL(sender.url ?? ""); } catch { throw new Error("Unauthorized LIST_PAGE_COMMENTS sender"); }
+  if (new URL(page_url).origin !== senderUrl.origin) throw new Error("LIST_PAGE_COMMENTS page origin must match sender origin");
+  if (!await dependencies.authorize(sender)) throw new Error("Unauthorized LIST_PAGE_COMMENTS sender");
+  const courseId = dependencies.courseId(sender);
+  if (!courseId) throw new Error("LIST_PAGE_COMMENTS course context unavailable");
+  return validatePageCommentsResponse(await dependencies.list(courseId, page_url), page_url);
+}
 
 export function validateCreateCommentMessage(message: unknown): { payload: CreateCommentPayload; screenshotRequested?: true } {
   const invalid = (): never => { throw new Error("Invalid CREATE_COMMENT message"); };

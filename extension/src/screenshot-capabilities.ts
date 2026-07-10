@@ -53,11 +53,15 @@ export class ScreenshotCapabilities {
 
   cleanup(): Promise<void> { return this.mutate(() => undefined); }
 
+  private prune(records: Record<string, ScreenshotCapability>): void {
+    const overflow = Object.entries(records).sort(([, a], [, b]) => a.createdAt - b.createdAt).slice(0, Math.max(0, Object.keys(records).length - this.maxEntries));
+    for (const [expiredId] of overflow) delete records[expiredId];
+  }
+
   grant(commentId: string, tabId: number, courseId: string): Promise<void> {
     return this.mutate((records, now) => {
       records[commentId] = { tabId, courseId, createdAt: now, expiresAt: now + this.ttlMs };
-      const overflow = Object.entries(records).sort(([, a], [, b]) => a.createdAt - b.createdAt).slice(0, Math.max(0, Object.keys(records).length - this.maxEntries));
-      for (const [expiredId] of overflow) delete records[expiredId];
+      this.prune(records);
     });
   }
 
@@ -82,6 +86,7 @@ export class ScreenshotCapabilities {
   restore(commentId: string, capability: ScreenshotCapability): Promise<void> {
     return this.mutate((records, now) => {
       if (!records[commentId] && capability.expiresAt > now) records[commentId] = capability;
+      this.prune(records);
     });
   }
 }

@@ -1,5 +1,5 @@
 import { ApiClient, authenticate, getActiveToken, type SessionToken } from "./api";
-import { authorizeResolveSender, handleCreateCommentBridge, handleResolveCourseBridge, normalizeErrorMessage, validateCancelScreenshotMessage, validateUploadScreenshotMessage, type CreateCommentPayload, type ResolveCoursePayload } from "./background-bridge.ts";
+import { authorizeResolveSender, handleCreateCommentBridge, handleListPageCommentsBridge, handleResolveCourseBridge, normalizeErrorMessage, validateCancelScreenshotMessage, validateUploadScreenshotMessage, type CreateCommentPayload, type ResolveCoursePayload } from "./background-bridge.ts";
 import { validateScreenshotDataUrl } from "./screenshot-flow.ts";
 import { reconcileOptionalContentScript } from "./optional-content-scripts";
 import { ReviewContextCache, validateContextMessage, type ReviewSender } from "./review-context.ts";
@@ -76,6 +76,15 @@ async function createComment(payload: CreateCommentPayload): Promise<unknown> {
   return response.json();
 }
 
+async function listPageComments(courseId: string, pageUrl: string): Promise<unknown> {
+  const api = await client();
+  const query = new URLSearchParams({ course_id: courseId, page_url: pageUrl });
+  const response = await api.request(`/api/comments?${query.toString()}`);
+  if (response.status === 403) throw new Error("Account pending approval");
+  if (!response.ok) throw new Error(`Comment list failed (${response.status})`);
+  return response.json();
+}
+
 chrome.tabs?.onRemoved?.addListener((tabId: number) => reviewContexts.removeTab(tabId));
 chrome.webNavigation?.onCommitted?.addListener((details: { tabId: number; frameId: number }) => { if (details.frameId === 0) reviewContexts.removeTab(details.tabId); });
 
@@ -121,6 +130,12 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
         return result;
       },
     });
+  } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "LIST_PAGE_COMMENTS") {
+    operation = handleListPageCommentsBridge(message, sender, {
+      authorize: (candidate) => authorizeResolveSender(candidate, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) }),
+      courseId: () => reviewContexts.courseId(sender),
+      list: listPageComments,
+    });
   } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "UPLOAD_SCREENSHOT") {
     operation = (async () => {
       const payload = validateUploadScreenshotMessage(message);
@@ -129,10 +144,10 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       if (!courseId) throw new Error("UPLOAD_SCREENSHOT comment context mismatch");
       const claimed = await screenshotCapabilities.claim(payload.comment_id, sender.tab.id, courseId);
       if (!claimed) throw new Error("UPLOAD_SCREENSHOT comment context mismatch");
-      const decoded = validateScreenshotDataUrl(payload.data_url);
-      const bytes = new Uint8Array(decoded.bytes.length); bytes.set(decoded.bytes);
-      const form = new FormData(); form.append("file", new Blob([bytes.buffer], { type: decoded.mime }), decoded.mime === "image/png" ? "visible-viewport.png" : "visible-viewport.jpg");
       try {
+        const decoded = validateScreenshotDataUrl(payload.data_url);
+        const bytes = new Uint8Array(decoded.bytes.length); bytes.set(decoded.bytes);
+        const form = new FormData(); form.append("file", new Blob([bytes.buffer], { type: decoded.mime }), decoded.mime === "image/png" ? "visible-viewport.png" : "visible-viewport.jpg");
         const api = await client(); const upload = await api.request(`/api/comments/${payload.comment_id}/attachments`, { method: "POST", body: form });
         if (!upload.ok) throw new Error(`Screenshot upload failed (${upload.status})`);
         return upload.json();

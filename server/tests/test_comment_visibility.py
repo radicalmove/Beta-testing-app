@@ -9,7 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.db import Base, get_session
 from app.main import create_app
-from app.models import User, UserRole
+from app.models import CommentReply, User, UserRole
 from app.services.accounts import change_role
 from app.services.accounts import create_extension_login_code, exchange_extension_login_code
 from app.services.courses import resolve_course
@@ -141,3 +141,62 @@ def test_beta_thread_replies_are_limited_to_author_and_ld_dcd(client):
     assert client.post(f"/api/comments/{thread}/replies", headers=beta, json={"body": "Thanks"}).status_code == 201
     detail = client.get(f"/api/comments/{thread}", headers=beta)
     assert [reply["body"] for reply in detail.json()["replies"]] == ["LD answer", "Thanks"]
+
+
+def test_page_comment_list_returns_anchors_and_role_filtered_conversation(client):
+    beta, _ = headers_for(client, "page-beta@example.test", UserRole.BETA_TESTER)
+    selected_sme, selected_sme_id = headers_for(client, "page-selected@example.test", UserRole.SME)
+    other_sme, _ = headers_for(client, "page-other@example.test", UserRole.SME)
+    lead, lead_id = headers_for(client, "page-lead@example.test", UserRole.LD_DCD)
+    session = client.db_factory()
+    course = resolve_course(session, moodle_course_id=896, course_url="https://my.uconline.ac.nz/course/view.php?id=896", title="UCO")
+    course_id = str(course.id)
+    session.close()
+    page_url = "https://my.uconline.ac.nz/mod/page/view.php?id=42#topic"
+    created = client.post("/api/comments", headers=beta, json={
+        "course_id": course_id, "page_url": page_url, "page_title": "Topic",
+        "body": "Check this", "category": "general", "anchor_type": "visual_pin",
+        "css_selector": "#region-main", "relative_x": 0.25, "relative_y": 0.75,
+    })
+    assert created.status_code == 201
+    comment_id = created.json()["id"]
+    make_comment(client, beta, course_id, "Other page")
+    assert client.post(f"/api/comments/{comment_id}/replies", headers=lead, json={"body": "Visible LD reply"}).status_code == 201
+    assert client.post(f"/api/comments/{comment_id}/share", headers=lead, json={"user_id": selected_sme_id}).status_code == 201
+
+    # Historical/imported SME-side notes can exist, but are not in the beta audience.
+    session = client.db_factory()
+    hidden_sme = session.query(User).filter_by(email="page-selected@example.test").one()
+    session.add(CommentReply(comment_id=uuid.UUID(comment_id), author_user_id=hidden_sme.id, body="Hidden SME reply", created_at=datetime.now(UTC)))
+    session.commit()
+    session.close()
+
+    response = client.get("/api/comments", headers=beta, params={"course_id": course_id, "page_url": page_url})
+    assert response.status_code == 200
+    assert len(response.json()) == 1
+    item = response.json()[0]
+    assert item | {} == item
+    assert item["page_url"] == page_url
+    assert item["page_title"] == "Topic"
+    assert item["anchor_type"] == "visual_pin"
+    assert item["css_selector"] == "#region-main"
+    assert item["relative_x"] == 0.25 and item["relative_y"] == 0.75
+    assert item["author_role"] == "beta_tester"
+    assert [(reply["body"], reply["author_role"]) for reply in item["replies"]] == [("Visible LD reply", "ld_dcd")]
+    assert item["status_history"][0]["status"] == "open"
+
+    selected = client.get("/api/comments", headers=selected_sme, params={"course_id": course_id, "page_url": page_url})
+    assert {row["id"] for row in selected.json()} == {comment_id}
+    assert client.get("/api/comments", headers=other_sme, params={"course_id": course_id, "page_url": page_url}).json() == []
+    lead_page = client.get("/api/comments", headers=lead, params={"course_id": course_id, "page_url": page_url})
+    assert {reply["body"] for reply in lead_page.json()[0]["replies"]} == {"Visible LD reply", "Hidden SME reply"}
+
+
+def test_page_comment_filter_rejects_non_http_and_overlong_urls(client):
+    beta, _ = headers_for(client, "page-validation@example.test", UserRole.BETA_TESTER)
+    session = client.db_factory()
+    course = resolve_course(session, moodle_course_id=896, course_url="https://my.uconline.ac.nz/course/view.php?id=896", title="UCO")
+    course_id = str(course.id)
+    session.close()
+    assert client.get("/api/comments", headers=beta, params={"course_id": course_id, "page_url": "javascript:alert(1)"}).status_code == 422
+    assert client.get("/api/comments", headers=beta, params={"course_id": course_id, "page_url": "https://example.test/" + "a" * 4096}).status_code == 422

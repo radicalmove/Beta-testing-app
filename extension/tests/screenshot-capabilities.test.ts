@@ -67,3 +67,17 @@ test("capability collection is bounded by oldest creation time", async () => {
   assert.ok(await capabilities.claim(id(2), 7, id(90)));
   assert.ok(await capabilities.claim(id(3), 7, id(90)));
 });
+
+test("restoring a claimed capability also prunes the oldest overflow", async () => {
+  let now = 100;
+  const storage = new FakeSessionStorage();
+  const capabilities = new ScreenshotCapabilities(storage, { now: () => now++, maxEntries: 2 });
+  await capabilities.grant(id(1), 7, id(90));
+  const claimed = await capabilities.claim(id(1), 7, id(90));
+  await capabilities.grant(id(2), 7, id(90));
+  await capabilities.grant(id(3), 7, id(90));
+  await capabilities.restore(id(1), claimed!);
+  assert.equal(await capabilities.claim(id(1), 7, id(90)), undefined);
+  assert.ok(await capabilities.claim(id(2), 7, id(90)));
+  assert.ok(await capabilities.claim(id(3), 7, id(90)));
+});

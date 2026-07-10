@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { authorizeResolveSender, handleCreateCommentBridge, handleResolveCourseBridge, normalizeErrorMessage, validateCancelScreenshotMessage, validateCreateCommentMessage, validateResolveCourseMessage, validateUploadScreenshotMessage } from "../src/background-bridge.ts";
+import { authorizeResolveSender, handleCreateCommentBridge, handleListPageCommentsBridge, handleResolveCourseBridge, normalizeErrorMessage, validateCancelScreenshotMessage, validateCreateCommentMessage, validateListPageCommentsMessage, validatePageCommentsResponse, validateResolveCourseMessage, validateUploadScreenshotMessage } from "../src/background-bridge.ts";
 
 test("resolve schema accepts only bounded normalized course fields", () => {
   assert.deepEqual(validateResolveCourseMessage({ type: "RESOLVE_COURSE", payload: { course_url: "https://learn.example/course/view.php?id=7", title: "Law", moodle_course_id: 7 } }), { course_url: "https://learn.example/course/view.php?id=7", title: "Law", moodle_course_id: 7 });
@@ -123,4 +123,33 @@ test("valid create is denied before API access when cached course identity does 
   let creates = 0;
   await assert.rejects(() => handleCreateCommentBridge({ type: "CREATE_COMMENT", payload }, { id: "ours", url: payload.page_url }, { authorize: async () => true, contextMatches: () => false, create: async () => { creates += 1; } }), /context mismatch/);
   assert.equal(creates, 0);
+});
+
+test("LIST_PAGE_COMMENTS accepts only an exact absolute page URL envelope", () => {
+  const pageUrl = "https://my.uconline.ac.nz/mod/page/view.php?id=42#topic";
+  assert.deepEqual(validateListPageCommentsMessage({ type: "LIST_PAGE_COMMENTS", page_url: pageUrl }), { page_url: pageUrl });
+  for (const message of [{ type: "LIST_PAGE_COMMENTS", page_url: "javascript:bad" }, { type: "LIST_PAGE_COMMENTS", page_url: "https://user:pass@example.test/x" }, { type: "LIST_PAGE_COMMENTS", page_url: pageUrl, course_id: "client-controlled" }]) {
+    assert.throws(() => validateListPageCommentsMessage(message), /Invalid LIST_PAGE_COMMENTS/);
+  }
+});
+
+test("LIST_PAGE_COMMENTS derives course from cache and validates API data", async () => {
+  const pageUrl = "https://my.uconline.ac.nz/mod/page/view.php?id=42#topic";
+  let requested: unknown;
+  const result = await handleListPageCommentsBridge({ type: "LIST_PAGE_COMMENTS", page_url: pageUrl }, { id: "ours", url: pageUrl }, {
+    authorize: async () => true,
+    courseId: () => "00000000-0000-4000-8000-000000000090",
+    list: async (courseId, requestedPage) => { requested = { courseId, pageUrl: requestedPage }; return [{ id: "00000000-0000-4000-8000-000000000001", body: "Feedback", category: "general", status: "open", author_user_id: "00000000-0000-4000-8000-000000000002", author_role: "beta_tester", author_email: "beta@example.test", page_url: requestedPage, page_title: "Topic", anchor_type: "visual_pin", selected_quote: null, prefix: null, suffix: null, css_selector: "#main", dom_selector: null, relative_x: 0.2, relative_y: 0.8, replies: [], status_history: [] }]; },
+  });
+  assert.deepEqual(requested, { courseId: "00000000-0000-4000-8000-000000000090", pageUrl });
+  assert.equal(result.length, 1);
+  await assert.rejects(() => handleListPageCommentsBridge({ type: "LIST_PAGE_COMMENTS", page_url: "https://evil.example/x" }, { id: "ours", url: pageUrl }, { authorize: async () => true, courseId: () => "cached", list: async () => [] }), /origin must match/);
+});
+
+test("page comment response rejects extra fields and wrong pages", () => {
+  const pageUrl = "https://example.test/page";
+  const base = { id: "00000000-0000-4000-8000-000000000001", body: "Feedback", category: "general", status: "open", author_user_id: "00000000-0000-4000-8000-000000000002", author_role: "beta_tester", author_email: "beta@example.test", page_url: pageUrl, page_title: "Page", anchor_type: "text_highlight", selected_quote: "words", prefix: "before", suffix: "after", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [] };
+  assert.equal(validatePageCommentsResponse([base], pageUrl).length, 1);
+  assert.throws(() => validatePageCommentsResponse([{ ...base, secret: true }], pageUrl), /Invalid page comments response/);
+  assert.throws(() => validatePageCommentsResponse([{ ...base, page_url: "https://example.test/other" }], pageUrl), /Invalid page comments response/);
 });

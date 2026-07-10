@@ -4,6 +4,7 @@ declare const chrome: any;
 
 import { canonicalCourseUrlFromDocument, courseTitleFromDocument, detectCourseContext, explicitActivityIdFromDocument, explicitCourseIdFromDocument, type CourseContext } from "./course-context.ts";
 import { mountReviewOverlay, type ConnectionStatus, type ReviewOverlay } from "./overlay/root.ts";
+import type { PageComment } from "./background-bridge.ts";
 
 const MARKER = "data-moodle-review-extension";
 const OWNER = Symbol.for("moodle-course-review.content-owner");
@@ -157,12 +158,17 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
   let courseId: string | undefined;
   const courseIds = new Map<string, string>();
   const send = <T>(message: unknown) => new Promise<T>((resolve, reject) => runtime.sendMessage(message, (response) => response?.ok ? resolve(response.data as T) : reject(new Error(response?.error ?? "Review service unavailable"))));
-  let overlay: ReviewOverlay = mountReviewOverlay(targetDocument, context, "connecting", { submit: async ({ body, category, anchor, screenshot, embeddedFrameUnavailable, contextSnapshot }) => {
+  let commentSequence = 0;
+  let overlay: ReviewOverlay;
+  const loadPageComments = async (pageUrl: string) => { const sequence = ++commentSequence; overlay.setPageComments([]); try { const comments = await send<PageComment[]>({ type: "LIST_PAGE_COMMENTS", page_url: pageUrl }); if (sequence === commentSequence && context.page_url === pageUrl) overlay.setPageComments(comments); } catch { if (sequence === commentSequence) overlay.setPageComments([]); } };
+  overlay = mountReviewOverlay(targetDocument, context, "connecting", { submit: async ({ body, category, anchor, screenshot, embeddedFrameUnavailable, contextSnapshot }) => {
     const snapshotCourseId = courseIds.get(contextSnapshot.course_url);
     if (!snapshotCourseId) throw new Error("The original course is no longer connected. Cancel and reopen the comment.");
     const fallbackSuffix = " — embedded content—frame access unavailable";
     const pageTitle = embeddedFrameUnavailable ? `${contextSnapshot.pageTitle.slice(0, 512 - fallbackSuffix.length)}${fallbackSuffix}` : contextSnapshot.pageTitle;
-    return await send<{ id?: string; screenshot_available?: boolean }>({ type: "CREATE_COMMENT", payload: { course_id: snapshotCourseId, page_url: contextSnapshot.page_url, page_title: pageTitle, body, category, ...anchor }, screenshot_requested: screenshot });
+    const saved = await send<{ id?: string; screenshot_available?: boolean }>({ type: "CREATE_COMMENT", payload: { course_id: snapshotCourseId, page_url: contextSnapshot.page_url, page_title: pageTitle, body, category, ...anchor }, screenshot_requested: screenshot });
+    if (context.page_url === contextSnapshot.page_url) void loadPageComments(context.page_url);
+    return saved;
   }, uploadScreenshot: (commentId, dataUrl) => send({ type: "UPLOAD_SCREENSHOT", comment_id: commentId, data_url: dataUrl }), cancelScreenshot: (commentId) => send({ type: "CANCEL_SCREENSHOT", comment_id: commentId }) });
   let lastSignature = "";
   let requestSequence = 0;
@@ -184,6 +190,7 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
       if (courseId) courseIds.set(requestedCourseUrl, courseId);
       const status: ConnectionStatus = response?.ok ? "connected" : response?.status === "signed-out" ? "signed-out" : response?.status === "pending" ? "pending" : "offline";
       overlay.update(context, status);
+      if (courseId) void loadPageComments(context.page_url); else overlay.setPageComments([]);
     });
   };
   const lifecycle = createLifecycleController(targetWindow, targetDocument, refresh);
@@ -231,11 +238,16 @@ export function startEmbeddedReview(targetWindow: Window & typeof globalThis, ta
     if (stopped || typeof trusted?.course_id !== "string" || typeof trusted?.course_title !== "string") return;
     courseId = trusted.course_id; courseTitle = trusted.course_title;
     let context = frameContext();
+    let commentSequence = 0;
+    const loadPageComments = async () => { const pageUrl = context.page_url; const sequence = ++commentSequence; overlay?.setPageComments([]); try { const comments = await send<PageComment[]>({ type: "LIST_PAGE_COMMENTS", page_url: pageUrl }); if (sequence === commentSequence && context.page_url === pageUrl) overlay?.setPageComments(comments); } catch { /* connection state remains usable */ } };
     overlay = mountReviewOverlay(targetDocument, context, "connected", { submit: async ({ body, category, anchor, screenshot, contextSnapshot }) => {
-      return await send<{ id?: string; screenshot_available?: boolean }>({ type: "CREATE_COMMENT", payload: { course_id: courseId, page_url: contextSnapshot.page_url, page_title: contextSnapshot.pageTitle, body, category, ...anchor }, screenshot_requested: screenshot });
+      const saved = await send<{ id?: string; screenshot_available?: boolean }>({ type: "CREATE_COMMENT", payload: { course_id: courseId, page_url: contextSnapshot.page_url, page_title: contextSnapshot.pageTitle, body, category, ...anchor }, screenshot_requested: screenshot });
+      if (context.page_url === contextSnapshot.page_url) void loadPageComments();
+      return saved;
     }, uploadScreenshot: (commentId, dataUrl) => send({ type: "UPLOAD_SCREENSHOT", comment_id: commentId, data_url: dataUrl }), cancelScreenshot: (commentId) => send({ type: "CANCEL_SCREENSHOT", comment_id: commentId }) });
-    const refresh = () => { context = frameContext(); overlay?.update(context, "connected"); };
+    const refresh = () => { context = frameContext(); overlay?.update(context, "connected"); void loadPageComments(); };
     lifecycle = createLifecycleController(targetWindow, targetDocument, refresh);
+    void loadPageComments();
     runtime.sendMessage({ type: "REVIEW_FRAME_READY" }, () => undefined);
     try { targetWindow.parent.postMessage({ type: "MOODLE_REVIEW_FRAME_READY" }, "*"); } catch { /* trigger only */ }
   }).catch((error: unknown) => {

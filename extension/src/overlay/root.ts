@@ -1,8 +1,9 @@
 import type { CourseContext } from "../course-context.ts";
 import { captureTextAnchor, type TextAnchor } from "../anchors/text.ts";
-import { renderTextHighlight } from "../anchors/recover.ts";
-import { capturePinAnchor, renderPin, type PinAnchor } from "../anchors/pin.ts";
+import { recoverTextAnchor, renderTextHighlight } from "../anchors/recover.ts";
+import { capturePinAnchor, recoverPinAnchor, renderPin, type PinAnchor } from "../anchors/pin.ts";
 import { captureDisplayScreenshot } from "../screenshot-flow.ts";
+import type { PageComment } from "../background-bridge.ts";
 
 export const OVERLAY_HOST_ID = "moodle-course-review-overlay";
 export const overlayStyles = `:host{--review-navy:#16324f;--review-teal:#087f78;--review-pale:#edf7f6;--review-line:#c8d9dc;all:initial;position:fixed!important;inset:auto!important;z-index:2147483647!important;isolation:isolate;display:block!important;color:#152a38;font:14px/1.4 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.shell{position:fixed;right:18px;bottom:18px;z-index:2147483647;max-width:min(560px,calc(100vw - 36px));background:#fff;border:1px solid var(--review-line);border-radius:12px;box-shadow:0 10px 32px #16324f33;overflow:hidden}.toolbar{display:flex;align-items:center;gap:8px;padding:8px;background:var(--review-navy);color:#fff}.identity{min-width:0;padding:0 6px;flex:1}.course,.page{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.course{font-weight:700}.page{font-size:12px;color:#d7e8ec}button,select,textarea{font:inherit}button{appearance:none;border:1px solid #ffffff66;border-radius:7px;background:#fff;color:var(--review-navy);font-weight:650;padding:7px 9px;cursor:pointer}button:hover{background:var(--review-pale)}button:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid #f5b642;outline-offset:2px}.icon{padding:7px 10px}.status{display:flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap}.dot{width:8px;height:8px;border-radius:50%;background:#f5b642}.connected .dot{background:#42d3b4}.signed-out .dot,.offline .dot{background:#ff8d85}.panel,[data-unresolved]{padding:10px;background:#fff;border-top:1px solid var(--review-line)}.panel[hidden],[data-unresolved][hidden]{display:none}[data-unresolved] h2{margin:0;font-size:14px}[data-unresolved] ul{display:grid;gap:6px;margin:6px 0 0;padding:0;list-style:none}[data-unresolved] li{display:flex;align-items:center;justify-content:space-between;gap:8px}.backdrop{position:fixed;inset:0;background:#0b1f3380;display:grid;place-items:center;z-index:2147483647}.dialog{width:min(420px,calc(100vw - 32px));background:#fff;border-radius:12px;padding:18px;box-shadow:0 16px 44px #0005}.dialog h2{margin:0 0 10px;color:var(--review-navy);font-size:18px}.dialog textarea{box-sizing:border-box;width:100%;min-height:110px;border:1px solid var(--review-line);border-radius:7px;padding:8px}.field{display:grid;gap:4px;margin-top:9px}.preview{padding:8px;border-radius:7px;background:var(--review-pale);font-size:12px}.error{color:#a51d24}.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}.primary{background:var(--review-teal);color:#fff;border-color:var(--review-teal)}`;
@@ -25,7 +26,7 @@ export function handleDialogKey(input: { key: string; shiftKey: boolean; activeI
 export type CommentAnchor = ({ anchor_type: "text_highlight" } & TextAnchor) | ({ anchor_type: "visual_pin" } & PinAnchor);
 export type UnresolvedAnchor = { id: string; label: string; quote?: string };
 export type ReviewOverlayOptions = { submit?: (input: { body: string; category: string; anchor: CommentAnchor; screenshot: boolean; embeddedFrameUnavailable: boolean; contextSnapshot: CourseContext }) => Promise<{ id?: string; screenshot_available?: boolean } | void>; uploadScreenshot?: (commentId: string, dataUrl: string) => Promise<void>; cancelScreenshot?: (commentId: string) => Promise<void>; captureScreenshot?: () => Promise<string>; onFrameFallback?: () => void; onTakeToContext?: (id: string) => void };
-export type ReviewOverlay = { update(context: CourseContext, status: ConnectionStatus): void; showFrameFallback(): void; hideFrameFallback(): void; setUnresolvedAnchors(anchors: UnresolvedAnchor[]): void; destroy(): void };
+export type ReviewOverlay = { update(context: CourseContext, status: ConnectionStatus): void; setPageComments(comments: PageComment[]): void; showFrameFallback(): void; hideFrameFallback(): void; setUnresolvedAnchors(anchors: UnresolvedAnchor[]): void; destroy(): void };
 
 export function mountReviewOverlay(document: Document, context: CourseContext, status: ConnectionStatus = "connecting", options: ReviewOverlayOptions = {}): ReviewOverlay {
   const existing = document.getElementById(OVERLAY_HOST_ID) as HTMLElement | null;
@@ -52,6 +53,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   let fallbackPin = false;
   let composerContext: CourseContext | undefined;
   let pendingScreenshotId: string | undefined;
+  let storedAnchorCleanups: Array<() => void> = [];
   const cancelPin = (event: KeyboardEvent) => { if (event.key === "Escape" && pinListener) { ownerDocument.removeEventListener("pointerdown", pinListener, true); ownerDocument.removeEventListener("keydown", cancelPin, true); pinListener = undefined; fallbackPin = false; shadow.querySelector<HTMLElement>(".panel")!.hidden = true; returnFocus?.focus(); } };
   const mount = () => {
     const style = shadow.querySelector("style");
@@ -160,6 +162,40 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
         const warning = ownerDocument.createElement("p"); warning.dataset.contextWarning = "true"; warning.className = "error"; warning.textContent = "The page changed. This comment will stay attached to the page where you opened it."; dialog.querySelector(".preview")?.after(warning);
       }
     },
+    setPageComments(comments) {
+      for (const cleanup of storedAnchorCleanups) cleanup(); storedAnchorCleanups = [];
+      const unresolved: UnresolvedAnchor[] = [];
+      const panel = shadow.querySelector<HTMLElement>(".panel")!;
+      panel.replaceChildren();
+      for (const comment of comments) {
+        const openThread = () => {
+          panel.hidden = false;
+          const article = ownerDocument.createElement("article");
+          const heading = ownerDocument.createElement("h2"); heading.textContent = `${comment.category.replaceAll("_", " ")} · ${comment.status.replaceAll("_", " ")}`;
+          const body = ownerDocument.createElement("p"); body.textContent = comment.body; article.append(heading, body);
+          for (const reply of comment.replies) { const node = ownerDocument.createElement("p"); node.textContent = `${reply.author_role.replaceAll("_", " ")} (${reply.author_email}): ${reply.body}`; article.append(node); }
+          panel.replaceChildren(article);
+        };
+        if (comment.anchor_type === "text_highlight" && comment.selected_quote) {
+          const recovered = recoverTextAnchor(ownerDocument, { selected_quote: comment.selected_quote, prefix: comment.prefix ?? "", suffix: comment.suffix ?? "" });
+          if (recovered.status === "resolved") storedAnchorCleanups.push(renderTextHighlight(ownerDocument, recovered.range));
+          else unresolved.push({ id: comment.id, label: `${comment.page_title} · ${comment.body}`, quote: comment.selected_quote });
+        } else if (comment.anchor_type === "visual_pin" && comment.css_selector && comment.relative_x !== null && comment.relative_y !== null) {
+          const anchor = { css_selector: comment.css_selector, relative_x: comment.relative_x, relative_y: comment.relative_y };
+          const recovered = recoverPinAnchor(ownerDocument, anchor);
+          if (recovered.status === "unresolved") unresolved.push({ id: comment.id, label: `${comment.page_title} · ${comment.body}` });
+          else {
+            const marker = ownerDocument.createElement("button"); marker.type = "button"; marker.dataset.moodleReviewStoredPin = comment.id; marker.setAttribute("aria-label", `Open feedback: ${comment.body}`); marker.style.cssText = "position:fixed;z-index:2147483646;width:24px;height:24px;border-radius:50%;border:2px solid white;background:#087f78;color:white;transform:translate(-50%,-50%)"; marker.textContent = "•"; marker.addEventListener("click", openThread);
+            const place = () => { const position = recoverPinAnchor(ownerDocument, anchor); marker.hidden = position.status !== "resolved"; if (position.status === "resolved") { marker.style.left = `${position.x}px`; marker.style.top = `${position.y}px`; } };
+            ownerDocument.documentElement.append(marker); place(); ownerDocument.defaultView?.addEventListener("resize", place); ownerDocument.defaultView?.addEventListener("scroll", place, true);
+            storedAnchorCleanups.push(() => { ownerDocument.defaultView?.removeEventListener("resize", place); ownerDocument.defaultView?.removeEventListener("scroll", place, true); marker.remove(); });
+          }
+        }
+        const item = ownerDocument.createElement("button"); item.type = "button"; item.textContent = comment.body; item.addEventListener("click", openThread); panel.append(item);
+      }
+      if (!comments.length) panel.replaceChildren("No comments on this page yet.");
+      this.setUnresolvedAnchors(unresolved);
+    },
     showFrameFallback() {
       const panel = shadow.querySelector<HTMLElement>(".panel")!; panel.hidden = false;
       panel.innerHTML = `<strong>embedded content—frame access unavailable</strong><p>Place a pin on the embedded content instead.</p><button type="button" data-parent-pin>Place parent-page pin</button>`;
@@ -186,6 +222,6 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
       }
       region.replaceChildren(heading, list);
     },
-    destroy() { if (pinListener) ownerDocument.removeEventListener("pointerdown", pinListener, true); ownerDocument.removeEventListener("keydown", cancelPin, true); cleanupPreview(); host.remove(); },
+    destroy() { if (pinListener) ownerDocument.removeEventListener("pointerdown", pinListener, true); ownerDocument.removeEventListener("keydown", cancelPin, true); cleanupPreview(); for (const cleanup of storedAnchorCleanups) cleanup(); host.remove(); },
   };
 }
