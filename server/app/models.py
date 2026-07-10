@@ -195,6 +195,13 @@ class CommentStatusEvent(Base):
     __table_args__ = (Index("ix_comment_status_events_comment_time", "comment_id", "created_at"),)
 
 
+class CommentReadState(Base):
+    __tablename__ = "comment_read_states"
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    comment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("comments.id"), primary_key=True)
+    read_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class Attachment(Base):
     __tablename__ = "attachments"
 
