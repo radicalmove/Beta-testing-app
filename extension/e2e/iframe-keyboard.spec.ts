@@ -11,7 +11,7 @@ async function openFixture(page: Page) {
         sendMessage(message: any, callback: (response: any) => void) {
           if (message.type === "RESOLVE_COURSE") { callback({ ok: true, data: { id: "123e4567-e89b-12d3-a456-426614174000" } }); return; }
           if (message.type === "GET_REVIEW_CONTEXT") { callback({ ok: true, data: { course_id: "123e4567-e89b-12d3-a456-426614174000", course_title: "Law course", parent_activity_url: "https://moodle.example.invalid/mod/page/view.php?id=9" } }); return; }
-          if (message.type === "GET_REVIEW_FRAME_STATUS") { callback({ ok: true, data: { ready_count: 1 } }); return; }
+          if (message.type === "GET_REVIEW_FRAME_STATUS") { callback({ ok: true, data: { ready_count: 1, ready_origins: [] } }); return; }
           callback({ ok: true, data: {} });
         },
       },

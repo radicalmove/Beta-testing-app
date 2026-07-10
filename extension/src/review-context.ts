@@ -3,7 +3,8 @@ export type StoredReviewContext = { id: string; title: string; course_url: strin
 export type FrameReviewContext = { course_id: string; course_title: string; parent_activity_url: string };
 export type ContextMessage = { type: "GET_REVIEW_CONTEXT" | "REVIEW_FRAME_READY" | "GET_REVIEW_FRAME_STATUS" };
 
-type Entry = StoredReviewContext & { extensionId: string; registeredAt: number; readyFrames: Map<number, number> };
+type ReadyFrame = { origin: string; readyAt: number };
+type Entry = StoredReviewContext & { extensionId: string; lastActivityAt: number; readyFrames: Map<number, ReadyFrame> };
 
 export function validateContextMessage(message: unknown): ContextMessage {
   if (!message || typeof message !== "object" || Array.isArray(message)) throw new Error("Invalid review context message");
@@ -21,7 +22,7 @@ export class ReviewContextCache {
   register(sender: ReviewSender, context: StoredReviewContext): boolean {
     const tabId = sender.tab?.id;
     if (sender.frameId !== 0 || typeof tabId !== "number" || typeof sender.id !== "string") return false;
-    this.entries.set(tabId, { ...context, extensionId: sender.id, registeredAt: this.now(), readyFrames: new Map() });
+    this.entries.set(tabId, { ...context, extensionId: sender.id, lastActivityAt: this.now(), readyFrames: new Map() });
     return true;
   }
 
@@ -31,9 +32,10 @@ export class ReviewContextCache {
   }
 
   markReady(sender: ReviewSender): boolean {
+    let origin: string; try { origin = new URL(sender.url ?? "").origin; } catch { return false; }
     const entry = this.authorizedEntry(sender, true);
     if (!entry) return false;
-    entry.readyFrames.set(sender.frameId!, this.now());
+    entry.readyFrames.set(sender.frameId!, { origin, readyAt: this.now() });
     return true;
   }
 
@@ -41,18 +43,31 @@ export class ReviewContextCache {
     const entry = this.authorizedEntry(sender, false);
     if (!entry) return 0;
     const now = this.now();
-    for (const [frameId, readyAt] of entry.readyFrames) if (now - readyAt > this.ttlMs) entry.readyFrames.delete(frameId);
+    for (const [frameId, ready] of entry.readyFrames) if (now - ready.readyAt > this.ttlMs) entry.readyFrames.delete(frameId);
     return entry.readyFrames.size;
+  }
+
+  readyOrigins(sender: ReviewSender): string[] {
+    const entry = this.authorizedEntry(sender, false); if (!entry) return [];
+    const now = this.now();
+    for (const [frameId, ready] of entry.readyFrames) if (now - ready.readyAt > this.ttlMs) entry.readyFrames.delete(frameId);
+    return [...new Set([...entry.readyFrames.values()].map((ready) => ready.origin))];
+  }
+
+  matchesCourse(sender: ReviewSender, courseId: string): boolean {
+    const entry = this.authorizedEntry(sender, false, true); return entry?.id === courseId;
   }
 
   removeTab(tabId: number): void { this.entries.delete(tabId); }
 
-  private authorizedEntry(sender: ReviewSender, requireSubframe: boolean): Entry | undefined {
+  private authorizedEntry(sender: ReviewSender, requireSubframe: boolean, allowAnyFrame = false): Entry | undefined {
     const tabId = sender.tab?.id;
-    if (typeof tabId !== "number" || typeof sender.frameId !== "number" || (requireSubframe ? sender.frameId <= 0 : sender.frameId !== 0)) return undefined;
+    if (typeof tabId !== "number" || typeof sender.frameId !== "number" || (!allowAnyFrame && (requireSubframe ? sender.frameId <= 0 : sender.frameId !== 0))) return undefined;
     const entry = this.entries.get(tabId);
     if (!entry || sender.id !== entry.extensionId) return undefined;
-    if (this.now() - entry.registeredAt > this.ttlMs) { this.entries.delete(tabId); return undefined; }
+    const now = this.now();
+    if (now - entry.lastActivityAt > this.ttlMs) { this.entries.delete(tabId); return undefined; }
+    entry.lastActivityAt = now;
     return entry;
   }
 }

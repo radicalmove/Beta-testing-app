@@ -31,3 +31,10 @@ test("does not resolve absent or ambiguous quotes", () => {
   assert.equal(recoverTextAnchor(window.document as unknown as Document, { selected_quote: "missing", prefix: "", suffix: "" }).status, "unresolved");
   assert.equal(recoverTextAnchor(window.document as unknown as Document, { selected_quote: "same text", prefix: "", suffix: "" }).status, "unresolved");
 });
+
+test("recovery tolerates whitespace-only DOM changes and ignores hidden executable content", () => {
+  const window = new Window();
+  window.document.body.innerHTML = `<script>selected phrase</script><p aria-hidden="true">selected phrase</p><p>Before selected\n   phrase after</p>`;
+  const result = recoverTextAnchor(window.document as unknown as Document, { selected_quote: "selected phrase", prefix: "Before ", suffix: " after" });
+  assert.equal(result.status, "resolved");
+});

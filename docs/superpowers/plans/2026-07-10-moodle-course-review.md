@@ -194,7 +194,7 @@ def test_health_returns_ok(client):
 - [ ] **Step 2: Write tests recording a pin's element selector plus relative coordinates, restoring it after layout resize, and rendering a page-list fallback when its target no longer exists.**
 - [ ] **Step 3: Write a test for frame-access failure that offers a parent-page pin and labels the created comment `embedded content—frame access unavailable`.**
 - [ ] **Step 4: Run the anchor test suite; verify failure.**
-- [ ] **Step 5: Implement the anchor modules and composer. Capture an optional screenshot only after an explicit reviewer action and use the extension tab-capture API through the background worker.**
+- [ ] **Step 5: Implement the anchor modules and composer. Save the comment first, then offer an explicit “Capture screenshot now” action that uses the browser display-sharing prompt in the content UI; upload only a bounded validated PNG/JPEG through the background worker. No screenshot or tab permission is requested.**
 - [ ] **Step 6: Run anchor tests and an end-to-end Playwright fixture with an accessible iframe plus an inaccessible iframe simulation; verify PASS.**
 - [ ] **Step 7: Commit: `feat: add resilient highlights and pins`.**
 

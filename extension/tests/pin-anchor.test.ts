@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Window } from "happy-dom";
-import { capturePinAnchor, recoverPinAnchor } from "../src/anchors/pin.ts";
+import { capturePinAnchor, escapeCssIdentifier, recoverPinAnchor } from "../src/anchors/pin.ts";
 
 test("records a stable selector and relative coordinates and restores after resize", () => {
   const window = new Window(); const document = window.document;
@@ -21,4 +21,19 @@ test("never anchors to extension UI", () => {
   const window = new Window(); const host = window.document.createElement("div");
   host.id = "moodle-course-review-overlay"; host.setAttribute("data-moodle-review-ui", "true"); window.document.body.append(host);
   assert.equal(capturePinAnchor(host as unknown as HTMLElement, 1, 1), null);
+});
+
+test("duplicate stable attributes fall back to a unique ancestry selector", () => {
+  const window = new Window(); window.document.body.innerHTML = `<main><div><button id="same" data-region="same">One</button></div><div><button id="same" data-region="same">Two</button></div></main>`;
+  const button = window.document.querySelectorAll("button")[1] as unknown as HTMLElement;
+  button.getBoundingClientRect = () => ({ left: 0, top: 0, width: 10, height: 10, right: 10, bottom: 10, x: 0, y: 0, toJSON() {} });
+  const anchor = capturePinAnchor(button, 5, 5)!;
+  assert.match(anchor.css_selector, /nth-of-type\(2\)/);
+  assert.equal(recoverPinAnchor(window.document as unknown as Document, { ...anchor, css_selector: "#same" }).status, "unresolved");
+});
+
+test("CSS identifier escaping handles controls, leading digits, and non-ASCII", () => {
+  assert.match(escapeCssIdentifier("1line\n café"), /^\\31 /);
+  assert.match(escapeCssIdentifier("1line\n café"), /\\a /);
+  assert.match(escapeCssIdentifier("1line\n café"), /é/);
 });

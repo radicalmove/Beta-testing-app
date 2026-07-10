@@ -1,10 +1,24 @@
 export type PinAnchor = { css_selector: string; relative_x: number; relative_y: number };
 const stableAttributes = ["data-region", "data-id", "data-testid", "data-activityname", "name"];
-const escapeCss = (value: string) => globalThis.CSS?.escape ? globalThis.CSS.escape(value) : value.replace(/[^a-zA-Z0-9_-]/g, (char) => `\\${char.codePointAt(0)!.toString(16)} `);
+export function escapeCssIdentifier(value: string): string {
+  if (globalThis.CSS?.escape) return globalThis.CSS.escape(value);
+  const codepoints = [...value]; let result = "";
+  for (let index = 0; index < codepoints.length; index += 1) {
+    const char = codepoints[index]; const code = char.codePointAt(0)!;
+    if (code === 0) { result += "�"; continue; }
+    if ((code >= 1 && code <= 31) || code === 127 || (index === 0 && code >= 48 && code <= 57) || (index === 1 && code >= 48 && code <= 57 && codepoints[0] === "-")) { result += `\\${code.toString(16)} `; continue; }
+    if (index === 0 && char === "-" && codepoints.length === 1) { result += "\\-"; continue; }
+    result += code >= 128 || char === "-" || char === "_" || /[A-Za-z0-9]/.test(char) ? char : `\\${char}`;
+  }
+  return result;
+}
+const attributeValue = (value: string) => value.replace(/[\u0000-\u001f\u007f"\\]/g, (char) => `\\${char.codePointAt(0)!.toString(16)} `);
+const unique = (document: Document, selector: string) => { try { return document.querySelectorAll(selector).length === 1; } catch { return false; } };
 
 export function selectorFor(element: HTMLElement): string {
-  if (element.id) return `#${escapeCss(element.id)}`;
-  for (const name of stableAttributes) { const value = element.getAttribute(name); if (value) return `[${name}="${value.replace(/["\\]/g, "\\$&")}"]`; }
+  const document = element.ownerDocument;
+  if (element.id) { const selector = `#${escapeCssIdentifier(element.id)}`; if (unique(document, selector)) return selector; }
+  for (const name of stableAttributes) { const value = element.getAttribute(name); if (value) { const selector = `[${name}="${attributeValue(value)}"]`; if (unique(document, selector)) return selector; } }
   const parts: string[] = [];
   for (let current: Element | null = element; current && current.tagName.toLowerCase() !== "html"; current = current.parentElement) {
     let part = current.tagName.toLowerCase();
@@ -22,7 +36,8 @@ export function capturePinAnchor(element: HTMLElement, clientX: number, clientY:
 }
 
 export function recoverPinAnchor(document: Document, anchor: PinAnchor): { status: "resolved"; element: HTMLElement; x: number; y: number } | { status: "unresolved" } {
-  let element: HTMLElement | null = null; try { element = document.querySelector(anchor.css_selector); } catch { return { status: "unresolved" }; }
+  let matches: NodeListOf<HTMLElement>; try { matches = document.querySelectorAll<HTMLElement>(anchor.css_selector); } catch { return { status: "unresolved" }; }
+  if (matches.length !== 1) return { status: "unresolved" }; const element = matches[0];
   if (!element || element.closest('[data-moodle-review-ui="true"]')) return { status: "unresolved" };
   const rect = element.getBoundingClientRect(); return { status: "resolved", element, x: rect.left + rect.width * anchor.relative_x, y: rect.top + rect.height * anchor.relative_y };
 }

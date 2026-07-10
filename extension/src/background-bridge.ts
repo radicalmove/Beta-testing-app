@@ -1,5 +1,7 @@
 export type ResolveCoursePayload = { course_url: string; title: string; moodle_course_id?: number };
 export type CreateCommentPayload = { course_id: string; page_url: string; page_title: string; body: string; category: string; anchor_type: "text_highlight" | "visual_pin"; selected_quote?: string; prefix?: string; suffix?: string; css_selector?: string; dom_selector?: string; relative_x?: number; relative_y?: number };
+export type UploadScreenshotPayload = { comment_id: string; data_url: string };
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function normalizeErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) return error.message;
@@ -9,11 +11,11 @@ export function normalizeErrorMessage(error: unknown): string {
 
 const own = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
 
-export function validateCreateCommentMessage(message: unknown): { payload: CreateCommentPayload; screenshot: boolean } {
+export function validateCreateCommentMessage(message: unknown): { payload: CreateCommentPayload } {
   const invalid = (): never => { throw new Error("Invalid CREATE_COMMENT message"); };
   if (!message || typeof message !== "object" || Array.isArray(message)) return invalid();
   const record = message as Record<string, unknown>;
-  if (record.type !== "CREATE_COMMENT" || Object.keys(record).some((key) => !["type", "payload", "screenshot"].includes(key)) || (own(record, "screenshot") && typeof record.screenshot !== "boolean")) return invalid();
+  if (record.type !== "CREATE_COMMENT" || Object.keys(record).some((key) => !["type", "payload"].includes(key))) return invalid();
   if (!record.payload || typeof record.payload !== "object" || Array.isArray(record.payload)) return invalid();
   const payload = record.payload as Record<string, unknown>;
   const common = ["course_id", "page_url", "page_title", "body", "category", "anchor_type"];
@@ -23,7 +25,7 @@ export function validateCreateCommentMessage(message: unknown): { payload: Creat
       ? [...common, "css_selector", "relative_x", "relative_y"]
       : [];
   if (!expected.length || Object.keys(payload).length !== expected.length || expected.some((key) => !own(payload, key))) return invalid();
-  if (typeof payload.course_id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(payload.course_id)) return invalid();
+  if (typeof payload.course_id !== "string" || !uuid.test(payload.course_id)) return invalid();
   let page: URL; try { page = new URL(payload.page_url as string); } catch { return invalid(); }
   if (!["http:", "https:"].includes(page.protocol) || page.username || page.password || page.href !== payload.page_url || page.href.length > 4096) return invalid();
   for (const [key, max] of [["page_title", 512], ["body", 10000]] as const) {
@@ -44,7 +46,14 @@ export function validateCreateCommentMessage(message: unknown): { payload: Creat
     const selector = payload.css_selector.trim(); const relativeX = payload.relative_x; const relativeY = payload.relative_y; payload.css_selector = selector;
     if (!selector || selector.length > 4000 || !Number.isFinite(relativeX) || !Number.isFinite(relativeY) || relativeX < 0 || relativeX > 1 || relativeY < 0 || relativeY > 1) return invalid();
   } else return invalid();
-  return { payload: payload as CreateCommentPayload, screenshot: record.screenshot === true };
+  return { payload: payload as CreateCommentPayload };
+}
+
+export function validateUploadScreenshotMessage(message: unknown): UploadScreenshotPayload {
+  if (!message || typeof message !== "object" || Array.isArray(message)) throw new Error("Invalid UPLOAD_SCREENSHOT message");
+  const record = message as Record<string, unknown>;
+  if (record.type !== "UPLOAD_SCREENSHOT" || Object.keys(record).sort().join() !== "comment_id,data_url,type" || typeof record.comment_id !== "string" || !uuid.test(record.comment_id) || typeof record.data_url !== "string") throw new Error("Invalid UPLOAD_SCREENSHOT message");
+  return { comment_id: record.comment_id, data_url: record.data_url };
 }
 
 export async function handleCreateCommentBridge(
@@ -52,7 +61,8 @@ export async function handleCreateCommentBridge(
   sender: { id?: string; url?: string },
   dependencies: {
     authorize(sender: { id?: string; url?: string }): Promise<boolean>;
-    create(payload: CreateCommentPayload, screenshot: boolean): Promise<unknown>;
+    contextMatches?(sender: { id?: string; url?: string }, courseId: string): boolean;
+    create(payload: CreateCommentPayload): Promise<unknown>;
   },
 ): Promise<unknown> {
   const validated = validateCreateCommentMessage(message);
@@ -60,7 +70,8 @@ export async function handleCreateCommentBridge(
   try { senderUrl = new URL(sender.url ?? ""); } catch { throw new Error("Unauthorized CREATE_COMMENT sender"); }
   if (new URL(validated.payload.page_url).origin !== senderUrl.origin) throw new Error("CREATE_COMMENT page origin must match sender origin");
   if (!await dependencies.authorize(sender)) throw new Error("Unauthorized CREATE_COMMENT sender");
-  return dependencies.create(validated.payload, validated.screenshot);
+  if (dependencies.contextMatches?.(sender, validated.payload.course_id) !== true) throw new Error("CREATE_COMMENT course context mismatch");
+  return dependencies.create(validated.payload);
 }
 
 export function validateResolveCourseMessage(message: unknown): ResolveCoursePayload {

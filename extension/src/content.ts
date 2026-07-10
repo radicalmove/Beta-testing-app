@@ -106,6 +106,16 @@ export function countInaccessibleFrames(targetDocument: Document): number {
   return count;
 }
 
+export function inaccessibleFrameOrigins(targetDocument: Document): string[] {
+  const origins: string[] = [];
+  for (const frame of Array.from(targetDocument.querySelectorAll("iframe"))) {
+    let inaccessible = false; try { inaccessible = !frame.contentDocument; } catch { inaccessible = true; }
+    if (!inaccessible) continue;
+    try { origins.push(new URL(frame.src || frame.getAttribute("src") || "", targetDocument.baseURI).origin); } catch { origins.push("null"); }
+  }
+  return origins;
+}
+
 export function hasInaccessibleFrame(targetDocument: Document): boolean {
   return countInaccessibleFrames(targetDocument) > 0;
 }
@@ -145,13 +155,15 @@ export function createLifecycleController(targetWindow: Window & typeof globalTh
 export function startCourseReview(targetWindow: Window & typeof globalThis = window, targetDocument: Document = document, runtime: { sendMessage(message: unknown, callback: (response: { ok?: boolean; status?: ConnectionStatus; error?: string; data?: unknown } | undefined) => void): void } = chrome.runtime): () => void {
   let context = currentContext(targetWindow, targetDocument);
   let courseId: string | undefined;
+  const courseIds = new Map<string, string>();
   const send = <T>(message: unknown) => new Promise<T>((resolve, reject) => runtime.sendMessage(message, (response) => response?.ok ? resolve(response.data as T) : reject(new Error(response?.error ?? "Review service unavailable"))));
-  let overlay: ReviewOverlay = mountReviewOverlay(targetDocument, context, "connecting", { submit: async ({ body, category, anchor, screenshot, embeddedFrameUnavailable }) => {
-    if (!courseId) throw new Error("Course is not connected yet.");
+  let overlay: ReviewOverlay = mountReviewOverlay(targetDocument, context, "connecting", { submit: async ({ body, category, anchor, embeddedFrameUnavailable, contextSnapshot }) => {
+    const snapshotCourseId = courseIds.get(contextSnapshot.course_url);
+    if (!snapshotCourseId) throw new Error("The original course is no longer connected. Cancel and reopen the comment.");
     const fallbackSuffix = " — embedded content—frame access unavailable";
-    const pageTitle = embeddedFrameUnavailable ? `${context.pageTitle.slice(0, 512 - fallbackSuffix.length)}${fallbackSuffix}` : context.pageTitle;
-    await send({ type: "CREATE_COMMENT", payload: { course_id: courseId, page_url: context.page_url, page_title: pageTitle, body, category, ...anchor }, screenshot });
-  } });
+    const pageTitle = embeddedFrameUnavailable ? `${contextSnapshot.pageTitle.slice(0, 512 - fallbackSuffix.length)}${fallbackSuffix}` : contextSnapshot.pageTitle;
+    return await send<{ id?: string }>({ type: "CREATE_COMMENT", payload: { course_id: snapshotCourseId, page_url: contextSnapshot.page_url, page_title: pageTitle, body, category, ...anchor } });
+  }, uploadScreenshot: (commentId, dataUrl) => send({ type: "UPLOAD_SCREENSHOT", comment_id: commentId, data_url: dataUrl }) });
   let lastSignature = "";
   let requestSequence = 0;
 
@@ -163,11 +175,13 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
     context = next;
     overlay.update(context, "connecting");
     const sequence = ++requestSequence;
+    const requestedCourseUrl = context.course_url;
     const payload = { course_url: context.course_url, title: context.title, ...(context.moodle_course_id ? { moodle_course_id: context.moodle_course_id } : {}) };
     runtime.sendMessage({ type: "RESOLVE_COURSE", payload }, (response) => {
       if (sequence !== requestSequence) return;
       const resolved = response?.data as { id?: unknown } | undefined;
       courseId = response?.ok && typeof resolved?.id === "string" ? resolved.id : undefined;
+      if (courseId) courseIds.set(requestedCourseUrl, courseId);
       const status: ConnectionStatus = response?.ok ? "connected" : response?.status === "signed-out" ? "signed-out" : response?.status === "pending" ? "pending" : "offline";
       overlay.update(context, status);
     });
@@ -175,17 +189,22 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
   const lifecycle = createLifecycleController(targetWindow, targetDocument, refresh);
   const scheduleTimeout = typeof targetWindow.setTimeout === "function" ? targetWindow.setTimeout.bind(targetWindow) : globalThis.setTimeout;
   const cancelTimeout = typeof targetWindow.clearTimeout === "function" ? targetWindow.clearTimeout.bind(targetWindow) : globalThis.clearTimeout;
-  const fallbackTimer = scheduleTimeout(() => {
-    const inaccessibleCount = countInaccessibleFrames(targetDocument);
-    if (!inaccessibleCount) return;
-    const frameCount = targetDocument.querySelectorAll("iframe").length;
+  let fallbackTimer: ReturnType<typeof setTimeout>;
+  const checkFrames = () => {
+    const inaccessible = inaccessibleFrameOrigins(targetDocument);
+    if (!inaccessible.length) { overlay.hideFrameFallback(); return; }
     runtime.sendMessage({ type: "GET_REVIEW_FRAME_STATUS" }, (response) => {
-      const readyCount = (response?.data as { ready_count?: unknown } | undefined)?.ready_count;
-      if (!(response?.ok && typeof readyCount === "number" && readyCount >= frameCount)) overlay.showFrameFallback();
+      const ready = (response?.data as { ready_origins?: unknown } | undefined)?.ready_origins;
+      const trusted = response?.ok && Array.isArray(ready) ? new Set(ready.filter((value): value is string => typeof value === "string")) : new Set<string>();
+      if (inaccessible.some((origin) => !trusted.has(origin))) overlay.showFrameFallback(); else overlay.hideFrameFallback();
     });
-  }, 250);
+  };
+  fallbackTimer = scheduleTimeout(checkFrames, 250);
+  const poll = scheduleTimeout(() => checkFrames(), 1000); const latePoll = scheduleTimeout(() => checkFrames(), 5000);
+  const onFrameReady = (event: MessageEvent) => { if (event.data?.type === "MOODLE_REVIEW_FRAME_READY") checkFrames(); };
+  targetWindow.addEventListener("message", onFrameReady);
   refresh();
-  return () => { cancelTimeout(fallbackTimer); lifecycle.teardown(); overlay.destroy(); };
+  return () => { cancelTimeout(fallbackTimer); cancelTimeout(poll); cancelTimeout(latePoll); targetWindow.removeEventListener("message", onFrameReady); lifecycle.teardown(); overlay.destroy(); };
 }
 
 type Runtime = { sendMessage(message: unknown, callback: (response: { ok?: boolean; status?: ConnectionStatus; error?: string; data?: unknown } | undefined) => void): void };
@@ -212,12 +231,13 @@ export function startEmbeddedReview(targetWindow: Window & typeof globalThis, ta
     if (stopped || typeof trusted?.course_id !== "string" || typeof trusted?.course_title !== "string") return;
     courseId = trusted.course_id; courseTitle = trusted.course_title;
     let context = frameContext();
-    overlay = mountReviewOverlay(targetDocument, context, "connected", { submit: async ({ body, category, anchor, screenshot }) => {
-      await send({ type: "CREATE_COMMENT", payload: { course_id: courseId, page_url: context.page_url, page_title: context.pageTitle, body, category, ...anchor }, screenshot });
-    } });
+    overlay = mountReviewOverlay(targetDocument, context, "connected", { submit: async ({ body, category, anchor, contextSnapshot }) => {
+      return await send<{ id?: string }>({ type: "CREATE_COMMENT", payload: { course_id: courseId, page_url: contextSnapshot.page_url, page_title: contextSnapshot.pageTitle, body, category, ...anchor } });
+    }, uploadScreenshot: (commentId, dataUrl) => send({ type: "UPLOAD_SCREENSHOT", comment_id: commentId, data_url: dataUrl }) });
     const refresh = () => { context = frameContext(); overlay?.update(context, "connected"); };
     lifecycle = createLifecycleController(targetWindow, targetDocument, refresh);
     runtime.sendMessage({ type: "REVIEW_FRAME_READY" }, () => undefined);
+    try { targetWindow.parent.postMessage({ type: "MOODLE_REVIEW_FRAME_READY" }, "*"); } catch { /* trigger only */ }
   }).catch((error: unknown) => {
     attempts += 1;
     if (!stopped && attempts < 25 && error instanceof Error && error.message === "Review context unavailable") retryTimer = scheduleRetry(obtain, retryDelay);

@@ -54,3 +54,11 @@ test("ready frame ids are unique, expire independently, and reset with context",
   cache.register(top, { ...context, title: "Fresh context" });
   assert.equal(cache.readyFrameCount(top), 0);
 });
+
+test("ready origins are deduplicated and valid activity slides the session TTL", () => {
+  let now = 0; const cache = new ReviewContextCache(10, () => now); cache.register(top, context);
+  cache.markReady(frame); cache.markReady({ ...frame, frameId: 8 });
+  assert.deepEqual(cache.readyOrigins(top), ["https://rise.example"]);
+  now = 9; assert.ok(cache.obtain(frame));
+  now = 18; assert.ok(cache.obtain(frame));
+});

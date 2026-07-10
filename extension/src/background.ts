@@ -1,6 +1,6 @@
 import { ApiClient, authenticate, getActiveToken, type SessionToken } from "./api";
-import { authorizeResolveSender, handleCreateCommentBridge, handleResolveCourseBridge, normalizeErrorMessage, type CreateCommentPayload, type ResolveCoursePayload } from "./background-bridge.ts";
-import { createCommentWithOptionalScreenshot } from "./screenshot-flow.ts";
+import { authorizeResolveSender, handleCreateCommentBridge, handleResolveCourseBridge, normalizeErrorMessage, validateUploadScreenshotMessage, type CreateCommentPayload, type ResolveCoursePayload } from "./background-bridge.ts";
+import { validateScreenshotDataUrl } from "./screenshot-flow.ts";
 import { reconcileOptionalContentScript } from "./optional-content-scripts";
 import { ReviewContextCache, validateContextMessage, type ReviewSender } from "./review-context.ts";
 
@@ -12,6 +12,7 @@ const DEFAULT_SERVICE_ORIGIN = "https://review.example.invalid";
 
 let optionalRegistration = Promise.resolve();
 const reviewContexts = new ReviewContextCache();
+const createdComments = new Map<string, { tabId: number; courseId: string }>();
 
 function refreshOptionalContentScript(): void {
   optionalRegistration = optionalRegistration.then(async () => {
@@ -65,26 +66,12 @@ function client(): Promise<ApiClient> {
   return serviceOrigin().then((origin) => new ApiClient({ serviceOrigin: origin, getToken: activeToken, clearToken: () => chrome.storage.session.remove(["apiToken", "expiresAt"]), onSignedOut: () => undefined }));
 }
 
-async function createComment(payload: CreateCommentPayload, screenshot: boolean, windowId?: number): Promise<unknown> {
+async function createComment(payload: CreateCommentPayload): Promise<unknown> {
   const api = await client();
-  return createCommentWithOptionalScreenshot(payload, screenshot, {
-    createComment: async (input) => {
-      const response = await api.request("/api/comments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
-      if (response.status === 403) throw new Error("Account pending approval");
-      if (!response.ok) throw new Error(`Comment creation failed (${response.status})`);
-      return response.json();
-    },
-    captureVisibleTab: async () => {
-      const dataUrl = await chrome.tabs.captureVisibleTab(windowId, { format: "png" });
-      return (await fetch(dataUrl)).blob();
-    },
-    uploadScreenshot: async (commentId, blob) => {
-      const form = new FormData(); form.append("file", blob, "visible-viewport.png");
-      const upload = await api.request(`/api/comments/${commentId}/attachments`, { method: "POST", body: form });
-      if (!upload.ok) throw new Error(`Screenshot upload failed (${upload.status})`);
-      return upload.json();
-    },
-  });
+  const response = await api.request("/api/comments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  if (response.status === 403) throw new Error("Account pending approval");
+  if (!response.ok) throw new Error(`Comment creation failed (${response.status})`);
+  return response.json();
 }
 
 chrome.tabs?.onRemoved?.addListener((tabId: number) => reviewContexts.removeTab(tabId));
@@ -121,8 +108,27 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
   } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "CREATE_COMMENT") {
     operation = handleCreateCommentBridge(message, sender, {
       authorize: (candidate) => authorizeResolveSender(candidate, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) }),
-      create: (payload, screenshot) => createComment(payload, screenshot, sender.tab?.windowId),
+      contextMatches: (_candidate, courseId) => reviewContexts.matchesCourse(sender, courseId),
+      create: async (payload) => {
+        const result = await createComment(payload) as { id?: unknown };
+        if (typeof result.id === "string" && typeof sender.tab?.id === "number") createdComments.set(result.id, { tabId: sender.tab.id, courseId: payload.course_id });
+        return result;
+      },
     });
+  } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "UPLOAD_SCREENSHOT") {
+    operation = (async () => {
+      const payload = validateUploadScreenshotMessage(message);
+      if (typeof sender.tab?.id !== "number" || !(await authorizeResolveSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) }))) throw new Error("Unauthorized UPLOAD_SCREENSHOT sender");
+      const owner = createdComments.get(payload.comment_id);
+      if (!owner || owner.tabId !== sender.tab.id || !reviewContexts.matchesCourse(sender, owner.courseId)) throw new Error("UPLOAD_SCREENSHOT comment context mismatch");
+      const decoded = validateScreenshotDataUrl(payload.data_url);
+      const bytes = new Uint8Array(decoded.bytes.length); bytes.set(decoded.bytes);
+      const form = new FormData(); form.append("file", new Blob([bytes.buffer], { type: decoded.mime }), decoded.mime === "image/png" ? "visible-viewport.png" : "visible-viewport.jpg");
+      const api = await client(); const upload = await api.request(`/api/comments/${payload.comment_id}/attachments`, { method: "POST", body: form });
+      if (!upload.ok) throw new Error(`Screenshot upload failed (${upload.status})`);
+      createdComments.delete(payload.comment_id);
+      return upload.json();
+    })();
   } else if (message && typeof message === "object" && ["GET_REVIEW_CONTEXT", "REVIEW_FRAME_READY", "GET_REVIEW_FRAME_STATUS"].includes((message as { type?: string }).type ?? "")) {
     operation = (async () => {
       const control = validateContextMessage(message);
@@ -137,7 +143,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
         if (!reviewContexts.markReady(sender)) throw new Error("Review context unavailable");
         return {};
       }
-      return { ready_count: reviewContexts.readyFrameCount(sender) };
+      return { ready_count: reviewContexts.readyFrameCount(sender), ready_origins: reviewContexts.readyOrigins(sender) };
     })();
   }
   if (!operation) return false;

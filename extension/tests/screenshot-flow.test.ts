@@ -1,40 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createCommentWithOptionalScreenshot } from "../src/screenshot-flow.ts";
+import { captureDisplayScreenshot, validateScreenshotDataUrl } from "../src/screenshot-flow.ts";
 
-const payload = { course_id: "course", body: "note" };
-
-test("explicit screenshot false creates only the comment", async () => {
+test("display capture is started only by the caller and always stops every track", async () => {
   const calls: string[] = [];
-  const result = await createCommentWithOptionalScreenshot(payload, false, {
-    createComment: async () => { calls.push("create"); return { id: "comment-1" }; },
-    captureVisibleTab: async () => { calls.push("capture"); return new Blob(); },
-    uploadScreenshot: async () => { calls.push("upload"); return {}; },
+  const tracks = [{ stop: () => calls.push("stop-1") }, { stop: () => calls.push("stop-2") }];
+  const png = "data:image/png;base64,iVBORw0KGgo=";
+  const result = await captureDisplayScreenshot({
+    getDisplayMedia: async (constraints) => { calls.push(`media:${JSON.stringify(constraints)}`); return { getTracks: () => tracks } as unknown as MediaStream; },
+    captureFrame: async () => { calls.push("frame"); return png; },
   });
-  assert.deepEqual(calls, ["create"]);
-  assert.deepEqual(result, { id: "comment-1" });
+  assert.equal(result, png);
+  assert.deepEqual(calls, ['media:{"video":true,"audio":false,"preferCurrentTab":true}', "frame", "stop-1", "stop-2"]);
 });
 
-test("explicit screenshot true creates first then captures and uploads against returned id", async () => {
-  const calls: string[] = [];
-  const result = await createCommentWithOptionalScreenshot(payload, true, {
-    createComment: async () => { calls.push("create"); return { id: "comment-7" }; },
-    captureVisibleTab: async () => { calls.push("capture"); return new Blob(["png"], { type: "image/png" }); },
-    uploadScreenshot: async (id, blob) => { calls.push(`upload:${id}:${blob.type}`); return { id: "attachment-2" }; },
-  });
-  assert.deepEqual(calls, ["create", "capture", "upload:comment-7:image/png"]);
-  assert.deepEqual(result, { id: "comment-7", attachment: { id: "attachment-2" } });
+test("cancelled display capture rejects and still stops any acquired tracks", async () => {
+  await assert.rejects(() => captureDisplayScreenshot({ getDisplayMedia: async () => { throw new DOMException("cancelled", "NotAllowedError"); } }), /cancelled/);
 });
 
-for (const stage of ["capture", "upload"] as const) test(`${stage} failure reports partial success without duplicating comment`, async () => {
-  const calls: string[] = [];
-  const result = await createCommentWithOptionalScreenshot(payload, true, {
-    createComment: async () => { calls.push("create"); return { id: "comment-9" }; },
-    captureVisibleTab: async () => { calls.push("capture"); if (stage === "capture") throw new Error("capture denied"); return new Blob(); },
-    uploadScreenshot: async () => { calls.push("upload"); if (stage === "upload") throw new Error("upload unavailable"); return {}; },
-  });
-  assert.equal(calls.filter((call) => call === "create").length, 1);
-  assert.equal(result.comment_saved, true);
-  assert.equal(result.screenshot_failed, true);
-  assert.match(result.screenshot_error, stage === "capture" ? /capture denied/ : /upload unavailable/);
+test("screenshot payload accepts only canonical bounded png/jpeg data URLs", () => {
+  assert.deepEqual(validateScreenshotDataUrl("data:image/jpeg;base64,/9j/", 3), { mime: "image/jpeg", bytes: new Uint8Array([255, 216, 255]) });
+  for (const value of ["data:image/gif;base64,aGVsbG8=", "data:image/png;base64, aGVsbG8=", "data:image/png;base64,aGVsbG8", "data:image/png;base64,aGVsbG8=\n"]) assert.throws(() => validateScreenshotDataUrl(value, 10));
+  assert.throws(() => validateScreenshotDataUrl("data:image/png;base64,iVBORw0KGgo=", 7), /large/);
 });

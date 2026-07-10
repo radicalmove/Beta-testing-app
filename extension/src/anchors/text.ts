@@ -1,16 +1,19 @@
 export type TextAnchor = { selected_quote: string; prefix: string; suffix: string };
 
-export function textNodes(document: Document): Text[] {
+export function textNodes(document: Document, maxNodes = 20_000, maxCharacters = 2_000_000): Text[] {
   const filter = document.defaultView?.NodeFilter ?? NodeFilter;
   const walker = document.createTreeWalker(document.body ?? document.documentElement, filter.SHOW_TEXT, {
     acceptNode(node) {
       const parent = node.parentElement;
-      if (!parent || parent.closest('[data-moodle-review-ui="true"],script,style,noscript')) return filter.FILTER_REJECT;
+      if (!parent || parent.closest('[data-moodle-review-ui="true"],script,style,template,noscript,[hidden],[aria-hidden="true"]')) return filter.FILTER_REJECT;
+      const view = document.defaultView;
+      if (view?.getComputedStyle) { const style = view.getComputedStyle(parent); if (style.display === "none" || style.visibility === "hidden") return filter.FILTER_REJECT; }
       return filter.FILTER_ACCEPT;
     },
   });
   const result: Text[] = [];
-  while (walker.nextNode()) result.push(walker.currentNode as Text);
+  let characters = 0;
+  while (result.length < maxNodes && walker.nextNode()) { const node = walker.currentNode as Text; if (characters + node.length > maxCharacters) break; characters += node.length; result.push(node); }
   return result;
 }
 

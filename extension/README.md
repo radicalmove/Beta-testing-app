@@ -1,5 +1,7 @@
 # Moodle Course Review extension
 
+Optional screenshots use a deliberate two-step flow: the comment is saved first, then the reviewer clicks **Capture screenshot now** and chooses the current tab in the browser's sharing prompt. Cancelling or retrying screenshot capture never creates a duplicate comment. The extension does not request tab or screenshot permissions.
+
 The overlay uses Shadow DOM plus critical inline host styles to resist ordinary Moodle theme CSS. A host-page rule using `!important` can still override those inline declarations; browser extensions cannot reliably defeat author `!important` rules without applying their own `!important` declarations.
 
 Manifest V3 bootstrap for the private review service. The placeholder hosts are intentionally unusable; a pilot build must provide its approved origins:
