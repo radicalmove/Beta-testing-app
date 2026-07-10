@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from app.config import get_settings
+from app import models  # noqa: F401 -- ensure model metadata is available to migrations.
 
 
 def create_app() -> FastAPI:
