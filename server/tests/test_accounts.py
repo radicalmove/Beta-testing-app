@@ -4,11 +4,12 @@ from threading import Barrier, BrokenBarrierError
 
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session as SqlAlchemySession, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.db import Base
-from app.models import Session
+from app.models import Session, User, UserRole
 from app.security import verify_password
 from app.services.accounts import (
     AccountNotApprovedError,
@@ -50,6 +51,26 @@ def test_registration_is_pending_and_password_is_argon2_hashed(db_session):
     assert user.password_hash.startswith("$argon2")
     assert user.password_hash != "correct horse battery staple"
     assert verify_password(user.password_hash, "correct horse battery staple")
+
+
+def test_user_role_enum_binds_lowercase_values_for_postgresql():
+    role_type = User.__table__.c.role.type
+    bind = role_type.bind_processor(postgresql.dialect())
+
+    assert role_type.enums == [role.value for role in UserRole]
+    assert bind is not None
+    assert bind(UserRole.LD_DCD) == "ld_dcd"
+
+
+def test_password_verification_propagates_unexpected_errors(monkeypatch):
+    class BrokenHasher:
+        def verify(self, password_hash, password):
+            raise RuntimeError("argon2 backend unavailable")
+
+    monkeypatch.setattr("app.security._password_hasher", BrokenHasher())
+
+    with pytest.raises(RuntimeError, match="backend unavailable"):
+        verify_password("not-a-real-hash", "password")
 
 
 def test_dashboard_session_rejects_an_unapproved_account(db_session):

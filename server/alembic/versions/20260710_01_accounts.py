@@ -10,7 +10,8 @@ branch_labels = None
 depends_on = None
 
 
-user_role = sa.Enum("beta_tester", "sme", "ld_dcd", "admin", name="userrole")
+USER_ROLE_VALUES = ("beta_tester", "sme", "ld_dcd", "admin")
+user_role = sa.Enum(*USER_ROLE_VALUES, name="userrole")
 
 
 def upgrade() -> None:

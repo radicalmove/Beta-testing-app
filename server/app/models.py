@@ -21,7 +21,11 @@ class User(Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
-    role: Mapped[UserRole] = mapped_column(Enum(UserRole), nullable=False, default=UserRole.BETA_TESTER)
+    role: Mapped[UserRole] = mapped_column(
+        Enum(UserRole, values_callable=lambda roles: [role.value for role in roles]),
+        nullable=False,
+        default=UserRole.BETA_TESTER,
+    )
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
