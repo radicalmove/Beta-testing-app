@@ -25,7 +25,7 @@ export function validateCreateCommentMessage(message: unknown): { payload: Creat
   if (!expected.length || Object.keys(payload).length !== expected.length || expected.some((key) => !own(payload, key))) return invalid();
   if (typeof payload.course_id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(payload.course_id)) return invalid();
   let page: URL; try { page = new URL(payload.page_url as string); } catch { return invalid(); }
-  if (!["http:", "https:"].includes(page.protocol) || page.username || page.password || page.hash || page.href !== payload.page_url || page.href.length > 4096) return invalid();
+  if (!["http:", "https:"].includes(page.protocol) || page.username || page.password || page.href !== payload.page_url || page.href.length > 4096) return invalid();
   for (const [key, max] of [["page_title", 512], ["body", 10000]] as const) {
     if (typeof payload[key] !== "string") return invalid();
     payload[key] = payload[key].trim();

@@ -2,6 +2,7 @@ import { ApiClient, authenticate, getActiveToken, type SessionToken } from "./ap
 import { authorizeResolveSender, handleCreateCommentBridge, handleResolveCourseBridge, normalizeErrorMessage, type CreateCommentPayload, type ResolveCoursePayload } from "./background-bridge.ts";
 import { createCommentWithOptionalScreenshot } from "./screenshot-flow.ts";
 import { reconcileOptionalContentScript } from "./optional-content-scripts";
+import { ReviewContextCache, validateContextMessage, type ReviewSender } from "./review-context.ts";
 
 declare const chrome: any;
 declare const __MOODLE_PATTERNS__: string[];
@@ -10,6 +11,7 @@ declare const __OPTIONAL_FRAME_PATTERNS__: string[];
 const DEFAULT_SERVICE_ORIGIN = "https://review.example.invalid";
 
 let optionalRegistration = Promise.resolve();
+const reviewContexts = new ReviewContextCache();
 
 function refreshOptionalContentScript(): void {
   optionalRegistration = optionalRegistration.then(async () => {
@@ -85,7 +87,10 @@ async function createComment(payload: CreateCommentPayload, screenshot: boolean,
   });
 }
 
-chrome.runtime.onMessage.addListener((message: unknown, sender: { id?: string; url?: string; tab?: { windowId?: number } }, sendResponse: (value: unknown) => void) => {
+chrome.tabs?.onRemoved?.addListener((tabId: number) => reviewContexts.removeTab(tabId));
+chrome.webNavigation?.onCommitted?.addListener((details: { tabId: number; frameId: number }) => { if (details.frameId === 0) reviewContexts.removeTab(details.tabId); });
+
+chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & { tab?: { id?: number; windowId?: number } }, sendResponse: (value: unknown) => void) => {
   let operation: Promise<unknown> | undefined;
   if (message && typeof message === "object" && (message as { type?: unknown }).type === "AUTHENTICATE") {
     operation = serviceOrigin().then((origin) => authenticate({
@@ -102,13 +107,38 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: { id?: string; u
         optionalPatterns: __OPTIONAL_FRAME_PATTERNS__,
         hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }),
       }),
-      resolve: resolveCourse,
+      resolve: async (payload) => {
+        const resolved = await resolveCourse(payload) as { id?: unknown; title?: unknown };
+        if (typeof resolved?.id === "string" && sender.frameId === 0) reviewContexts.register(sender, {
+          id: resolved.id,
+          title: typeof resolved.title === "string" && resolved.title.trim() ? resolved.title : payload.title,
+          course_url: payload.course_url,
+          parent_activity_url: sender.url!,
+        });
+        return resolved;
+      },
     });
   } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "CREATE_COMMENT") {
     operation = handleCreateCommentBridge(message, sender, {
       authorize: (candidate) => authorizeResolveSender(candidate, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) }),
       create: (payload, screenshot) => createComment(payload, screenshot, sender.tab?.windowId),
     });
+  } else if (message && typeof message === "object" && ["GET_REVIEW_CONTEXT", "REVIEW_FRAME_READY", "GET_REVIEW_FRAME_STATUS"].includes((message as { type?: string }).type ?? "")) {
+    operation = (async () => {
+      const control = validateContextMessage(message);
+      const authorized = await authorizeResolveSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) });
+      if (!authorized) throw new Error("Unauthorized review context sender");
+      if (control.type === "GET_REVIEW_CONTEXT") {
+        const context = reviewContexts.obtain(sender);
+        if (!context) throw new Error("Review context unavailable");
+        return context;
+      }
+      if (control.type === "REVIEW_FRAME_READY") {
+        if (!reviewContexts.markReady(sender)) throw new Error("Review context unavailable");
+        return {};
+      }
+      return { ready: reviewContexts.hasReadyFrame(sender) };
+    })();
   }
   if (!operation) return false;
   void operation.then((data) => sendResponse({ ok: true, data }), (error: unknown) => {

@@ -60,6 +60,11 @@ test("create comment bridge accepts only normalized context and anchor fields", 
   assert.throws(() => validateCreateCommentMessage({ type: "CREATE_COMMENT", payload: { ...payload, page_url: "javascript:bad" } }), /Invalid CREATE_COMMENT/);
 });
 
+test("create comment preserves an embedded activity hash route", () => {
+  const payload = { course_id: "123e4567-e89b-12d3-a456-426614174000", page_url: "https://rise.example/activity#/lesson/2", page_title: "Lesson 2", body: "Review this", category: "general", anchor_type: "text_highlight", selected_quote: "phrase", prefix: "", suffix: "" };
+  assert.equal(validateCreateCommentMessage({ type: "CREATE_COMMENT", payload }).payload.page_url, payload.page_url);
+});
+
 test("create comment validation trims bounded common fields and enforces exact text anchor shape", () => {
   const payload = { course_id: "123e4567-e89b-12d3-a456-426614174000", page_url: "https://learn.example/mod/page/view.php?id=9", page_title: "  Week 2  ", body: "  Needs clarification  ", category: "  general  ", anchor_type: "text_highlight", selected_quote: "  this phrase  ", prefix: "before ", suffix: " after" };
   const result = validateCreateCommentMessage({ type: "CREATE_COMMENT", payload });

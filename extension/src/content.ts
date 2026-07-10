@@ -78,7 +78,7 @@ if (typeof window !== "undefined" && typeof document !== "undefined") {
     inject: () => {
       document.documentElement.dispatchEvent(new CustomEvent("moodle-review:bootstrap"));
       if (window.top === window) return startCourseReview(window, document, chrome.runtime);
-      window.top?.postMessage({ type: "MOODLE_REVIEW_FRAME_AVAILABLE" }, "*");
+      return startEmbeddedReview(window, document, chrome.runtime);
     },
   });
 }
@@ -166,10 +166,52 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
     });
   };
   const lifecycle = createLifecycleController(targetWindow, targetDocument, refresh);
-  const detectInaccessibleFrames = () => {
-    if (hasInaccessibleFrame(targetDocument)) overlay.showFrameFallback();
-  };
-  detectInaccessibleFrames();
+  const scheduleTimeout = typeof targetWindow.setTimeout === "function" ? targetWindow.setTimeout.bind(targetWindow) : globalThis.setTimeout;
+  const cancelTimeout = typeof targetWindow.clearTimeout === "function" ? targetWindow.clearTimeout.bind(targetWindow) : globalThis.clearTimeout;
+  const fallbackTimer = scheduleTimeout(() => {
+    if (!hasInaccessibleFrame(targetDocument)) return;
+    runtime.sendMessage({ type: "GET_REVIEW_FRAME_STATUS" }, (response) => {
+      if (!(response?.ok && (response.data as { ready?: unknown } | undefined)?.ready === true)) overlay.showFrameFallback();
+    });
+  }, 250);
   refresh();
-  return () => { lifecycle.teardown(); overlay.destroy(); };
+  return () => { cancelTimeout(fallbackTimer); lifecycle.teardown(); overlay.destroy(); };
+}
+
+type Runtime = { sendMessage(message: unknown, callback: (response: { ok?: boolean; status?: ConnectionStatus; error?: string; data?: unknown } | undefined) => void): void };
+
+export function startEmbeddedReview(targetWindow: Window & typeof globalThis, targetDocument: Document, runtime: Runtime, retryDelay = 200): () => void {
+  let stopped = false;
+  let lifecycle: { teardown(): void } | undefined;
+  let overlay: ReviewOverlay | undefined;
+  let courseId = "";
+  let courseTitle = "";
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  let attempts = 0;
+  const scheduleRetry = typeof targetWindow.setTimeout === "function" ? targetWindow.setTimeout.bind(targetWindow) : globalThis.setTimeout;
+  const cancelRetry = typeof targetWindow.clearTimeout === "function" ? targetWindow.clearTimeout.bind(targetWindow) : globalThis.clearTimeout;
+  const send = <T>(message: unknown) => new Promise<T>((resolve, reject) => runtime.sendMessage(message, (response) => response?.ok ? resolve(response.data as T) : reject(new Error(response?.error ?? "Review service unavailable"))));
+  const frameContext = (): CourseContext => ({
+    course_url: targetWindow.location.href,
+    page_url: targetWindow.location.href,
+    title: courseTitle,
+    pageTitle: `Embedded activity · ${pageLabel(targetDocument)}`,
+    identityConfidence: "confirmed",
+  });
+  const obtain = () => void send<{ course_id: string; course_title: string; parent_activity_url: string }>({ type: "GET_REVIEW_CONTEXT" }).then((trusted) => {
+    if (stopped || typeof trusted?.course_id !== "string" || typeof trusted?.course_title !== "string") return;
+    courseId = trusted.course_id; courseTitle = trusted.course_title;
+    let context = frameContext();
+    overlay = mountReviewOverlay(targetDocument, context, "connected", { submit: async ({ body, category, anchor, screenshot }) => {
+      await send({ type: "CREATE_COMMENT", payload: { course_id: courseId, page_url: context.page_url, page_title: context.pageTitle, body, category, ...anchor }, screenshot });
+    } });
+    const refresh = () => { context = frameContext(); overlay?.update(context, "connected"); };
+    lifecycle = createLifecycleController(targetWindow, targetDocument, refresh);
+    runtime.sendMessage({ type: "REVIEW_FRAME_READY" }, () => undefined);
+  }).catch((error: unknown) => {
+    attempts += 1;
+    if (!stopped && attempts < 25 && error instanceof Error && error.message === "Review context unavailable") retryTimer = scheduleRetry(obtain, retryDelay);
+  });
+  obtain();
+  return () => { stopped = true; if (retryTimer !== undefined) cancelRetry(retryTimer); lifecycle?.teardown(); overlay?.destroy(); };
 }

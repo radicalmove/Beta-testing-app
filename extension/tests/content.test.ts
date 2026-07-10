@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Window } from "happy-dom";
 
-import { bootstrapContentScript, createLifecycleController, isConfiguredFrame, startCourseReview } from "../src/content.ts";
+import { bootstrapContentScript, createLifecycleController, isConfiguredFrame, startCourseReview, startEmbeddedReview } from "../src/content.ts";
 
 test("content activates on configured Moodle patterns", () => {
   assert.equal(isConfiguredFrame("https://moodle.example.invalid/course/view.php?id=1", ["https://moodle.example.invalid/*"], []), true);
@@ -125,4 +125,39 @@ test("real content-script startup does not require chrome.permissions", async ()
       __OPTIONAL_FRAME_PATTERNS__: originalOptional,
     });
   }
+});
+
+test("embedded review obtains trusted course context and updates its hash page identity", async () => {
+  const window = new Window({ url: "https://rise.example/activity#/lesson/1" });
+  window.document.title = "Lesson 1"; window.document.body.innerHTML = "<p>Review phrase</p>";
+  const messages: unknown[] = [];
+  const runtime = { sendMessage: (message: unknown, callback: (response: any) => void) => {
+    messages.push(message);
+    if ((message as any).type === "GET_REVIEW_CONTEXT") callback({ ok: true, data: { course_id: "123e4567-e89b-12d3-a456-426614174000", course_title: "Law", parent_activity_url: "https://learn.example/mod/scorm/player.php?cmid=22" } });
+    else callback({ ok: true, data: {} });
+  } };
+  const cleanup = startEmbeddedReview(window as unknown as globalThis.Window & typeof globalThis, window.document as unknown as Document, runtime);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const host = window.document.querySelector("#moodle-course-review-overlay") as unknown as HTMLElement;
+  assert.match(host.shadowRoot!.textContent!, /Course: Law/);
+  assert.match(host.shadowRoot!.textContent!, /Embedded activity · Lesson 1/);
+  window.location.hash = "/lesson/2"; window.document.title = "Lesson 2"; window.dispatchEvent(new window.Event("hashchange"));
+  await new Promise((resolve) => setTimeout(resolve, 140));
+  assert.match(host.shadowRoot!.textContent!, /Embedded activity · Lesson 2/);
+  assert.ok(messages.some((message: any) => message.type === "REVIEW_FRAME_READY"));
+  cleanup();
+});
+
+test("embedded review retries while the top frame is still resolving", async () => {
+  const window = new Window({ url: "https://moodle.example.invalid/embedded" });
+  let attempts = 0;
+  const runtime = { sendMessage: (message: any, callback: (response: any) => void) => {
+    if (message.type === "GET_REVIEW_CONTEXT") { attempts += 1; callback(attempts === 1 ? { ok: false, error: "Review context unavailable" } : { ok: true, data: { course_id: "123e4567-e89b-12d3-a456-426614174000", course_title: "Law", parent_activity_url: "https://moodle.example/mod/scorm/player.php?cmid=22" } }); return; }
+    callback({ ok: true, data: {} });
+  } };
+  const cleanup = startEmbeddedReview(window as unknown as globalThis.Window & typeof globalThis, window.document as unknown as Document, runtime, 0);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(attempts, 2);
+  assert.ok(window.document.querySelector("#moodle-course-review-overlay"));
+  cleanup();
 });
