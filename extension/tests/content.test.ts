@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Window } from "happy-dom";
 
-import { bootstrapContentScript, createLifecycleController, isConfiguredFrame, startCourseReview, startEmbeddedReview } from "../src/content.ts";
+import { bootstrapContentScript, countInaccessibleFrames, createLifecycleController, isConfiguredFrame, startCourseReview, startEmbeddedReview } from "../src/content.ts";
 
 test("content activates on configured Moodle patterns", () => {
   assert.equal(isConfiguredFrame("https://moodle.example.invalid/course/view.php?id=1", ["https://moodle.example.invalid/*"], []), true);
@@ -159,5 +159,47 @@ test("embedded review retries while the top frame is still resolving", async () 
   await new Promise((resolve) => setTimeout(resolve, 10));
   assert.equal(attempts, 2);
   assert.ok(window.document.querySelector("#moodle-course-review-overlay"));
+  cleanup();
+});
+
+test("counts only inaccessible iframe DOMs", () => {
+  const window = new Window();
+  window.document.body.innerHTML = "<iframe id=accessible></iframe><iframe id=blocked></iframe>";
+  const accessible = window.document.querySelector("#accessible")!;
+  const blocked = window.document.querySelector("#blocked")!;
+  Object.defineProperty(accessible, "contentDocument", { value: window.document });
+  Object.defineProperty(blocked, "contentDocument", { value: null });
+  assert.equal(countInaccessibleFrames(window.document as unknown as Document), 1);
+});
+
+test("mixed ready and inaccessible frames keep fallback and persist the exact label in page title", async () => {
+  const window = new Window({ url: "https://moodle.example.invalid/course/view.php?id=1" });
+  window.document.title = "Week 2";
+  window.document.body.innerHTML = "<h1>Week 2</h1><iframe id=accessible></iframe><iframe id=blocked></iframe>";
+  Object.defineProperty(window.document.querySelector("#accessible")!, "contentDocument", { value: window.document });
+  Object.defineProperty(window.document.querySelector("#blocked")!, "contentDocument", { value: null });
+  const messages: any[] = [];
+  const runtime = { sendMessage: (message: any, callback: (response: any) => void) => {
+    messages.push(message);
+    if (message.type === "RESOLVE_COURSE") callback({ ok: true, data: { id: "123e4567-e89b-12d3-a456-426614174000" } });
+    else if (message.type === "GET_REVIEW_FRAME_STATUS") callback({ ok: true, data: { ready_count: 1 } });
+    else callback({ ok: true, data: {} });
+  } };
+  const cleanup = startCourseReview(window as unknown as globalThis.Window & typeof globalThis, window.document as unknown as Document, runtime);
+  await new Promise((resolve) => setTimeout(resolve, 280));
+  const shadow = window.document.querySelector("#moodle-course-review-overlay")!.shadowRoot! as unknown as ShadowRoot;
+  assert.match(shadow.textContent!, /embedded content—frame access unavailable/);
+  (shadow.querySelector("[data-parent-pin]") as HTMLElement).click();
+  const target = window.document.querySelector("h1") as unknown as HTMLElement;
+  target.getBoundingClientRect = () => ({ x: 0, y: 0, left: 0, top: 0, right: 100, bottom: 100, width: 100, height: 100, toJSON: () => ({}) });
+  window.document.elementFromPoint = (() => target) as unknown as typeof window.document.elementFromPoint;
+  window.document.dispatchEvent(new window.PointerEvent("pointerdown", { clientX: 1, clientY: 1, bubbles: true }));
+  const textarea = shadow.querySelector("textarea") as HTMLTextAreaElement;
+  textarea.value = "User text remains unchanged";
+  (shadow.querySelector("[data-save]") as HTMLElement).click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const create = messages.find((message) => message.type === "CREATE_COMMENT");
+  assert.equal(create.payload.body, "User text remains unchanged");
+  assert.equal(create.payload.page_title, "Week 2 — embedded content—frame access unavailable");
   cleanup();
 });

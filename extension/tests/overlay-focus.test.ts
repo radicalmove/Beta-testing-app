@@ -90,3 +90,21 @@ test("overlay uses a unique shadow host and scoped styles", () => {
   assert.match(overlayStyles, /:host\{[^}]*position:fixed[^}]*z-index:2147483647[^}]*isolation:isolate[^}]*display:block/);
   assert.doesNotMatch(overlayStyles, /(?:^|})\s*(?:body|html)\s*\{/);
 });
+
+test("unresolved anchors render an accessible compact list with context hooks and hide when empty", () => {
+  const window = new Window();
+  const document = window.document as unknown as Document;
+  const requested: string[] = [];
+  const overlay = mountReviewOverlay(document, context, "connected", { onTakeToContext: (id) => requested.push(id) });
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  overlay.setUnresolvedAnchors([{ id: "c1", label: "Comment one", quote: "missing words" }, { id: "c2", label: "Comment two" }]);
+  const region = shadow.querySelector<HTMLElement>("[data-unresolved]")!;
+  assert.equal(region.hidden, false);
+  assert.match(region.textContent!, /Unresolved comment anchors/);
+  assert.match(region.textContent!, /missing words/);
+  assert.equal(region.querySelectorAll("li").length, 2);
+  (region.querySelector('[data-comment-id="c1"]') as HTMLElement).click();
+  assert.deepEqual(requested, ["c1"]);
+  overlay.setUnresolvedAnchors([]);
+  assert.equal(region.hidden, true);
+});

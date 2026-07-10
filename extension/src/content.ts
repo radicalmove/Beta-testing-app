@@ -98,11 +98,16 @@ function currentContext(targetWindow: Window & typeof globalThis, targetDocument
   });
 }
 
-export function hasInaccessibleFrame(targetDocument: Document): boolean {
+export function countInaccessibleFrames(targetDocument: Document): number {
+  let count = 0;
   for (const frame of Array.from(targetDocument.querySelectorAll("iframe"))) {
-    try { if (!frame.contentDocument) return true; } catch { return true; }
+    try { if (!frame.contentDocument) count += 1; } catch { count += 1; }
   }
-  return false;
+  return count;
+}
+
+export function hasInaccessibleFrame(targetDocument: Document): boolean {
+  return countInaccessibleFrames(targetDocument) > 0;
 }
 
 export function createLifecycleController(targetWindow: Window & typeof globalThis, targetDocument: Document, refresh: () => void, delay = 120): { teardown(): void; flush(): void } {
@@ -141,9 +146,11 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
   let context = currentContext(targetWindow, targetDocument);
   let courseId: string | undefined;
   const send = <T>(message: unknown) => new Promise<T>((resolve, reject) => runtime.sendMessage(message, (response) => response?.ok ? resolve(response.data as T) : reject(new Error(response?.error ?? "Review service unavailable"))));
-  let overlay: ReviewOverlay = mountReviewOverlay(targetDocument, context, "connecting", { submit: async ({ body, category, anchor, screenshot }) => {
+  let overlay: ReviewOverlay = mountReviewOverlay(targetDocument, context, "connecting", { submit: async ({ body, category, anchor, screenshot, embeddedFrameUnavailable }) => {
     if (!courseId) throw new Error("Course is not connected yet.");
-    await send({ type: "CREATE_COMMENT", payload: { course_id: courseId, page_url: context.page_url, page_title: context.pageTitle, body, category, ...anchor }, screenshot });
+    const fallbackSuffix = " — embedded content—frame access unavailable";
+    const pageTitle = embeddedFrameUnavailable ? `${context.pageTitle.slice(0, 512 - fallbackSuffix.length)}${fallbackSuffix}` : context.pageTitle;
+    await send({ type: "CREATE_COMMENT", payload: { course_id: courseId, page_url: context.page_url, page_title: pageTitle, body, category, ...anchor }, screenshot });
   } });
   let lastSignature = "";
   let requestSequence = 0;
@@ -169,9 +176,12 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
   const scheduleTimeout = typeof targetWindow.setTimeout === "function" ? targetWindow.setTimeout.bind(targetWindow) : globalThis.setTimeout;
   const cancelTimeout = typeof targetWindow.clearTimeout === "function" ? targetWindow.clearTimeout.bind(targetWindow) : globalThis.clearTimeout;
   const fallbackTimer = scheduleTimeout(() => {
-    if (!hasInaccessibleFrame(targetDocument)) return;
+    const inaccessibleCount = countInaccessibleFrames(targetDocument);
+    if (!inaccessibleCount) return;
+    const frameCount = targetDocument.querySelectorAll("iframe").length;
     runtime.sendMessage({ type: "GET_REVIEW_FRAME_STATUS" }, (response) => {
-      if (!(response?.ok && (response.data as { ready?: unknown } | undefined)?.ready === true)) overlay.showFrameFallback();
+      const readyCount = (response?.data as { ready_count?: unknown } | undefined)?.ready_count;
+      if (!(response?.ok && typeof readyCount === "number" && readyCount >= frameCount)) overlay.showFrameFallback();
     });
   }, 250);
   refresh();

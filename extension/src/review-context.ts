@@ -3,7 +3,7 @@ export type StoredReviewContext = { id: string; title: string; course_url: strin
 export type FrameReviewContext = { course_id: string; course_title: string; parent_activity_url: string };
 export type ContextMessage = { type: "GET_REVIEW_CONTEXT" | "REVIEW_FRAME_READY" | "GET_REVIEW_FRAME_STATUS" };
 
-type Entry = StoredReviewContext & { extensionId: string; registeredAt: number; readyFrames: Set<number> };
+type Entry = StoredReviewContext & { extensionId: string; registeredAt: number; readyFrames: Map<number, number> };
 
 export function validateContextMessage(message: unknown): ContextMessage {
   if (!message || typeof message !== "object" || Array.isArray(message)) throw new Error("Invalid review context message");
@@ -21,7 +21,7 @@ export class ReviewContextCache {
   register(sender: ReviewSender, context: StoredReviewContext): boolean {
     const tabId = sender.tab?.id;
     if (sender.frameId !== 0 || typeof tabId !== "number" || typeof sender.id !== "string") return false;
-    this.entries.set(tabId, { ...context, extensionId: sender.id, registeredAt: this.now(), readyFrames: new Set() });
+    this.entries.set(tabId, { ...context, extensionId: sender.id, registeredAt: this.now(), readyFrames: new Map() });
     return true;
   }
 
@@ -33,12 +33,16 @@ export class ReviewContextCache {
   markReady(sender: ReviewSender): boolean {
     const entry = this.authorizedEntry(sender, true);
     if (!entry) return false;
-    entry.readyFrames.add(sender.frameId!);
+    entry.readyFrames.set(sender.frameId!, this.now());
     return true;
   }
 
-  hasReadyFrame(sender: ReviewSender): boolean {
-    return (this.authorizedEntry(sender, false)?.readyFrames.size ?? 0) > 0;
+  readyFrameCount(sender: ReviewSender): number {
+    const entry = this.authorizedEntry(sender, false);
+    if (!entry) return 0;
+    const now = this.now();
+    for (const [frameId, readyAt] of entry.readyFrames) if (now - readyAt > this.ttlMs) entry.readyFrames.delete(frameId);
+    return entry.readyFrames.size;
   }
 
   removeTab(tabId: number): void { this.entries.delete(tabId); }

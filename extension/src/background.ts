@@ -137,7 +137,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
         if (!reviewContexts.markReady(sender)) throw new Error("Review context unavailable");
         return {};
       }
-      return { ready: reviewContexts.hasReadyFrame(sender) };
+      return { ready_count: reviewContexts.readyFrameCount(sender) };
     })();
   }
   if (!operation) return false;

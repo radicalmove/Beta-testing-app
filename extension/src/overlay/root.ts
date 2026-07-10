@@ -4,7 +4,7 @@ import { renderTextHighlight } from "../anchors/recover.ts";
 import { capturePinAnchor, renderPin, type PinAnchor } from "../anchors/pin.ts";
 
 export const OVERLAY_HOST_ID = "moodle-course-review-overlay";
-export const overlayStyles = `:host{--review-navy:#16324f;--review-teal:#087f78;--review-pale:#edf7f6;--review-line:#c8d9dc;all:initial;position:fixed!important;inset:auto!important;z-index:2147483647!important;isolation:isolate;display:block!important;color:#152a38;font:14px/1.4 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.shell{position:fixed;right:18px;bottom:18px;z-index:2147483647;max-width:min(560px,calc(100vw - 36px));background:#fff;border:1px solid var(--review-line);border-radius:12px;box-shadow:0 10px 32px #16324f33;overflow:hidden}.toolbar{display:flex;align-items:center;gap:8px;padding:8px;background:var(--review-navy);color:#fff}.identity{min-width:0;padding:0 6px;flex:1}.course,.page{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.course{font-weight:700}.page{font-size:12px;color:#d7e8ec}button,select,textarea{font:inherit}button{appearance:none;border:1px solid #ffffff66;border-radius:7px;background:#fff;color:var(--review-navy);font-weight:650;padding:7px 9px;cursor:pointer}button:hover{background:var(--review-pale)}button:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid #f5b642;outline-offset:2px}.icon{padding:7px 10px}.status{display:flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap}.dot{width:8px;height:8px;border-radius:50%;background:#f5b642}.connected .dot{background:#42d3b4}.signed-out .dot,.offline .dot{background:#ff8d85}.panel{padding:10px;background:#fff;border-top:1px solid var(--review-line)}.panel[hidden]{display:none}.backdrop{position:fixed;inset:0;background:#0b1f3380;display:grid;place-items:center;z-index:2147483647}.dialog{width:min(420px,calc(100vw - 32px));background:#fff;border-radius:12px;padding:18px;box-shadow:0 16px 44px #0005}.dialog h2{margin:0 0 10px;color:var(--review-navy);font-size:18px}.dialog textarea{box-sizing:border-box;width:100%;min-height:110px;border:1px solid var(--review-line);border-radius:7px;padding:8px}.field{display:grid;gap:4px;margin-top:9px}.preview{padding:8px;border-radius:7px;background:var(--review-pale);font-size:12px}.error{color:#a51d24}.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}.primary{background:var(--review-teal);color:#fff;border-color:var(--review-teal)}`;
+export const overlayStyles = `:host{--review-navy:#16324f;--review-teal:#087f78;--review-pale:#edf7f6;--review-line:#c8d9dc;all:initial;position:fixed!important;inset:auto!important;z-index:2147483647!important;isolation:isolate;display:block!important;color:#152a38;font:14px/1.4 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.shell{position:fixed;right:18px;bottom:18px;z-index:2147483647;max-width:min(560px,calc(100vw - 36px));background:#fff;border:1px solid var(--review-line);border-radius:12px;box-shadow:0 10px 32px #16324f33;overflow:hidden}.toolbar{display:flex;align-items:center;gap:8px;padding:8px;background:var(--review-navy);color:#fff}.identity{min-width:0;padding:0 6px;flex:1}.course,.page{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.course{font-weight:700}.page{font-size:12px;color:#d7e8ec}button,select,textarea{font:inherit}button{appearance:none;border:1px solid #ffffff66;border-radius:7px;background:#fff;color:var(--review-navy);font-weight:650;padding:7px 9px;cursor:pointer}button:hover{background:var(--review-pale)}button:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid #f5b642;outline-offset:2px}.icon{padding:7px 10px}.status{display:flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap}.dot{width:8px;height:8px;border-radius:50%;background:#f5b642}.connected .dot{background:#42d3b4}.signed-out .dot,.offline .dot{background:#ff8d85}.panel,[data-unresolved]{padding:10px;background:#fff;border-top:1px solid var(--review-line)}.panel[hidden],[data-unresolved][hidden]{display:none}[data-unresolved] h2{margin:0;font-size:14px}[data-unresolved] ul{display:grid;gap:6px;margin:6px 0 0;padding:0;list-style:none}[data-unresolved] li{display:flex;align-items:center;justify-content:space-between;gap:8px}.backdrop{position:fixed;inset:0;background:#0b1f3380;display:grid;place-items:center;z-index:2147483647}.dialog{width:min(420px,calc(100vw - 32px));background:#fff;border-radius:12px;padding:18px;box-shadow:0 16px 44px #0005}.dialog h2{margin:0 0 10px;color:var(--review-navy);font-size:18px}.dialog textarea{box-sizing:border-box;width:100%;min-height:110px;border:1px solid var(--review-line);border-radius:7px;padding:8px}.field{display:grid;gap:4px;margin-top:9px}.preview{padding:8px;border-radius:7px;background:var(--review-pale);font-size:12px}.error{color:#a51d24}.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}.primary{background:var(--review-teal);color:#fff;border-color:var(--review-teal)}`;
 
 export type ConnectionStatus = "connecting" | "connected" | "pending" | "signed-out" | "offline";
 const statusLabels: Record<ConnectionStatus, string> = { connecting: "Connecting", connected: "Connected", pending: "Account pending", "signed-out": "Signed out", offline: "Offline" };
@@ -22,8 +22,9 @@ export function handleDialogKey(input: { key: string; shiftKey: boolean; activeI
 }
 
 export type CommentAnchor = ({ anchor_type: "text_highlight" } & TextAnchor) | ({ anchor_type: "visual_pin" } & PinAnchor);
-export type ReviewOverlayOptions = { submit?: (input: { body: string; category: string; anchor: CommentAnchor; screenshot: boolean }) => Promise<void>; onFrameFallback?: () => void };
-export type ReviewOverlay = { update(context: CourseContext, status: ConnectionStatus): void; showFrameFallback(): void; destroy(): void };
+export type UnresolvedAnchor = { id: string; label: string; quote?: string };
+export type ReviewOverlayOptions = { submit?: (input: { body: string; category: string; anchor: CommentAnchor; screenshot: boolean; embeddedFrameUnavailable: boolean }) => Promise<void>; onFrameFallback?: () => void; onTakeToContext?: (id: string) => void };
+export type ReviewOverlay = { update(context: CourseContext, status: ConnectionStatus): void; showFrameFallback(): void; setUnresolvedAnchors(anchors: UnresolvedAnchor[]): void; destroy(): void };
 
 export function mountReviewOverlay(document: Document, context: CourseContext, status: ConnectionStatus = "connecting", options: ReviewOverlayOptions = {}): ReviewOverlay {
   const existing = document.getElementById(OVERLAY_HOST_ID) as HTMLElement | null;
@@ -47,7 +48,8 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   let returnFocus: HTMLElement | null = null;
   let previewCleanup: (() => void) | undefined;
   let pinListener: ((event: PointerEvent) => void) | undefined;
-  const cancelPin = (event: KeyboardEvent) => { if (event.key === "Escape" && pinListener) { ownerDocument.removeEventListener("pointerdown", pinListener, true); ownerDocument.removeEventListener("keydown", cancelPin, true); pinListener = undefined; shadow.querySelector<HTMLElement>(".panel")!.hidden = true; returnFocus?.focus(); } };
+  let fallbackPin = false;
+  const cancelPin = (event: KeyboardEvent) => { if (event.key === "Escape" && pinListener) { ownerDocument.removeEventListener("pointerdown", pinListener, true); ownerDocument.removeEventListener("keydown", cancelPin, true); pinListener = undefined; fallbackPin = false; shadow.querySelector<HTMLElement>(".panel")!.hidden = true; returnFocus?.focus(); } };
   const mount = () => {
     const style = shadow.querySelector("style");
     shadow.innerHTML = "";
@@ -72,7 +74,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     }
   };
   const cleanupPreview = () => { previewCleanup?.(); previewCleanup = undefined; };
-  const closeDialog = () => { shadow.querySelector(".backdrop")?.remove(); cleanupPreview(); returnFocus?.focus(); };
+  const closeDialog = () => { shadow.querySelector(".backdrop")?.remove(); cleanupPreview(); fallbackPin = false; returnFocus?.focus(); };
   const openDialog = (trigger: HTMLElement, label: string, anchor: CommentAnchor) => {
     returnFocus = trigger;
     const backdrop = ownerDocument.createElement("div");
@@ -92,7 +94,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
       if (anchor.anchor_type === "text_highlight" && !anchor.selected_quote) { error.textContent = "Select text on the page before saving."; error.hidden = false; returnFocus?.focus(); return; }
       if (!textarea.value.trim()) { error.textContent = "Enter a comment before saving."; error.hidden = false; textarea.focus(); return; }
       const save = backdrop.querySelector<HTMLButtonElement>("[data-save]")!; save.disabled = true; error.hidden = true;
-      try { await options.submit?.({ body: textarea.value.trim(), category: backdrop.querySelector<HTMLSelectElement>("select")!.value, anchor, screenshot: backdrop.querySelector<HTMLInputElement>("[data-screenshot]")!.checked }); closeDialog(); }
+      try { await options.submit?.({ body: textarea.value.trim(), category: backdrop.querySelector<HTMLSelectElement>("select")!.value, anchor, screenshot: backdrop.querySelector<HTMLInputElement>("[data-screenshot]")!.checked, embeddedFrameUnavailable: fallbackPin }); fallbackPin = false; closeDialog(); }
       catch (caught) { error.textContent = caught instanceof Error ? caught.message : "Could not save comment."; error.hidden = false; save.disabled = false; }
     });
     shadow.append(backdrop);
@@ -128,7 +130,27 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     showFrameFallback() {
       const panel = shadow.querySelector<HTMLElement>(".panel")!; panel.hidden = false;
       panel.innerHTML = `<strong>embedded content—frame access unavailable</strong><p>Place a pin on the embedded content instead.</p><button type="button" data-parent-pin>Place parent-page pin</button>`;
-      panel.querySelector<HTMLElement>("[data-parent-pin]")?.addEventListener("click", () => { options.onFrameFallback?.(); shadow.querySelector<HTMLElement>('[data-action="pin"]')?.click(); });
+      panel.querySelector<HTMLElement>("[data-parent-pin]")?.addEventListener("click", () => { fallbackPin = true; options.onFrameFallback?.(); shadow.querySelector<HTMLElement>('[data-action="pin"]')?.click(); });
+    },
+    setUnresolvedAnchors(anchors) {
+      let region = shadow.querySelector<HTMLElement>("[data-unresolved]");
+      if (!region) {
+        region = ownerDocument.createElement("section");
+        region.dataset.unresolved = "true";
+        region.setAttribute("aria-labelledby", "unresolved-anchor-heading");
+        shadow.querySelector(".shell")?.append(region);
+      }
+      region.hidden = anchors.length === 0;
+      if (!anchors.length) { region.replaceChildren(); return; }
+      const heading = ownerDocument.createElement("h2"); heading.id = "unresolved-anchor-heading"; heading.textContent = "Unresolved comment anchors";
+      const list = ownerDocument.createElement("ul");
+      for (const anchor of anchors) {
+        const item = ownerDocument.createElement("li");
+        const label = ownerDocument.createElement("span"); label.textContent = anchor.quote ? `${anchor.label}: “${anchor.quote}”` : anchor.label;
+        const button = ownerDocument.createElement("button"); button.type = "button"; button.dataset.commentId = anchor.id; button.textContent = "Take me to context";
+        button.addEventListener("click", () => options.onTakeToContext?.(anchor.id)); item.append(label, button); list.append(item);
+      }
+      region.replaceChildren(heading, list);
     },
     destroy() { if (pinListener) ownerDocument.removeEventListener("pointerdown", pinListener, true); ownerDocument.removeEventListener("keydown", cancelPin, true); cleanupPreview(); host.remove(); },
   };

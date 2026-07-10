@@ -35,6 +35,22 @@ test("context control messages have strict empty schemas", () => {
 
 test("ready state is tab-scoped and cleared by tab removal", () => {
   const cache = new ReviewContextCache(); cache.register(top, context);
-  assert.equal(cache.markReady(frame), true); assert.equal(cache.hasReadyFrame(top), true);
-  cache.removeTab(4); assert.equal(cache.hasReadyFrame(top), false);
+  assert.equal(cache.markReady(frame), true); assert.equal(cache.readyFrameCount(top), 1);
+  cache.removeTab(4); assert.equal(cache.readyFrameCount(top), 0);
+});
+
+test("ready frame ids are unique, expire independently, and reset with context", () => {
+  let now = 100;
+  const cache = new ReviewContextCache(10, () => now);
+  cache.register(top, context);
+  assert.equal(cache.markReady(frame), true);
+  assert.equal(cache.markReady(frame), true);
+  assert.equal(cache.markReady({ ...frame, frameId: 8 }), true);
+  assert.equal(cache.readyFrameCount(top), 2);
+  now = 111;
+  assert.equal(cache.readyFrameCount(top), 0);
+  cache.register(top, context);
+  assert.equal(cache.markReady(frame), true);
+  cache.register(top, { ...context, title: "Fresh context" });
+  assert.equal(cache.readyFrameCount(top), 0);
 });
