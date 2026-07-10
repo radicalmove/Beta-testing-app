@@ -90,3 +90,28 @@ test("DOM extraction prefers breadcrumb course title and supports course boundar
   assert.equal(courseTitleFromDocument(document), "Criminal Law");
   assert.equal(canonicalCourseUrlFromDocument(document), "/course/view.php?id=82");
 });
+
+test("DOM course URL extraction follows trust priority rather than DOM order", () => {
+  const window = new Window({ url: "https://learn.example/mod/page/view.php?id=9" });
+  window.document.body.innerHTML = `<a href="/course/view.php?id=11">Unrelated course</a><nav class="breadcrumb"><a href="/course/view.php?id=82">Criminal Law</a></nav><main data-course-url="/course/view.php?id=91"></main>`;
+  assert.equal(canonicalCourseUrlFromDocument(window.document as unknown as Document), "/course/view.php?id=91");
+
+  window.document.querySelector("[data-course-url]")?.remove();
+  assert.equal(canonicalCourseUrlFromDocument(window.document as unknown as Document), "/course/view.php?id=82");
+});
+
+test("DOM course URL extraction ignores random course links", () => {
+  const window = new Window({ url: "https://learn.example/mod/page/view.php?id=9" });
+  window.document.body.innerHTML = `<main><a href="/course/view.php?id=999">Visit another course</a></main>`;
+  assert.equal(canonicalCourseUrlFromDocument(window.document as unknown as Document), undefined);
+});
+
+test("canonical link is accepted only for the current course page", () => {
+  const current = new Window({ url: "https://learn.example/course/view.php?id=82" });
+  current.document.head.innerHTML = `<link rel="canonical" href="https://learn.example/course/view.php?id=82">`;
+  assert.equal(canonicalCourseUrlFromDocument(current.document as unknown as Document), "https://learn.example/course/view.php?id=82");
+
+  const lesson = new Window({ url: "https://learn.example/mod/page/view.php?id=9" });
+  lesson.document.head.innerHTML = `<link rel="canonical" href="https://learn.example/course/view.php?id=999">`;
+  assert.equal(canonicalCourseUrlFromDocument(lesson.document as unknown as Document), undefined);
+});

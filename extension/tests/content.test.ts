@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Window } from "happy-dom";
 
-import { bootstrapContentScript, createLifecycleController, isConfiguredFrame } from "../src/content.ts";
+import { bootstrapContentScript, createLifecycleController, isConfiguredFrame, startCourseReview } from "../src/content.ts";
 
 test("content activates on configured Moodle patterns", () => {
   assert.equal(isConfiguredFrame("https://moodle.example.invalid/course/view.php?id=1", ["https://moodle.example.invalid/*"], []), true);
@@ -37,26 +37,58 @@ test("content activates in an optional frame only when host permission is grante
   assert.equal(isConfiguredFrame("https://rise.example.invalid/scorm/index.html", [], optional, () => false), false);
 });
 
-test("bootstrap injects only once", async () => {
+test("real bootstrap replaces its owned instance and recovers from a stale marker", async () => {
   const markers = new Set<string>();
+  const root = {
+    hasAttribute: (name: string) => markers.has(name),
+    setAttribute: (name: string) => { markers.add(name); },
+    removeAttribute: (name: string) => { markers.delete(name); },
+  };
   const documentLike = {
-    documentElement: {
-      hasAttribute: (name: string) => markers.has(name),
-      setAttribute: (name: string) => { markers.add(name); },
-    },
+    documentElement: root,
   };
   let injections = 0;
+  let cleanups = 0;
   const options = {
     url: "https://moodle.example.invalid/course/view.php?id=1",
     document: documentLike,
     moodlePatterns: ["https://moodle.example.invalid/*"],
     optionalFramePatterns: [],
-    inject: () => { injections += 1; },
+    inject: () => { injections += 1; return () => { cleanups += 1; }; },
   };
 
   assert.equal(await bootstrapContentScript(options), true);
-  assert.equal(await bootstrapContentScript(options), false);
-  assert.equal(injections, 1);
+  assert.equal(await bootstrapContentScript(options), true);
+  assert.equal(injections, 2);
+  assert.equal(cleanups, 1);
+  assert.equal(markers.has("data-moodle-review-extension"), true);
+
+  for (const symbol of Object.getOwnPropertySymbols(root)) delete (root as Record<symbol, unknown>)[symbol];
+  assert.equal(await bootstrapContentScript(options), true);
+  assert.equal(injections, 3);
+  assert.equal(markers.has("data-moodle-review-extension"), true);
+});
+
+test("bootstrap wired to the real start entry tears down the old overlay instance", async () => {
+  const window = new Window({ url: "https://moodle.example.invalid/course/view.php?id=1" });
+  window.document.body.innerHTML = "<h1>Law</h1>";
+  let messages = 0;
+  const runtime = { sendMessage: (_message: unknown, callback: (response: { ok: boolean }) => void) => { messages += 1; callback({ ok: true }); } };
+  const options = {
+    url: window.location.href,
+    document: window.document as unknown as Document,
+    moodlePatterns: ["https://moodle.example.invalid/*"],
+    optionalFramePatterns: [] as string[],
+    inject: () => startCourseReview(window as unknown as globalThis.Window & typeof globalThis, window.document as unknown as Document, runtime),
+  };
+
+  await bootstrapContentScript(options);
+  const firstHistoryPatch = window.history.pushState;
+  await bootstrapContentScript(options);
+
+  assert.equal(window.document.querySelectorAll("#moodle-course-review-overlay").length, 1);
+  assert.notEqual(window.history.pushState, firstHistoryPatch);
+  assert.equal(messages, 2);
 });
 
 test("real content-script startup does not require chrome.permissions", async () => {

@@ -87,8 +87,22 @@ export function explicitCourseIdFromDocument(document: Document): string | undef
 }
 
 export function canonicalCourseUrlFromDocument(document: Document): string | undefined {
-  const element = document.querySelector<HTMLElement>('[data-course-url], [data-courseurl], link[rel="course"], a[data-course-link], .breadcrumb a[href*="/course/view.php"], a[href*="/course/view.php"]');
-  return element?.dataset.courseUrl || element?.getAttribute("href") || undefined;
+  for (const selector of ["[data-course-url]", "[data-courseurl]", 'link[rel="course"]', "a[data-course-link]", '.breadcrumb a[href*="/course/view.php"]']) {
+    const element = document.querySelector<HTMLElement>(selector);
+    const value = element?.dataset.courseUrl || element?.getAttribute("href");
+    if (value) return value;
+  }
+  const canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href;
+  if (!canonical) return undefined;
+  try {
+    const current = new URL(document.location.href);
+    const candidate = new URL(canonical, current);
+    if (/\/course\/view\.php$/i.test(current.pathname)
+      && candidate.origin === current.origin
+      && /\/course\/view\.php$/i.test(candidate.pathname)
+      && candidate.searchParams.get("id") === current.searchParams.get("id")) return canonical;
+  } catch { /* Ignore malformed or unavailable document locations. */ }
+  return undefined;
 }
 
 export function courseTitleFromDocument(document: Document): string {

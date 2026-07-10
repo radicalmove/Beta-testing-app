@@ -65,12 +65,16 @@ test("updating identity and status preserves an open typed dialog, selection, an
 test("mounting twice reuses one host and host selectors cannot reach shadow internals", () => {
   const window = new Window();
   const document = window.document as unknown as Document;
-  document.head.innerHTML = "<style>body div button{display:none}</style>";
+  document.head.innerHTML = `<style>body div button{display:none}#${OVERLAY_HOST_ID}{display:none;position:static;z-index:1}</style>`;
   mountReviewOverlay(document, context);
   mountReviewOverlay(document, context);
   assert.equal(document.querySelectorAll(`#${OVERLAY_HOST_ID}`).length, 1);
   assert.equal(document.querySelector("body div button"), null);
-  assert.ok(document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!.querySelector("button"));
+  const host = document.getElementById(OVERLAY_HOST_ID)!;
+  assert.ok(host.shadowRoot!.querySelector("button"));
+  const computed = window.getComputedStyle(host as unknown as Parameters<typeof window.getComputedStyle>[0]);
+  assert.equal(computed.display, "block");
+  assert.equal(computed.position, "fixed");
 });
 
 test("dialog keyboard controller traps focus, closes on Escape, and returns focus", () => {

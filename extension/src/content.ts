@@ -6,6 +6,13 @@ import { canonicalCourseUrlFromDocument, courseTitleFromDocument, detectCourseCo
 import { mountReviewOverlay, type ConnectionStatus, type ReviewOverlay } from "./overlay/root.ts";
 
 const MARKER = "data-moodle-review-extension";
+const OWNER = Symbol.for("moodle-course-review.content-owner");
+type MarkerRoot = {
+  hasAttribute(name: string): boolean;
+  setAttribute(name: string, value: string): void;
+  removeAttribute(name: string): void;
+};
+type OwnedRoot = MarkerRoot & { [OWNER]?: { cleanup(): void } };
 
 function matchPattern(url: string, pattern: string): boolean {
   const match = /^(\*|http|https|file|ftp):\/\/([^/]+)(\/.*)$/.exec(pattern);
@@ -34,17 +41,31 @@ export function isConfiguredFrame(
 
 export async function bootstrapContentScript(options: {
   url: string;
-  document: { documentElement: { hasAttribute(name: string): boolean; setAttribute(name: string, value: string): void } };
+  document: { documentElement: MarkerRoot };
   moodlePatterns: string[];
   optionalFramePatterns: string[];
-  inject: () => void;
+  inject: () => void | (() => void);
 }): Promise<boolean> {
   // Chrome gates static Moodle matches and background registration gates optional
   // frames, so a running content script is already authorized for this URL.
   if (!isConfiguredFrame(options.url, [...options.moodlePatterns, ...options.optionalFramePatterns], [])) return false;
-  if (options.document.documentElement.hasAttribute(MARKER)) return false;
-  options.document.documentElement.setAttribute(MARKER, "active");
-  options.inject();
+  const root = options.document.documentElement as OwnedRoot;
+  root[OWNER]?.cleanup();
+  if (root.hasAttribute(MARKER) && !root[OWNER]) root.removeAttribute(MARKER);
+  const owner = { cleanup: () => {} };
+  root[OWNER] = owner;
+  root.setAttribute(MARKER, "active");
+  const injectedCleanup = options.inject();
+  let stopped = false;
+  owner.cleanup = () => {
+    if (stopped) return;
+    stopped = true;
+    injectedCleanup?.();
+    if (root[OWNER] === owner) {
+      delete root[OWNER];
+      root.removeAttribute(MARKER);
+    }
+  };
   return true;
 }
 
@@ -56,7 +77,7 @@ if (typeof window !== "undefined" && typeof document !== "undefined") {
     optionalFramePatterns: __OPTIONAL_FRAME_PATTERNS__,
     inject: () => {
       document.documentElement.dispatchEvent(new CustomEvent("moodle-review:bootstrap"));
-      if (window.top === window) startCourseReview();
+      if (window.top === window) return startCourseReview(window, document, chrome.runtime);
     },
   });
 }
@@ -65,13 +86,13 @@ function pageLabel(document: Document): string {
   return document.querySelector<HTMLElement>("h1")?.textContent?.trim() || document.title.trim() || "Current page";
 }
 
-function currentContext(): CourseContext {
+function currentContext(targetWindow: Window & typeof globalThis, targetDocument: Document): CourseContext {
   return detectCourseContext({
-    url: window.location.href,
-    title: courseTitleFromDocument(document),
-    pageTitle: pageLabel(document),
-    explicitCourseId: explicitCourseIdFromDocument(document),
-    canonicalCourseUrl: canonicalCourseUrlFromDocument(document),
+    url: targetWindow.location.href,
+    title: courseTitleFromDocument(targetDocument),
+    pageTitle: pageLabel(targetDocument),
+    explicitCourseId: explicitCourseIdFromDocument(targetDocument),
+    canonicalCourseUrl: canonicalCourseUrlFromDocument(targetDocument),
   });
 }
 
@@ -107,14 +128,14 @@ export function createLifecycleController(targetWindow: Window & typeof globalTh
   } };
 }
 
-function startCourseReview(): () => void {
-  let context = currentContext();
-  let overlay: ReviewOverlay = mountReviewOverlay(document, context, "connecting");
+export function startCourseReview(targetWindow: Window & typeof globalThis = window, targetDocument: Document = document, runtime: { sendMessage(message: unknown, callback: (response: { ok?: boolean; status?: ConnectionStatus } | undefined) => void): void } = chrome.runtime): () => void {
+  let context = currentContext(targetWindow, targetDocument);
+  let overlay: ReviewOverlay = mountReviewOverlay(targetDocument, context, "connecting");
   let lastSignature = "";
   let requestSequence = 0;
 
   const refresh = () => {
-    const next = currentContext();
+    const next = currentContext(targetWindow, targetDocument);
     const signature = `${next.course_url}\n${next.page_url}\n${next.title}\n${next.pageTitle}\n${next.moodle_course_id ?? next.identityConfidence}`;
     if (signature === lastSignature) return;
     lastSignature = signature;
@@ -122,13 +143,13 @@ function startCourseReview(): () => void {
     overlay.update(context, "connecting");
     const sequence = ++requestSequence;
     const payload = { course_url: context.course_url, title: context.title, ...(context.moodle_course_id ? { moodle_course_id: context.moodle_course_id } : {}) };
-    chrome.runtime.sendMessage({ type: "RESOLVE_COURSE", payload }, (response: { ok?: boolean; status?: ConnectionStatus } | undefined) => {
+    runtime.sendMessage({ type: "RESOLVE_COURSE", payload }, (response) => {
       if (sequence !== requestSequence) return;
       const status: ConnectionStatus = response?.ok ? "connected" : response?.status === "signed-out" ? "signed-out" : response?.status === "pending" ? "pending" : "offline";
       overlay.update(context, status);
     });
   };
-  const lifecycle = createLifecycleController(window, document, refresh);
+  const lifecycle = createLifecycleController(targetWindow, targetDocument, refresh);
   refresh();
   return () => { lifecycle.teardown(); overlay.destroy(); };
 }

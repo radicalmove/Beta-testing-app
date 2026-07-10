@@ -26,6 +26,7 @@ export function mountReviewOverlay(document: Document, context: CourseContext, s
   const host = document.createElement("div");
   host.id = OVERLAY_HOST_ID;
   host.setAttribute("data-moodle-review-ui", "true");
+  host.style.cssText = "all:initial;position:fixed;z-index:2147483647;isolation:isolate;display:block";
   document.documentElement.append(host);
   const shadow = host.attachShadow({ mode: "open" });
   const style = document.createElement("style");

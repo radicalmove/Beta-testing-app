@@ -52,7 +52,6 @@ export async function handleResolveCourseBridge(
   try { senderUrl = new URL(sender.url ?? ""); } catch { throw new Error("Unauthorized RESOLVE_COURSE sender"); }
   const courseUrl = new URL(payload.course_url);
   if (courseUrl.origin !== senderUrl.origin) throw new Error("RESOLVE_COURSE course origin must match sender origin");
-  if (!courseUrl.pathname.startsWith("/") || /\/\.\.?\//.test(courseUrl.pathname)) throw new Error("Invalid RESOLVE_COURSE course path");
   if (!await dependencies.authorize(sender)) throw new Error("Unauthorized RESOLVE_COURSE sender");
   return dependencies.resolve(payload);
 }
