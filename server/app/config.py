@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     app_name: str = "Moodle Course Review"
     database_url: str = "sqlite+pysqlite:///:memory:"
     log_level: str = "INFO"
+    extension_redirect_uris: str = ""
+    bootstrap_admin_email: str | None = None
+    bootstrap_admin_password: str | None = None
+    dashboard_session_hours: int = 8
 
 
 @lru_cache

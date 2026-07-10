@@ -1,0 +1,4 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Request access</title><link rel="stylesheet" href="/static/app.css"></head>
+<body><main class="auth-card"><p class="eyebrow">Moodle Course Review</p><h1>Request access</h1><p>Your account will be reviewed before you can sign in.</p>
+<form method="post" action="/register"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><label>Email<input type="email" name="email" required></label><label>Password <small>At least 12 characters</small><input type="password" name="password" minlength="12" required></label><button>Request access</button></form><p>Already approved? <a href="/login">Sign in</a></p></main></body></html>

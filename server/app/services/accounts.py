@@ -4,7 +4,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session as DbSession
 
 from app.models import AuditEvent, ExtensionLoginCode, Session, User, UserRole
-from app.security import generate_token, hash_password, token_hash, utc_now
+from app.security import generate_token, hash_password, token_hash, utc_now, verify_password
 
 
 class AuthenticationError(Exception):
@@ -22,6 +22,42 @@ class AuthorizationError(Exception):
 def register_account(db: DbSession, *, email: str, password: str) -> User:
     user = User(email=email.strip().lower(), password_hash=hash_password(password), created_at=utc_now())
     db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def authenticate_account(db: DbSession, *, email: str, password: str) -> User:
+    user = db.scalar(select(User).where(User.email == email.strip().lower()))
+    if user is None or not verify_password(user.password_hash, password):
+        raise AuthenticationError("Invalid email or password")
+    _approved(user)
+    return user
+
+
+def approve_account(db: DbSession, actor: User, user: User) -> User:
+    if actor.role is not UserRole.ADMIN or actor.approved_at is None:
+        raise AuthorizationError("Only approved administrators can approve accounts")
+    if user.approved_at is None:
+        user.approved_at = utc_now()
+        db.add(AuditEvent(actor_user_id=actor.id, action="user.approved", entity_type="user", entity_id=str(user.id), details=None, created_at=utc_now()))
+        db.commit()
+        db.refresh(user)
+    return user
+
+
+def provision_bootstrap_admin(db: DbSession, *, email: str, password: str) -> User | None:
+    """Provision exactly one admin from deployment secrets, never from a web request."""
+    if db.scalar(select(User).where(User.role == UserRole.ADMIN)) is not None:
+        return None
+    instant = utc_now()
+    user = User(email=email.strip().lower(), password_hash=hash_password(password), role=UserRole.ADMIN, approved_at=instant, created_at=instant)
+    db.add(user)
+    db.flush()
+    db.add_all([
+        AuditEvent(actor_user_id=None, action="user.approved", entity_type="user", entity_id=str(user.id), details="bootstrap", created_at=instant),
+        AuditEvent(actor_user_id=None, action="user.role_changed", entity_type="user", entity_id=str(user.id), details=f"{UserRole.BETA_TESTER.value}->{UserRole.ADMIN.value}:bootstrap", created_at=instant),
+    ])
     db.commit()
     db.refresh(user)
     return user
