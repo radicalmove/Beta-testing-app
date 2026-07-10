@@ -8,7 +8,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.db import Base, get_session
 from app.main import create_app
-from app.models import Comment, Course, PageLocation, User, UserRole
+from app.models import Comment, CommentReadState, CommentStatus, Course, PageLocation, User, UserRole
 from app.services.accounts import register_account
 from app.services.comments import create_comment, create_reply
 
@@ -88,6 +88,180 @@ def test_thread_is_readable_replyable_and_status_actions_are_csrf_protected(dash
     csrf = dashboard_client.cookies["csrf_token"]
     changed = dashboard_client.post(f"/dashboard/threads/{comment_id}/status", data={"status": "in_progress", "csrf_token": csrf}, follow_redirects=False)
     assert changed.status_code == 303
+
+
+@pytest.mark.parametrize(
+    ("current", "expected", "disabled"),
+    [
+        ("in_progress", {"in_progress", "awaiting_sme", "resolved", "deferred"}, False),
+        ("awaiting_sme", {"awaiting_sme", "in_progress", "resolved", "deferred"}, False),
+        ("resolved", {"resolved"}, True),
+        ("deferred", {"deferred"}, True),
+    ],
+)
+def test_status_control_selects_current_state_and_only_offers_valid_transitions(dashboard_client, current, expected, disabled):
+    import re
+
+    comment_id, _ = seed(dashboard_client)
+    db = dashboard_client.db_factory()
+    comment = db.get(Comment, comment_id)
+    comment.status = CommentStatus(current)
+    db.commit()
+    login(dashboard_client, f"lead-{current}@example.test", UserRole.LD_DCD)
+
+    html = dashboard_client.get(f"/dashboard/threads/{comment_id}").text
+    select = re.search(r'<select id="status".*?</select>', html).group()
+    assert set(re.findall(r'<option value="([^"]+)"', select)) == expected
+    assert re.search(r'<option value="([^"]+)"\s+selected', select).group(1) == current
+    assert ('disabled aria-disabled="true"' in select) is disabled
+    status_form = re.search(r'<form method="post" action="[^"]+/status">.*?</form>', html).group()
+    assert ('<button disabled aria-disabled="true">' in status_form) is disabled
+
+
+@pytest.mark.parametrize(
+    ("current", "target", "expected_status"),
+    [
+        ("in_progress", "awaiting_sme", 303),
+        ("awaiting_sme", "resolved", 303),
+        ("resolved", "in_progress", 422),
+        ("deferred", "in_progress", 422),
+    ],
+)
+def test_status_submission_obeys_rendered_transition_contract(dashboard_client, current, target, expected_status):
+    comment_id, _ = seed(dashboard_client)
+    db = dashboard_client.db_factory()
+    db.get(Comment, comment_id).status = CommentStatus(current)
+    db.commit()
+    login(dashboard_client, f"status-{current}-{target}@example.test", UserRole.LD_DCD)
+    dashboard_client.get(f"/dashboard/threads/{comment_id}")
+    response = dashboard_client.post(
+        f"/dashboard/threads/{comment_id}/status",
+        data={"status": target, "csrf_token": dashboard_client.cookies["csrf_token"]},
+        follow_redirects=False,
+    )
+    assert response.status_code == expected_status
+
+
+@pytest.mark.parametrize("user_id", ["", "not-a-uuid", "00000000-0000-0000-0000-000000000000"])
+def test_share_form_bad_or_missing_recipient_redirects_to_accessible_error(dashboard_client, user_id):
+    comment_id, _ = seed(dashboard_client)
+    login(dashboard_client, f"lead-share-{user_id or 'empty'}@example.test", UserRole.LD_DCD)
+    dashboard_client.get(f"/dashboard/threads/{comment_id}")
+    response = dashboard_client.post(
+        f"/dashboard/threads/{comment_id}/share",
+        data={"user_id": user_id, "csrf_token": dashboard_client.cookies["csrf_token"]},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    page = dashboard_client.get(response.headers["location"])
+    assert 'role="alert"' in page.text and "valid SME" in page.text
+
+
+def test_share_form_rejects_non_sme_and_unauthorized_without_server_error(dashboard_client):
+    comment_id, _ = seed(dashboard_client)
+    lead = login(dashboard_client, "lead-share@example.test", UserRole.LD_DCD)
+    dashboard_client.get(f"/dashboard/threads/{comment_id}")
+    csrf = dashboard_client.cookies["csrf_token"]
+    db = dashboard_client.db_factory()
+    lead_id = db.query(User.id).filter_by(email="lead-share@example.test").scalar()
+    db.close()
+    non_sme = dashboard_client.post(f"/dashboard/threads/{comment_id}/share", data={"user_id": str(lead_id), "csrf_token": csrf}, follow_redirects=False)
+    assert non_sme.status_code == 303
+    assert 'role="alert"' in dashboard_client.get(non_sme.headers["location"]).text
+
+    dashboard_client.cookies.clear()
+    login(dashboard_client, "beta-share@example.test", UserRole.BETA_TESTER)
+    db = dashboard_client.db_factory()
+    beta_id = db.query(User.id).filter_by(email="beta-share@example.test").scalar()
+    db.get(Comment, comment_id).author_user_id = beta_id
+    db.commit()
+    dashboard_client.get(f"/dashboard/threads/{comment_id}")
+    unauthorized = dashboard_client.post(
+        f"/dashboard/threads/{comment_id}/share",
+        data={"user_id": str(beta_id), "csrf_token": dashboard_client.cookies["csrf_token"]},
+        follow_redirects=False,
+    )
+    assert unauthorized.status_code == 403
+
+
+def test_dashboard_retains_all_filter_selections(dashboard_client):
+    seed(dashboard_client)
+    login(dashboard_client, "filters@example.test", UserRole.LD_DCD)
+    html = dashboard_client.get("/dashboard?page=Welcome&category=language_grammar&author_role=beta_tester&status=open&unread=1").text
+    assert 'input name="page" value="Welcome"' in html
+    for name, value in (("category", "language_grammar"), ("author_role", "beta_tester"), ("status", "open")):
+        select = html.split(f'<select name="{name}">', 1)[1].split("</select>", 1)[0]
+        assert f'<option value="{value}" selected' in select
+    assert 'name="unread" value="1" aria-label="Unread feedback only" checked' in html
+
+
+def test_unread_requires_another_participants_reply_newer_than_read_state(dashboard_client):
+    comment_id, _ = seed(dashboard_client)
+    db = dashboard_client.db_factory()
+    beta = db.query(User).filter_by(email="beta@example.test").one()
+    no_reply = create_comment(db, beta, course_id=db.get(Comment, comment_id).course_id, page_url="https://moodle.test/no-reply", page_title="No replies", body="New thread", anchor_type="text_highlight", selected_quote="New", css_selector="#main")
+    own_reply = create_comment(db, beta, course_id=no_reply.course_id, page_url="https://moodle.test/own", page_title="Own reply", body="Thread", anchor_type="text_highlight", selected_quote="Thread", css_selector="#main")
+    create_reply(db, beta, own_reply, "My own update")
+    db.close()
+
+    login(dashboard_client, "lead-unread@example.test", UserRole.LD_DCD)
+    html = dashboard_client.get("/dashboard?unread=1").text
+    assert "Welcome page" in html
+    assert "No replies" not in html and "Own reply" in html
+
+    dashboard_client.cookies.clear()
+    dashboard_client.post("/auth/login", json={"email": "beta@example.test", "password": "long enough password"})
+    beta_html = dashboard_client.get("/dashboard?unread=1").text
+    assert "Own reply" not in beta_html
+
+    dashboard_client.cookies.clear()
+    dashboard_client.post("/auth/login", json={"email": "lead-unread@example.test", "password": "long enough password"})
+
+    dashboard_client.get(f"/dashboard/threads/{comment_id}")
+    assert "Welcome page" not in dashboard_client.get("/dashboard?unread=1").text
+    db = dashboard_client.db_factory()
+    lead = db.query(User).filter_by(email="lead-unread@example.test").one()
+    create_reply(db, lead, db.get(Comment, comment_id), "Lead's own follow-up")
+    db.close()
+    assert "Welcome page" not in dashboard_client.get("/dashboard?unread=1").text
+
+
+def test_reply_is_unread_for_other_visible_participant_but_not_its_author(dashboard_client):
+    comment_id, _ = seed(dashboard_client)
+    login(dashboard_client, "lead-other@example.test", UserRole.LD_DCD)
+    dashboard_client.get(f"/dashboard/threads/{comment_id}")
+    db = dashboard_client.db_factory()
+    lead = db.query(User).filter_by(email="lead-other@example.test").one()
+    create_reply(db, lead, db.get(Comment, comment_id), "Answer from lead")
+    db.close()
+    assert "Welcome page" not in dashboard_client.get("/dashboard?unread=1").text
+
+    dashboard_client.cookies.clear()
+    dashboard_client.post("/auth/login", json={"email": "beta@example.test", "password": "long enough password"})
+    assert "Welcome page" in dashboard_client.get("/dashboard?unread=1").text
+
+
+def test_dashboard_query_count_stays_bounded_as_threads_grow(dashboard_client):
+    from sqlalchemy import event
+
+    comment_id, _ = seed(dashboard_client)
+    db = dashboard_client.db_factory()
+    beta = db.query(User).filter_by(email="beta@example.test").one()
+    course_id = db.get(Comment, comment_id).course_id
+    for number in range(12):
+        comment = create_comment(db, beta, course_id=course_id, page_url=f"https://moodle.test/page/{number}", page_title=f"Page {number}", body="Feedback", anchor_type="text_highlight", selected_quote="Feedback", css_selector="#main")
+        create_reply(db, beta, comment, "Follow up")
+    db.close()
+    login(dashboard_client, "lead-query@example.test", UserRole.LD_DCD)
+    statements = []
+    engine = dashboard_client.db_factory.kw["bind"]
+    def count_query(*args): statements.append(args[2])
+    event.listen(engine, "before_cursor_execute", count_query)
+    try:
+        assert dashboard_client.get("/dashboard").status_code == 200
+    finally:
+        event.remove(engine, "before_cursor_execute", count_query)
+    assert len(statements) <= 8, statements
 
 
 def test_admin_is_redirected_to_admin_area_not_review_data(dashboard_client):

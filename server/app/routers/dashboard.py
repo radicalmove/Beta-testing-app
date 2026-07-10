@@ -10,7 +10,7 @@ from app.dependencies import current_dashboard_user
 from app.models import CommentCategory, CommentReadState, CommentReply, CommentStatus, CommentStatusEvent, Course, PageLocation, User, UserRole
 from app.routers.auth import _form_with_csrf
 from app.security import generate_token, utc_now
-from app.services.comments import AuthorizationError, create_reply, share_comment_with_user, update_comment_status, visible_comment_for, visible_comments_for
+from app.services.comments import AuthorizationError, allowed_status_choices, create_reply, dashboard_comments_for, share_comment_with_user, update_comment_status, visible_comment_for
 from app.services.courses import confirm_course
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -29,20 +29,19 @@ def admin_redirect(user):
 def index(request: Request, user: User = Depends(current_dashboard_user), db: DbSession = Depends(get_session)):
     if redirect := admin_redirect(user): return redirect
     query, cards, totals = request.query_params, [], Counter()
+    projected = dashboard_comments_for(db, user)
     for course in db.scalars(select(Course).order_by(Course.title)):
         rows = []
-        for comment in visible_comments_for(db, user, course.id):
-            location = db.get(PageLocation, comment.location_id) if comment.location_id else None
-            replies = list(db.scalars(select(CommentReply).where(CommentReply.comment_id == comment.id).order_by(CommentReply.created_at)))
-            state = db.get(CommentReadState, (user.id, comment.id)); latest = replies[-1].created_at if replies else comment.updated_at
-            unread = state is None or latest > state.read_at
+        for item in projected:
+            comment, location, unread = item.comment, item.location, item.unread
+            if comment.course_id != course.id: continue
             totals[comment.status.value] += 1
             if query.get("page") and query["page"].lower() not in (location.page_title if location else "").lower(): continue
             if query.get("category") and query["category"] != comment.category.value: continue
             if query.get("author_role") and query["author_role"] != comment.author_role.value: continue
             if query.get("status") and query["status"] != comment.status.value: continue
             if query.get("unread") and not unread: continue
-            rows.append({"comment": comment, "location": location, "author": db.get(User, comment.author_user_id), "unread": unread})
+            rows.append({"comment": comment, "location": location, "author_display": item.author_display, "latest_reply_author": item.latest_reply_author, "unread": unread})
         if rows or (user.role is UserRole.LD_DCD and not course.is_confirmed): cards.append({"course": course, "rows": rows})
     confirmed_courses = list(db.scalars(select(Course).where(Course.is_confirmed.is_(True)).order_by(Course.title)))
     feedback = {
@@ -95,7 +94,11 @@ def thread(request: Request, comment_id: uuid.UUID, user: User = Depends(current
     people = {person.id: person for person in db.scalars(select(User))}
     location = db.get(PageLocation, comment.location_id) if comment.location_id else None
     smes = list(db.scalars(select(User).where(User.role == UserRole.SME, User.approved_at.is_not(None)).order_by(User.email))) if user.role is UserRole.LD_DCD else []
-    return rendered(request, "dashboard/thread.html", {"user": user, "comment": comment, "location": location, "replies": replies, "events": events, "people": people, "smes": smes, "statuses": list(CommentStatus)})
+    share_feedback = {
+        "invalid_recipient": "Choose a valid SME account before sharing.",
+        "not_sme": "Choose a valid SME account before sharing.",
+    }.get(request.query_params.get("share_error"))
+    return rendered(request, "dashboard/thread.html", {"user": user, "comment": comment, "location": location, "replies": replies, "events": events, "people": people, "smes": smes, "status_choices": allowed_status_choices(comment.status), "status_terminal": not bool(allowed_status_choices(comment.status)[1:]), "share_feedback": share_feedback})
 
 @router.post("/threads/{comment_id}/reply")
 async def reply(request: Request, comment_id: uuid.UUID, user: User = Depends(current_dashboard_user), db: DbSession = Depends(get_session)):
@@ -117,8 +120,17 @@ async def status(request: Request, comment_id: uuid.UUID, user: User = Depends(c
 @router.post("/threads/{comment_id}/share")
 async def share(request: Request, comment_id: uuid.UUID, user: User = Depends(current_dashboard_user), db: DbSession = Depends(get_session)):
     data = await _form_with_csrf(request); comment = visible_comment_for(db, user, comment_id)
-    recipient = db.get(User, uuid.UUID(str(data.get("user_id")))) if data.get("user_id") else None
-    if comment is None or recipient is None: raise HTTPException(404, "Thread or user not found")
+    if comment is None: raise HTTPException(404, "Thread not found")
+    if user.role is not UserRole.LD_DCD: raise HTTPException(403, "Only an LD/DCD can share a thread")
+    try:
+        recipient_id = uuid.UUID(str(data.get("user_id", "")))
+    except (TypeError, ValueError):
+        return RedirectResponse(f"/dashboard/threads/{comment_id}?share_error=invalid_recipient", status_code=303)
+    recipient = db.get(User, recipient_id)
+    if recipient is None:
+        return RedirectResponse(f"/dashboard/threads/{comment_id}?share_error=invalid_recipient", status_code=303)
     try: share_comment_with_user(db, user, comment, recipient)
     except AuthorizationError as exc: raise HTTPException(403, str(exc))
+    except ValueError:
+        return RedirectResponse(f"/dashboard/threads/{comment_id}?share_error=not_sme", status_code=303)
     return RedirectResponse(f"/dashboard/threads/{comment_id}", status_code=303)

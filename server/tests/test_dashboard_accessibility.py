@@ -10,4 +10,7 @@ def test_dashboard_templates_have_named_landmarks_labels_and_live_status():
     assert 'aria-live="polite"' in index and 'aria-label="Unread feedback only"' in index
     assert '<article aria-labelledby="thread-title"' in thread
     assert '<label for="reply-body">' in thread and '<textarea id="reply-body"' in thread
+    assert '<section id="replies" tabindex="-1">' in thread
+    assert 'role="alert"' in thread and 'aria-live="assertive"' in thread
+    assert 'disabled aria-disabled="true"' in thread
     assert ':focus-visible' in css and 'outline:' in css
