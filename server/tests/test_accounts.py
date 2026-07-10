@@ -1,8 +1,10 @@
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
+from threading import Barrier, BrokenBarrierError
 
 import pytest
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session as SqlAlchemySession, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.db import Base
@@ -104,3 +106,50 @@ def test_extension_login_code_is_redirect_bound_single_use_expiring_and_revocabl
     revoke_session(db_session, replacement_token, now=now)
     with pytest.raises(AuthenticationError):
         verify_extension_session(db_session, replacement_token, now=now)
+
+
+def test_concurrent_extension_code_exchanges_mint_exactly_one_api_session(tmp_path):
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'accounts.db'}"
+    engine = create_engine(database_url, connect_args={"check_same_thread": False, "timeout": 5})
+    Base.metadata.create_all(engine)
+    initial_session = sessionmaker(bind=engine)()
+    user = approved_user(initial_session)
+    now = datetime(2026, 7, 10, tzinfo=UTC)
+    code = create_extension_login_code(
+        initial_session, user, "https://abcdefghijklmnop.chromiumapp.org/", now=now
+    )
+    initial_session.close()
+
+    read_barrier = Barrier(2)
+
+    class InterleavingSession(SqlAlchemySession):
+        def get(self, entity, ident, **kwargs):
+            if entity.__name__ == "User":
+                try:
+                    read_barrier.wait(timeout=0.2)
+                except BrokenBarrierError:
+                    pass
+            return super().get(entity, ident, **kwargs)
+
+    concurrent_sessions = sessionmaker(bind=engine, class_=InterleavingSession)
+
+    def exchange():
+        session = concurrent_sessions()
+        try:
+            return exchange_extension_login_code(
+                session, code, "https://abcdefghijklmnop.chromiumapp.org/", now=now
+            )
+        except AuthenticationError:
+            return None
+        finally:
+            session.close()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        tokens = list(executor.map(lambda _: exchange(), range(2)))
+
+    assert sum(token is not None for token in tokens) == 1
+    check = sessionmaker(bind=engine)()
+    try:
+        assert check.query(Session).filter_by(kind="extension").count() == 1
+    finally:
+        check.close()

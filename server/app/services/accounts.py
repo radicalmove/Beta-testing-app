@@ -1,6 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session as DbSession
 
 from app.models import AuditEvent, ExtensionLoginCode, Session, User, UserRole
@@ -101,15 +101,26 @@ def create_extension_login_code(db: DbSession, user: User, redirect_uri: str, *,
 
 
 def exchange_extension_login_code(db: DbSession, code: str, redirect_uri: str, *, now=None, session_ttl=timedelta(hours=8)) -> str:
-    row = db.scalar(select(ExtensionLoginCode).where(ExtensionLoginCode.code_hash == token_hash(code)))
     instant = _now(now)
-    if row is None or row.used_at is not None or row.revoked_at is not None or _is_expired(row.expires_at, instant) or row.redirect_uri != redirect_uri:
+    code_hash = token_hash(code)
+    claim = db.execute(
+        update(ExtensionLoginCode)
+        .where(
+            ExtensionLoginCode.code_hash == code_hash,
+            ExtensionLoginCode.redirect_uri == redirect_uri,
+            ExtensionLoginCode.used_at.is_(None),
+            ExtensionLoginCode.revoked_at.is_(None),
+            ExtensionLoginCode.expires_at > instant,
+        )
+        .values(used_at=instant)
+    )
+    if claim.rowcount != 1:
         raise AuthenticationError("Invalid, expired, used, or mismatched extension code")
-    user = db.get(User, row.user_id)
+    user_id = db.scalar(select(ExtensionLoginCode.user_id).where(ExtensionLoginCode.code_hash == code_hash))
+    user = db.get(User, user_id)
     if user is None:
         raise AuthenticationError("Unknown code user")
     _approved(user)
-    row.used_at = instant
     token = generate_token()
     db.add(Session(user_id=user.id, token_hash=token_hash(token), kind="extension", expires_at=instant + session_ttl, created_at=instant))
     db.commit()
