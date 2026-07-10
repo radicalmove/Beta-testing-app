@@ -98,6 +98,7 @@ class DeploymentPackageTests(unittest.TestCase):
         script = (ROOT / "deploy/scripts/build-pilot-extension.sh").read_text()
         for token in ("PRIVATE_KEY_PATH", "my.uconline.ac.nz", "REVIEW_SERVICE_ORIGIN", "openssl"):
             self.assertIn(token, script)
+        self.assertIn('OPTIONAL_FRAME_PATTERNS="${OPTIONAL_FRAME_PATTERNS-}"', script)
 
 if __name__ == "__main__":
     unittest.main()

@@ -9,5 +9,6 @@ trap 'rm -f "$public_der"' EXIT
 openssl rsa -in "$PRIVATE_KEY_PATH" -pubout -outform DER -out "$public_der"
 EXTENSION_PUBLIC_KEY=$(openssl base64 -A -in "$public_der") \
 MOODLE_HOST_PATTERNS='https://my.uconline.ac.nz/*' \
+OPTIONAL_FRAME_PATTERNS="${OPTIONAL_FRAME_PATTERNS-}" \
 REVIEW_SERVICE_ORIGIN="$REVIEW_SERVICE_ORIGIN" BUILD_MODE=production npm --prefix extension run build
 echo "Built extension/dist. Keep PRIVATE_KEY_PATH secure and never commit it."
