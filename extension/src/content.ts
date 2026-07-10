@@ -1,12 +1,21 @@
 declare const __MOODLE_PATTERNS__: string[];
 declare const __OPTIONAL_FRAME_PATTERNS__: string[];
-declare const chrome: any;
 
 const MARKER = "data-moodle-review-extension";
 
 function matchPattern(url: string, pattern: string): boolean {
-  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
-  return new RegExp(`^${escaped}$`).test(url);
+  const match = /^(\*|http|https|file|ftp):\/\/([^/]+)(\/.*)$/.exec(pattern);
+  if (!match) return false;
+  const candidate = new URL(url);
+  const [, scheme, host, path] = match;
+  if (scheme === "*" ? !["http:", "https:"].includes(candidate.protocol) : candidate.protocol !== `${scheme}:`) return false;
+  const hostMatches = host === "*"
+    || (host.startsWith("*.")
+      ? candidate.hostname === host.slice(2) || candidate.hostname.endsWith(`.${host.slice(2)}`)
+      : candidate.hostname === host);
+  if (!hostMatches) return false;
+  const escapedPath = path.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+  return new RegExp(`^${escapedPath}$`).test(`${candidate.pathname}${candidate.search}${candidate.hash}`);
 }
 
 export function isConfiguredFrame(
@@ -24,15 +33,11 @@ export async function bootstrapContentScript(options: {
   document: { documentElement: { hasAttribute(name: string): boolean; setAttribute(name: string, value: string): void } };
   moodlePatterns: string[];
   optionalFramePatterns: string[];
-  hasOptionalPermission?: (pattern: string) => boolean | Promise<boolean>;
   inject: () => void;
 }): Promise<boolean> {
-  const optionalPermission = options.hasOptionalPermission ?? (() => false);
-  const permitted: string[] = [];
-  for (const pattern of options.optionalFramePatterns) {
-    if (await optionalPermission(pattern)) permitted.push(pattern);
-  }
-  if (!isConfiguredFrame(options.url, options.moodlePatterns, permitted, () => true)) return false;
+  // Chrome gates static Moodle matches and background registration gates optional
+  // frames, so a running content script is already authorized for this URL.
+  if (!isConfiguredFrame(options.url, [...options.moodlePatterns, ...options.optionalFramePatterns], [])) return false;
   if (options.document.documentElement.hasAttribute(MARKER)) return false;
   options.document.documentElement.setAttribute(MARKER, "active");
   options.inject();
@@ -45,7 +50,6 @@ if (typeof window !== "undefined" && typeof document !== "undefined") {
     document,
     moodlePatterns: __MOODLE_PATTERNS__,
     optionalFramePatterns: __OPTIONAL_FRAME_PATTERNS__,
-    hasOptionalPermission: async (pattern) => chrome.permissions.contains({ origins: [pattern] }),
     inject: () => document.documentElement.dispatchEvent(new CustomEvent("moodle-review:bootstrap")),
   });
 }

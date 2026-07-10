@@ -83,6 +83,10 @@ export async function authenticate(options: {
   const callback = await options.launchWebAuthFlow({ url: authorizeUrl.href, interactive: true });
   if (!callback) throw new Error("Authentication was cancelled");
   const callbackUrl = new URL(callback);
+  const expectedCallback = new URL(redirectUri);
+  if (callbackUrl.origin !== expectedCallback.origin || callbackUrl.pathname !== expectedCallback.pathname) {
+    throw new Error("Authentication response used an unexpected redirect URL");
+  }
   const code = callbackUrl.searchParams.get("code");
   if (!code) throw new Error("Authentication response did not include a code");
   const response = await (options.fetch ?? fetch)(`${origin}/extension/token`, {
@@ -93,10 +97,16 @@ export async function authenticate(options: {
   });
   if (!response.ok) throw new Error(`Token exchange failed (${response.status})`);
   const body = await response.json() as { access_token?: string; expires_in?: number };
-  if (!body.access_token) throw new Error("Token exchange returned no access token");
+  if (typeof body.access_token !== "string" || body.access_token.trim() === "") {
+    throw new Error("Token exchange returned no access token");
+  }
+  if (typeof body.expires_in !== "number" || !Number.isFinite(body.expires_in)
+    || body.expires_in <= 0 || body.expires_in > 7 * 24 * 60 * 60) {
+    throw new Error("Token exchange returned an invalid expiry");
+  }
   const session = {
     apiToken: body.access_token,
-    expiresAt: (options.now ?? Date.now)() + (body.expires_in ?? 8 * 60 * 60) * 1_000,
+    expiresAt: (options.now ?? Date.now)() + body.expires_in * 1_000,
   };
   await options.setSession(session);
   return session;

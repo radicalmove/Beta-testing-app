@@ -1,12 +1,9 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig, type Plugin } from "vite";
+import { loadBuildConfig } from "./src/build-config.ts";
 
-const split = (value: string | undefined, fallback: string[]) => value?.split(",").map((item) => item.trim()).filter(Boolean) ?? fallback;
-const moodlePatterns = split(process.env.MOODLE_HOST_PATTERNS, ["https://moodle.example.invalid/*"]);
-const optionalPatterns = split(process.env.OPTIONAL_FRAME_PATTERNS, ["https://rise.example.invalid/*", "https://scorm.example.invalid/*"]);
-const serviceOrigin = process.env.REVIEW_SERVICE_ORIGIN ?? "https://review.example.invalid";
-const publicKey = process.env.EXTENSION_PUBLIC_KEY ?? "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4Un68oQyXoqvVudBuIXKFaUgPz0LoJBuGzn+vLgy3eShy+LDcZQJLouFJF2cZiPq0ygrB9+84IiZAnMoKnYyEQv7+drzZZwwPRFsBYZ6KJXlC3/+YSQtcO7gexivwPVqMBWKnAEj1Qa4lWnjL1dccCeYkslAPr4comwguyfM3jxZMpokqVfElkTlaObxYKmOgs3K2ncpKTSQ3Ej+Xjmdi7np6f0SUXgWwElYcit4GOGDXmc05naCz1WPZ9iZsj6w1eWf7LuodmLh1lPkHDeajsrI+SIQ3m2krfGIu8kUzpV/cx0vk3/z+ozf2WbiD5A691Bs1lp/6OxMUu3L0HFX4QIDAQAB";
+const { moodlePatterns, optionalPatterns, serviceOrigin, publicKey } = loadBuildConfig(process.env);
 
 function manifestPlugin(): Plugin {
   return {

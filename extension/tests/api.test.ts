@@ -89,3 +89,29 @@ test("authentication exchanges an identity flow code and stores only the expirin
   assert.deepEqual(stored, [{ apiToken: "api-token", expiresAt: 901_000 }]);
   assert.deepEqual(result, { apiToken: "api-token", expiresAt: 901_000 });
 });
+
+test("authentication rejects callbacks outside the exact identity redirect", async () => {
+  await assert.rejects(authenticate({
+    serviceOrigin: "https://review.example.org",
+    getRedirectUrl: () => "https://abcdefghijklmnop.chromiumapp.org/callback",
+    launchWebAuthFlow: async () => "https://abcdefghijklmnop.chromiumapp.org/other?code=stolen",
+    setSession: async () => undefined,
+  }), /redirect/i);
+});
+
+test("authentication rejects malformed token payloads", async () => {
+  for (const payload of [
+    { access_token: "", expires_in: 900 },
+    { access_token: "   ", expires_in: 900 },
+    { access_token: "token", expires_in: 0 },
+    { access_token: "token", expires_in: Number.POSITIVE_INFINITY },
+  ]) {
+    await assert.rejects(authenticate({
+      serviceOrigin: "https://review.example.org",
+      getRedirectUrl: () => "https://abcdefghijklmnop.chromiumapp.org/callback",
+      launchWebAuthFlow: async () => "https://abcdefghijklmnop.chromiumapp.org/callback?code=one-time-code",
+      fetch: async () => new Response(JSON.stringify(payload), { status: 200 }),
+      setSession: async () => undefined,
+    }), /token|expir/i);
+  }
+});

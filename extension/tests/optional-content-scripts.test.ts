@@ -58,3 +58,27 @@ test("registration never includes ungranted optional origins and is removed with
   });
   assert.equal(removed, 1);
 });
+
+test("unchanged registration is left in place without an unregister gap", async () => {
+  let removed = 0;
+  let added = 0;
+  const scripting = {
+    getRegisteredContentScripts: async () => [{
+      id: OPTIONAL_CONTENT_SCRIPT_ID,
+      matches: ["https://rise.example.invalid/*"],
+      js: ["content.js"],
+      allFrames: true,
+      runAt: "document_idle" as const,
+      persistAcrossSessions: true,
+    }],
+    registerContentScripts: async () => { added += 1; },
+    unregisterContentScripts: async () => { removed += 1; },
+  };
+  await reconcileOptionalContentScript({
+    optionalPatterns: ["https://rise.example.invalid/*"],
+    grantedOrigins: ["https://rise.example.invalid/*"],
+    scripting,
+  });
+  assert.equal(removed, 0);
+  assert.equal(added, 0);
+});
