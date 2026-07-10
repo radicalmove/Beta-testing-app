@@ -1,0 +1,16 @@
+.worktrees/
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+node_modules/
+dist/
+playwright-report/
+test-results/
+uploads/
+*.docx
