@@ -1,7 +1,7 @@
 import type { CourseContext } from "../course-context.ts";
 
 export const OVERLAY_HOST_ID = "moodle-course-review-overlay";
-export const overlayStyles = `:host{--review-navy:#16324f;--review-teal:#087f78;--review-pale:#edf7f6;--review-line:#c8d9dc;all:initial;color:#152a38;font:14px/1.4 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.shell{position:fixed;right:18px;bottom:18px;z-index:2147483647;max-width:min(560px,calc(100vw - 36px));background:#fff;border:1px solid var(--review-line);border-radius:12px;box-shadow:0 10px 32px #16324f33;overflow:hidden}.toolbar{display:flex;align-items:center;gap:8px;padding:8px;background:var(--review-navy);color:#fff}.identity{min-width:0;padding:0 6px;flex:1}.course,.page{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.course{font-weight:700}.page{font-size:12px;color:#d7e8ec}button{appearance:none;border:1px solid #ffffff66;border-radius:7px;background:#fff;color:var(--review-navy);font:inherit;font-weight:650;padding:7px 9px;cursor:pointer}button:hover{background:var(--review-pale)}button:focus-visible,textarea:focus-visible{outline:3px solid #f5b642;outline-offset:2px}.icon{padding:7px 10px}.status{display:flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap}.dot{width:8px;height:8px;border-radius:50%;background:#f5b642}.connected .dot{background:#42d3b4}.signed-out .dot,.offline .dot{background:#ff8d85}.panel{padding:10px;background:#fff;border-top:1px solid var(--review-line)}.panel[hidden]{display:none}.backdrop{position:fixed;inset:0;background:#0b1f3380;display:grid;place-items:center;z-index:2147483647}.dialog{width:min(420px,calc(100vw - 32px));background:#fff;border-radius:12px;padding:18px;box-shadow:0 16px 44px #0005}.dialog h2{margin:0 0 10px;color:var(--review-navy);font-size:18px}.dialog textarea{box-sizing:border-box;width:100%;min-height:110px;border:1px solid var(--review-line);border-radius:7px;padding:8px;font:inherit}.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}.primary{background:var(--review-teal);color:#fff;border-color:var(--review-teal)}`;
+export const overlayStyles = `:host{--review-navy:#16324f;--review-teal:#087f78;--review-pale:#edf7f6;--review-line:#c8d9dc;all:initial;position:fixed;z-index:2147483647;isolation:isolate;display:block;color:#152a38;font:14px/1.4 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.shell{position:fixed;right:18px;bottom:18px;z-index:2147483647;max-width:min(560px,calc(100vw - 36px));background:#fff;border:1px solid var(--review-line);border-radius:12px;box-shadow:0 10px 32px #16324f33;overflow:hidden}.toolbar{display:flex;align-items:center;gap:8px;padding:8px;background:var(--review-navy);color:#fff}.identity{min-width:0;padding:0 6px;flex:1}.course,.page{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.course{font-weight:700}.page{font-size:12px;color:#d7e8ec}button{appearance:none;border:1px solid #ffffff66;border-radius:7px;background:#fff;color:var(--review-navy);font:inherit;font-weight:650;padding:7px 9px;cursor:pointer}button:hover{background:var(--review-pale)}button:focus-visible,textarea:focus-visible{outline:3px solid #f5b642;outline-offset:2px}.icon{padding:7px 10px}.status{display:flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap}.dot{width:8px;height:8px;border-radius:50%;background:#f5b642}.connected .dot{background:#42d3b4}.signed-out .dot,.offline .dot{background:#ff8d85}.panel{padding:10px;background:#fff;border-top:1px solid var(--review-line)}.panel[hidden]{display:none}.backdrop{position:fixed;inset:0;background:#0b1f3380;display:grid;place-items:center;z-index:2147483647}.dialog{width:min(420px,calc(100vw - 32px));background:#fff;border-radius:12px;padding:18px;box-shadow:0 16px 44px #0005}.dialog h2{margin:0 0 10px;color:var(--review-navy);font-size:18px}.dialog textarea{box-sizing:border-box;width:100%;min-height:110px;border:1px solid var(--review-line);border-radius:7px;padding:8px;font:inherit}.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}.primary{background:var(--review-teal);color:#fff;border-color:var(--review-teal)}`;
 
 export type ConnectionStatus = "connecting" | "connected" | "pending" | "signed-out" | "offline";
 const statusLabels: Record<ConnectionStatus, string> = { connecting: "Connecting", connected: "Connected", pending: "Account pending", "signed-out": "Signed out", offline: "Offline" };
@@ -39,7 +39,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   let context = initial;
   let status = initialStatus;
   let returnFocus: HTMLElement | null = null;
-  const render = () => {
+  const mount = () => {
     const style = shadow.querySelector("style");
     shadow.innerHTML = "";
     if (style) shadow.append(style);
@@ -47,6 +47,20 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     wrapper.innerHTML = createOverlayMarkup({ courseTitle: context.title, pageTitle: context.pageTitle, status });
     shadow.append(...Array.from(wrapper.childNodes));
     bind();
+  };
+  const updateLabels = () => {
+    const course = shadow.querySelector<HTMLElement>(".course");
+    const page = shadow.querySelector<HTMLElement>(".page");
+    const statusNode = shadow.querySelector<HTMLElement>(".status");
+    if (course) course.textContent = `Course: ${context.title}${context.identityConfidence === "unconfirmed" ? " (unconfirmed course)" : ""}`;
+    if (page) page.textContent = `Page: ${context.pageTitle}`;
+    if (statusNode) {
+      statusNode.className = `status ${status}`;
+      const dot = ownerDocument.createElement("span");
+      dot.className = "dot";
+      dot.setAttribute("aria-hidden", "true");
+      statusNode.replaceChildren("Connection: ", dot, statusLabels[status]);
+    }
   };
   const closeDialog = () => { shadow.querySelector(".backdrop")?.remove(); returnFocus?.focus(); };
   const openDialog = (trigger: HTMLElement, label: string) => {
@@ -76,6 +90,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
       button.setAttribute("aria-label", panel.hidden ? "Open review panel" : "Close review panel");
     });
   };
-  render();
-  return { update(next, nextStatus) { context = next; status = nextStatus; render(); }, destroy() { host.remove(); } };
+  mount();
+  updateLabels();
+  return { update(next, nextStatus) { context = next; status = nextStatus; updateLabels(); }, destroy() { host.remove(); } };
 }

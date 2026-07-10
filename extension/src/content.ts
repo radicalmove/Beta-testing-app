@@ -2,7 +2,7 @@ declare const __MOODLE_PATTERNS__: string[];
 declare const __OPTIONAL_FRAME_PATTERNS__: string[];
 declare const chrome: any;
 
-import { canonicalCourseUrlFromDocument, detectCourseContext, explicitCourseIdFromDocument, type CourseContext } from "./course-context.ts";
+import { canonicalCourseUrlFromDocument, courseTitleFromDocument, detectCourseContext, explicitCourseIdFromDocument, type CourseContext } from "./course-context.ts";
 import { mountReviewOverlay, type ConnectionStatus, type ReviewOverlay } from "./overlay/root.ts";
 
 const MARKER = "data-moodle-review-extension";
@@ -68,23 +68,54 @@ function pageLabel(document: Document): string {
 function currentContext(): CourseContext {
   return detectCourseContext({
     url: window.location.href,
-    title: document.querySelector<HTMLElement>("[data-course-name], .page-header-headings h1")?.textContent?.trim() || document.title,
+    title: courseTitleFromDocument(document),
     pageTitle: pageLabel(document),
     explicitCourseId: explicitCourseIdFromDocument(document),
     canonicalCourseUrl: canonicalCourseUrlFromDocument(document),
   });
 }
 
-function startCourseReview(): void {
+export function createLifecycleController(targetWindow: Window & typeof globalThis, targetDocument: Document, refresh: () => void, delay = 120): { teardown(): void; flush(): void } {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let stopped = false;
+  const flush = () => {
+    if (timer) clearTimeout(timer);
+    timer = undefined;
+    if (!stopped) refresh();
+  };
+  const schedule = () => { if (!stopped) { if (timer) clearTimeout(timer); timer = setTimeout(flush, delay); } };
+  const events = ["popstate", "hashchange", "moodle-review:navigate"];
+  for (const eventName of events) targetWindow.addEventListener(eventName, schedule);
+  const originals = { pushState: targetWindow.history.pushState, replaceState: targetWindow.history.replaceState };
+  for (const method of ["pushState", "replaceState"] as const) {
+    const original = originals[method].bind(targetWindow.history);
+    targetWindow.history[method] = ((data: unknown, unused: string, url?: string | URL | null) => {
+      original(data, unused, url);
+      targetWindow.dispatchEvent(new targetWindow.Event("moodle-review:navigate"));
+    }) as History[typeof method];
+  }
+  const observer = new targetWindow.MutationObserver(schedule);
+  const title = targetDocument.querySelector("title");
+  if (title) observer.observe(title, { childList: true, subtree: true, characterData: true });
+  return { flush, teardown() {
+    if (stopped) return;
+    stopped = true;
+    if (timer) clearTimeout(timer);
+    observer.disconnect();
+    for (const eventName of events) targetWindow.removeEventListener(eventName, schedule);
+    for (const method of ["pushState", "replaceState"] as const) targetWindow.history[method] = originals[method];
+  } };
+}
+
+function startCourseReview(): () => void {
   let context = currentContext();
   let overlay: ReviewOverlay = mountReviewOverlay(document, context, "connecting");
   let lastSignature = "";
-  let timer: ReturnType<typeof setTimeout> | undefined;
   let requestSequence = 0;
 
   const refresh = () => {
     const next = currentContext();
-    const signature = `${next.page_url}\n${next.title}\n${next.pageTitle}\n${next.moodle_course_id ?? "temporary"}`;
+    const signature = `${next.course_url}\n${next.page_url}\n${next.title}\n${next.pageTitle}\n${next.moodle_course_id ?? next.identityConfidence}`;
     if (signature === lastSignature) return;
     lastSignature = signature;
     context = next;
@@ -97,16 +128,7 @@ function startCourseReview(): void {
       overlay.update(context, status);
     });
   };
-  const schedule = () => { clearTimeout(timer); timer = setTimeout(refresh, 120); };
-  for (const eventName of ["popstate", "hashchange", "moodle-review:navigate"]) window.addEventListener(eventName, schedule);
-  for (const method of ["pushState", "replaceState"] as const) {
-    const original = history[method].bind(history);
-    history[method] = ((data: unknown, unused: string, url?: string | URL | null) => {
-      original(data, unused, url);
-      window.dispatchEvent(new Event("moodle-review:navigate"));
-    }) as History[typeof method];
-  }
-  const title = document.querySelector("title");
-  if (title) new MutationObserver(schedule).observe(title, { childList: true, subtree: true, characterData: true });
+  const lifecycle = createLifecycleController(window, document, refresh);
   refresh();
+  return () => { lifecycle.teardown(); overlay.destroy(); };
 }

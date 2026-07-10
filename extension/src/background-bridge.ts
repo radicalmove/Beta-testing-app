@@ -1,5 +1,11 @@
 export type ResolveCoursePayload = { course_url: string; title: string; moodle_course_id?: number };
 
+export function normalizeErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === "string" && error.trim()) return error.trim();
+  return "Unexpected background error";
+}
+
 const own = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
 
 export function validateResolveCourseMessage(message: unknown): ResolveCoursePayload {
@@ -42,6 +48,11 @@ export async function handleResolveCourseBridge(
   dependencies: { authorize(sender: { id?: string; url?: string }): Promise<boolean>; resolve(payload: ResolveCoursePayload): Promise<unknown> },
 ): Promise<unknown> {
   const payload = validateResolveCourseMessage(message);
+  let senderUrl: URL;
+  try { senderUrl = new URL(sender.url ?? ""); } catch { throw new Error("Unauthorized RESOLVE_COURSE sender"); }
+  const courseUrl = new URL(payload.course_url);
+  if (courseUrl.origin !== senderUrl.origin) throw new Error("RESOLVE_COURSE course origin must match sender origin");
+  if (!courseUrl.pathname.startsWith("/") || /\/\.\.?\//.test(courseUrl.pathname)) throw new Error("Invalid RESOLVE_COURSE course path");
   if (!await dependencies.authorize(sender)) throw new Error("Unauthorized RESOLVE_COURSE sender");
   return dependencies.resolve(payload);
 }

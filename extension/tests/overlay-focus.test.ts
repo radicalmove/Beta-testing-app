@@ -19,7 +19,7 @@ test("overlay markup is a compact accessible toolbar with course and connection 
   assert.match(createOverlayMarkup({ courseTitle: "Law", pageTitle: "Week 2", status: "pending" }), /Account pending/);
 });
 
-const context = { course_url: "https://learn.example/course/view.php?id=1", page_url: "https://learn.example/mod/page/view.php?id=2", title: "Law", pageTitle: "Week 2", moodle_course_id: 1 };
+const context = { course_url: "https://learn.example/course/view.php?id=1", page_url: "https://learn.example/mod/page/view.php?id=2", title: "Law", pageTitle: "Week 2", moodle_course_id: 1, identityConfidence: "confirmed" as const };
 
 test("mounted Shadow DOM traps focus, closes on Escape, and returns focus", () => {
   const window = new Window();
@@ -40,6 +40,26 @@ test("mounted Shadow DOM traps focus, closes on Escape, and returns focus", () =
   cancel.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }) as unknown as Event);
   assert.equal(shadow.querySelector(".dialog"), null);
   assert.equal(shadow.activeElement, trigger);
+});
+
+test("updating identity and status preserves an open typed dialog, selection, and focus", () => {
+  const window = new Window();
+  const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context);
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const trigger = shadow.querySelector<HTMLElement>('[data-action="highlight"]')!;
+  trigger.click();
+  const textarea = shadow.querySelector<HTMLTextAreaElement>("textarea")!;
+  textarea.value = "Keep this draft";
+  textarea.setSelectionRange(5, 9);
+  textarea.focus();
+  overlay.update({ ...context, title: "New course", pageTitle: "Week 3" }, "connected");
+  assert.equal(shadow.querySelector("textarea"), textarea);
+  assert.equal(textarea.value, "Keep this draft");
+  assert.deepEqual([textarea.selectionStart, textarea.selectionEnd], [5, 9]);
+  assert.equal(shadow.activeElement, textarea);
+  assert.match(shadow.querySelector(".course")!.textContent!, /New course/);
+  assert.match(shadow.querySelector(".status")!.textContent!, /Connected/);
 });
 
 test("mounting twice reuses one host and host selectors cannot reach shadow internals", () => {
@@ -63,5 +83,6 @@ test("overlay uses a unique shadow host and scoped styles", () => {
   assert.equal(OVERLAY_HOST_ID, "moodle-course-review-overlay");
   assert.match(overlayStyles, /:host/);
   assert.match(overlayStyles, /--review-navy/);
+  assert.match(overlayStyles, /:host\{[^}]*position:fixed[^}]*z-index:2147483647[^}]*isolation:isolate[^}]*display:block/);
   assert.doesNotMatch(overlayStyles, /(?:^|})\s*(?:body|html)\s*\{/);
 });

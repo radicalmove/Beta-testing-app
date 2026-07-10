@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { Window } from "happy-dom";
-import { detectCourseContext, explicitCourseIdFromDocument, normalizePageUrl } from "../src/course-context.ts";
+import { canonicalCourseUrlFromDocument, courseTitleFromDocument, detectCourseContext, explicitCourseIdFromDocument, normalizePageUrl } from "../src/course-context.ts";
 
 test("extracts a numeric Moodle course id from supported query parameters", () => {
   for (const url of [
@@ -46,13 +46,21 @@ test("rejects non-HTTP contexts and creates stable temporary identity without a 
   assert.equal(first.temporaryIdentity, second.temporaryIdentity);
 });
 
-test("temporary course identity is stable across pages but distinct across course titles", () => {
+test("unconfirmed title-only identity is page-bound and cannot merge same-title courses", () => {
   const week1 = detectCourseContext({ url: "https://learn.example/mod/page/view.php?id=10", title: "Criminal Law", pageTitle: "Week 1" });
   const week2 = detectCourseContext({ url: "https://learn.example/mod/quiz/view.php?id=20", title: "Criminal Law", pageTitle: "Week 2" });
-  const ethics = detectCourseContext({ url: "https://learn.example/mod/page/view.php?id=30", title: "Legal Ethics" });
-  assert.equal(week1.course_url, week2.course_url);
-  assert.equal(week1.temporaryIdentity, week2.temporaryIdentity);
-  assert.notEqual(week1.course_url, ethics.course_url);
+  assert.notEqual(week1.course_url, week2.course_url);
+  assert.notEqual(week1.temporaryIdentity, week2.temporaryIdentity);
+  assert.equal(week1.identityConfidence, "unconfirmed");
+});
+
+test("same-title courses use breadcrumb course URLs as distinct stable boundaries across pages", () => {
+  const oneA = detectCourseContext({ url: "https://learn.example/mod/page/view.php?id=10", title: "Law", canonicalCourseUrl: "/course/view.php?id=71" });
+  const oneB = detectCourseContext({ url: "https://learn.example/mod/quiz/view.php?id=11", title: "Law", canonicalCourseUrl: "/course/view.php?id=71" });
+  const two = detectCourseContext({ url: "https://learn.example/mod/page/view.php?id=12", title: "Law", canonicalCourseUrl: "/course/view.php?id=72" });
+  assert.equal(oneA.course_url, oneB.course_url);
+  assert.notEqual(oneA.course_url, two.course_url);
+  assert.equal(oneA.identityConfidence, "confirmed");
 });
 
 test("uses an explicit canonical course link as the stable boundary", () => {
@@ -73,4 +81,12 @@ test("DOM course id extraction skips invalid candidates", () => {
   window.document.head.innerHTML = '<meta name="moodle-course-id" content="nope">';
   window.document.body.className = "format-topics course-91";
   assert.equal(explicitCourseIdFromDocument(window.document as unknown as Document), "91");
+});
+
+test("DOM extraction prefers breadcrumb course title and supports course boundary attributes", () => {
+  const window = new Window({ url: "https://learn.example/mod/page/view.php?id=9" });
+  window.document.body.innerHTML = `<h1>Week 4 activity</h1><nav class="breadcrumb"><a href="/course/view.php?id=82">Criminal Law</a></nav><main data-courseurl="/course/view.php?id=82"></main>`;
+  const document = window.document as unknown as Document;
+  assert.equal(courseTitleFromDocument(document), "Criminal Law");
+  assert.equal(canonicalCourseUrlFromDocument(document), "/course/view.php?id=82");
 });

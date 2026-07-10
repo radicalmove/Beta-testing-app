@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { authorizeResolveSender, handleResolveCourseBridge, validateResolveCourseMessage } from "../src/background-bridge.ts";
+import { authorizeResolveSender, handleResolveCourseBridge, normalizeErrorMessage, validateResolveCourseMessage } from "../src/background-bridge.ts";
 
 test("resolve schema accepts only bounded normalized course fields", () => {
   assert.deepEqual(validateResolveCourseMessage({ type: "RESOLVE_COURSE", payload: { course_url: "https://learn.example/course/view.php?id=7", title: "Law", moodle_course_id: 7 } }), { course_url: "https://learn.example/course/view.php?id=7", title: "Law", moodle_course_id: 7 });
@@ -25,13 +25,30 @@ test("rejected resolve messages never reach API or token-backed resolution", asy
   let resolutions = 0;
   await assert.rejects(() => handleResolveCourseBridge(
     { type: "RESOLVE_COURSE", payload: { course_url: "https://learn.example/", title: "Law", extra: "danger" } },
-    { id: "ours", url: "https://moodle.example.invalid/course" },
+    { id: "ours", url: "https://learn.example/course" },
     { authorize: async () => true, resolve: async () => { resolutions += 1; } },
   ), /Invalid/);
   await assert.rejects(() => handleResolveCourseBridge(
     { type: "RESOLVE_COURSE", payload: { course_url: "https://learn.example/", title: "Law" } },
-    { id: "external", url: "https://moodle.example.invalid/course" },
+    { id: "external", url: "https://learn.example/course" },
     { authorize: async () => false, resolve: async () => { resolutions += 1; } },
   ), /Unauthorized/);
   assert.equal(resolutions, 0);
+});
+
+test("bridge rejects a payload whose course origin differs from the authorized sender before resolution", async () => {
+  let authorizations = 0;
+  let resolutions = 0;
+  await assert.rejects(() => handleResolveCourseBridge(
+    { type: "RESOLVE_COURSE", payload: { course_url: "https://other.example/course/view.php?id=7", title: "Law" } },
+    { id: "ours", url: "https://learn.example/mod/page/view.php?id=9" },
+    { authorize: async () => { authorizations += 1; return true; }, resolve: async () => { resolutions += 1; } },
+  ), /origin/);
+  assert.equal(authorizations, 0);
+  assert.equal(resolutions, 0);
+});
+
+test("unknown rejection values have safe useful response messages", () => {
+  assert.equal(normalizeErrorMessage("network down"), "network down");
+  assert.equal(normalizeErrorMessage({ reason: "secret" }), "Unexpected background error");
 });

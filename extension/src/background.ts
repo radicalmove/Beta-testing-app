@@ -1,5 +1,5 @@
 import { ApiClient, authenticate, getActiveToken, type SessionToken } from "./api";
-import { authorizeResolveSender, handleResolveCourseBridge, type ResolveCoursePayload } from "./background-bridge.ts";
+import { authorizeResolveSender, handleResolveCourseBridge, normalizeErrorMessage, type ResolveCoursePayload } from "./background-bridge.ts";
 import { reconcileOptionalContentScript } from "./optional-content-scripts";
 
 declare const chrome: any;
@@ -79,9 +79,10 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: { id?: string; u
     });
   }
   if (!operation) return false;
-  void operation.then((data) => sendResponse({ ok: true, data }), (error: Error) => {
-    const status = error.message.startsWith("Signed out") ? "signed-out" : error.message.startsWith("Account pending") ? "pending" : "offline";
-    sendResponse({ ok: false, status, error: error.message });
+  void operation.then((data) => sendResponse({ ok: true, data }), (error: unknown) => {
+    const message = normalizeErrorMessage(error);
+    const status = message.startsWith("Signed out") ? "signed-out" : message.startsWith("Account pending") ? "pending" : "offline";
+    sendResponse({ ok: false, status, error: message });
   });
   return true;
 });

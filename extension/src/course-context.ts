@@ -5,6 +5,7 @@ export type CourseContext = {
   pageTitle: string;
   moodle_course_id?: number;
   temporaryIdentity?: string;
+  identityConfidence: "confirmed" | "unconfirmed";
 };
 
 const DISCARD_PARAMS = new Set(["sesskey", "session", "sessionid", "fbclid", "gclid", "mc_cid", "mc_eid"]);
@@ -66,13 +67,12 @@ export function detectCourseContext(input: {
   const canonicalId = canonical ? positiveInteger(canonical.searchParams.get("id")) : undefined;
   const moodle_course_id = explicit ?? courseParam ?? courseViewId ?? canonicalId;
   const title = input.title.trim() || "Untitled Moodle course";
-  const stableTitle = title.toLocaleLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 64) || "untitled";
-  const temporaryIdentity = `temporary:${hashIdentity(`${url.origin}\n${title.toLocaleLowerCase()}`)}`;
-  const derivedCourseUrl = `${url.origin}/course/temporary/${stableTitle}-${temporaryIdentity.slice(10)}`;
-  const course_url = moodle_course_id !== undefined ? `${url.origin}/course/view.php?id=${moodle_course_id}` : canonical?.href ?? derivedCourseUrl;
-  const context: CourseContext = { course_url, page_url, title, pageTitle: input.pageTitle?.trim() || title };
+  const stableBoundary = moodle_course_id !== undefined || canonical !== undefined;
+  const temporaryIdentity = `temporary:${hashIdentity(`${url.origin}\n${page_url}`)}`;
+  const course_url = moodle_course_id !== undefined ? `${url.origin}/course/view.php?id=${moodle_course_id}` : canonical?.href ?? page_url;
+  const context: CourseContext = { course_url, page_url, title, pageTitle: input.pageTitle?.trim() || title, identityConfidence: stableBoundary ? "confirmed" : "unconfirmed" };
   if (moodle_course_id !== undefined) context.moodle_course_id = moodle_course_id;
-  else context.temporaryIdentity = temporaryIdentity;
+  else if (!stableBoundary) context.temporaryIdentity = temporaryIdentity;
   return context;
 }
 
@@ -87,6 +87,14 @@ export function explicitCourseIdFromDocument(document: Document): string | undef
 }
 
 export function canonicalCourseUrlFromDocument(document: Document): string | undefined {
-  const element = document.querySelector<HTMLElement>('[data-course-url], link[rel="course"], a[data-course-link], .breadcrumb a[href*="/course/view.php"]');
+  const element = document.querySelector<HTMLElement>('[data-course-url], [data-courseurl], link[rel="course"], a[data-course-link], .breadcrumb a[href*="/course/view.php"], a[href*="/course/view.php"]');
   return element?.dataset.courseUrl || element?.getAttribute("href") || undefined;
+}
+
+export function courseTitleFromDocument(document: Document): string {
+  for (const selector of ['.breadcrumb a[href*="/course/view.php"]', 'a[data-course-link]', '[data-course-name]', '.page-header-headings h1', 'h1']) {
+    const title = document.querySelector<HTMLElement>(selector)?.textContent?.trim();
+    if (title) return title;
+  }
+  return document.title.trim() || "Untitled Moodle course";
 }

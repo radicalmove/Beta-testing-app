@@ -1,11 +1,27 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { Window } from "happy-dom";
 
-import { bootstrapContentScript, isConfiguredFrame } from "../src/content.ts";
+import { bootstrapContentScript, createLifecycleController, isConfiguredFrame } from "../src/content.ts";
 
 test("content activates on configured Moodle patterns", () => {
   assert.equal(isConfiguredFrame("https://moodle.example.invalid/course/view.php?id=1", ["https://moodle.example.invalid/*"], []), true);
   assert.equal(isConfiguredFrame("https://unrelated.example/course/view.php?id=1", ["https://moodle.example.invalid/*"], []), false);
+});
+
+test("lifecycle teardown restores history and permits a clean restart without duplicate listeners", () => {
+  const window = new Window({ url: "https://moodle.example.invalid/course/view.php?id=1" });
+  const originalPush = window.history.pushState;
+  let refreshes = 0;
+  const first = createLifecycleController(window as unknown as globalThis.Window & typeof globalThis, window.document as unknown as Document, () => { refreshes += 1; }, 0);
+  assert.notEqual(window.history.pushState, originalPush);
+  first.teardown();
+  assert.equal(window.history.pushState, originalPush);
+  const second = createLifecycleController(window as unknown as globalThis.Window & typeof globalThis, window.document as unknown as Document, () => { refreshes += 1; }, 0);
+  window.dispatchEvent(new window.Event("popstate"));
+  second.flush();
+  assert.equal(refreshes, 1);
+  second.teardown();
 });
 
 test("Chrome wildcard host patterns match the root host and subdomains", () => {
