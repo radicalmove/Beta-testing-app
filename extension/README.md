@@ -13,7 +13,19 @@ EXTENSION_PUBLIC_KEY='<store-owned-public-key>' \
 npm run build
 ```
 
+For the UC Online production Moodle host, use the host-wide match pattern (course and activity IDs remain runtime data and do not belong in build configuration):
+
+```sh
+MOODLE_HOST_PATTERNS=https://my.uconline.ac.nz/* \
+REVIEW_SERVICE_ORIGIN=https://review.tailnet-name.ts.net \
+BUILD_MODE=production \
+EXTENSION_PUBLIC_KEY='<store-owned-public-key>' \
+npm run build
+```
+
 `MOODLE_HOST_PATTERNS` and `OPTIONAL_FRAME_PATTERNS` accept comma-separated Chrome match patterns. Do not use `<all_urls>`. Rise/SCORM hosts stay optional and should be requested with `chrome.permissions.request` only when a reviewer opens that content. The review-service setting accepts HTTPS origins and HTTP loopback only for local development.
+
+UC Online SCORM players may load without a query string and embed Rise content in an iframe. Moodle's outer player body supplies stable context classes such as `course-<course-id>` and `cmid-<activity-id>`; the extension uses those values for course and page identity without treating `context-<context-id>` as an activity. Cross-origin Rise content still follows the optional-frame permission and parent-page fallback behavior above.
 
 ## Stable browser identity
 

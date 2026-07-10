@@ -28,6 +28,16 @@ export function normalizePageUrl(value: string): string {
   return url.href;
 }
 
+export function canonicalPageUrl(value: string, explicitActivityId?: string | number | null): string {
+  const pageUrl = normalizePageUrl(value);
+  const url = new URL(pageUrl);
+  const activityId = positiveInteger(explicitActivityId);
+  if (activityId !== undefined && /\/mod\/scorm\/player\.php$/i.test(url.pathname)) {
+    return `${url.origin}/mod/scorm/view.php?id=${activityId}`;
+  }
+  return pageUrl;
+}
+
 function positiveInteger(value: string | number | null | undefined): number | undefined {
   const text = typeof value === "number" ? String(value) : value?.trim();
   if (!text || !/^[1-9]\d*$/.test(text)) return undefined;
@@ -49,9 +59,10 @@ export function detectCourseContext(input: {
   title: string;
   pageTitle?: string;
   explicitCourseId?: string | number | null;
+  explicitActivityId?: string | number | null;
   canonicalCourseUrl?: string | null;
 }): CourseContext {
-  const page_url = normalizePageUrl(input.url);
+  const page_url = canonicalPageUrl(input.url, input.explicitActivityId);
   const url = new URL(page_url);
   let canonical: URL | undefined;
   if (input.canonicalCourseUrl) {
@@ -86,6 +97,15 @@ export function explicitCourseIdFromDocument(document: Document): string | undef
   return candidates.find((candidate) => positiveInteger(candidate) !== undefined)?.trim();
 }
 
+export function explicitActivityIdFromDocument(document: Document): string | undefined {
+  const candidates = [
+    document.body?.dataset.cmid,
+    document.body?.dataset.activityid,
+    Array.from(document.body?.classList ?? []).find((name) => /^cmid-\d+$/.test(name))?.slice(5),
+  ];
+  return candidates.find((candidate) => positiveInteger(candidate) !== undefined)?.trim();
+}
+
 export function canonicalCourseUrlFromDocument(document: Document): string | undefined {
   for (const selector of ["[data-course-url]", "[data-courseurl]", 'link[rel="course"]', "a[data-course-link]", '.breadcrumb a[href*="/course/view.php"]']) {
     const element = document.querySelector<HTMLElement>(selector);
@@ -106,7 +126,17 @@ export function canonicalCourseUrlFromDocument(document: Document): string | und
 }
 
 export function courseTitleFromDocument(document: Document): string {
-  for (const selector of ['.breadcrumb a[href*="/course/view.php"]', 'a[data-course-link]', '[data-course-name]', '.page-header-headings h1', 'h1']) {
+  for (const selector of ['.breadcrumb a[href*="/course/view.php"]', 'a[data-course-link]', '[data-course-name]']) {
+    const title = document.querySelector<HTMLElement>(selector)?.textContent?.trim();
+    if (title) return title;
+  }
+  const breadcrumbLabels = Array.from(document.querySelectorAll<HTMLElement>('.breadcrumb li, .breadcrumb > *'))
+    .map((element) => element.textContent?.trim())
+    .filter((title): title is string => Boolean(title));
+  const MoodleCourseCode = /\b[A-Z]{2,}\d{3}[A-Z]?\b/;
+  const breadcrumbCourse = breadcrumbLabels.find((title) => MoodleCourseCode.test(title));
+  if (breadcrumbCourse) return breadcrumbCourse;
+  for (const selector of ['.page-header-headings h1', 'h1']) {
     const title = document.querySelector<HTMLElement>(selector)?.textContent?.trim();
     if (title) return title;
   }

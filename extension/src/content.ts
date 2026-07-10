@@ -2,7 +2,7 @@ declare const __MOODLE_PATTERNS__: string[];
 declare const __OPTIONAL_FRAME_PATTERNS__: string[];
 declare const chrome: any;
 
-import { canonicalCourseUrlFromDocument, courseTitleFromDocument, detectCourseContext, explicitCourseIdFromDocument, type CourseContext } from "./course-context.ts";
+import { canonicalCourseUrlFromDocument, courseTitleFromDocument, detectCourseContext, explicitActivityIdFromDocument, explicitCourseIdFromDocument, type CourseContext } from "./course-context.ts";
 import { mountReviewOverlay, type ConnectionStatus, type ReviewOverlay } from "./overlay/root.ts";
 
 const MARKER = "data-moodle-review-extension";
@@ -93,6 +93,7 @@ function currentContext(targetWindow: Window & typeof globalThis, targetDocument
     title: courseTitleFromDocument(targetDocument),
     pageTitle: pageLabel(targetDocument),
     explicitCourseId: explicitCourseIdFromDocument(targetDocument),
+    explicitActivityId: explicitActivityIdFromDocument(targetDocument),
     canonicalCourseUrl: canonicalCourseUrlFromDocument(targetDocument),
   });
 }

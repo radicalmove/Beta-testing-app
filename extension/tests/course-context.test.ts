@@ -2,7 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { Window } from "happy-dom";
-import { canonicalCourseUrlFromDocument, courseTitleFromDocument, detectCourseContext, explicitCourseIdFromDocument, normalizePageUrl } from "../src/course-context.ts";
+import { readFileSync } from "node:fs";
+
+import { canonicalCourseUrlFromDocument, courseTitleFromDocument, detectCourseContext, explicitActivityIdFromDocument, explicitCourseIdFromDocument, normalizePageUrl } from "../src/course-context.ts";
+
+function ucOnlineFixture(name: string, url: string): Document {
+  const window = new Window({ url });
+  window.document.documentElement.innerHTML = readFileSync(new URL(`fixtures/uco/${name}.html`, import.meta.url), "utf8");
+  return window.document as unknown as Document;
+}
 
 test("extracts a numeric Moodle course id from supported query parameters", () => {
   for (const url of [
@@ -114,4 +122,79 @@ test("canonical link is accepted only for the current course page", () => {
   const lesson = new Window({ url: "https://learn.example/mod/page/view.php?id=9" });
   lesson.document.head.innerHTML = `<link rel="canonical" href="https://learn.example/course/view.php?id=999">`;
   assert.equal(canonicalCourseUrlFromDocument(lesson.document as unknown as Document), undefined);
+});
+
+test("UC Online course, section, and page routes keep Moodle identifiers in their proper roles", () => {
+  const course = detectCourseContext({ url: "https://my.uconline.ac.nz/course/view.php?id=896", title: "CRJU150" });
+  const sectionDocument = ucOnlineFixture("section", "https://my.uconline.ac.nz/course/section.php?id=9972");
+  const pageDocument = ucOnlineFixture("page", "https://my.uconline.ac.nz/mod/page/view.php?id=118172");
+  const section = detectCourseContext({
+    url: sectionDocument.location.href,
+    title: courseTitleFromDocument(sectionDocument),
+    explicitCourseId: explicitCourseIdFromDocument(sectionDocument),
+    canonicalCourseUrl: canonicalCourseUrlFromDocument(sectionDocument),
+  });
+  const page = detectCourseContext({
+    url: pageDocument.location.href,
+    title: courseTitleFromDocument(pageDocument),
+    explicitCourseId: explicitCourseIdFromDocument(pageDocument),
+    canonicalCourseUrl: canonicalCourseUrlFromDocument(pageDocument),
+  });
+
+  assert.equal(course.moodle_course_id, 896);
+  assert.equal(section.moodle_course_id, 896);
+  assert.equal(page.moodle_course_id, 896);
+  assert.equal(section.page_url, "https://my.uconline.ac.nz/course/section.php?id=9972");
+  assert.equal(page.page_url, "https://my.uconline.ac.nz/mod/page/view.php?id=118172");
+  assert.notEqual(section.page_url, page.page_url);
+  assert.notEqual(section.moodle_course_id, 9972);
+  assert.notEqual(page.moodle_course_id, 118172);
+});
+
+test("UC Online queryless SCORM player uses its cmid as stable navigable page identity", () => {
+  const document = ucOnlineFixture("scorm-player", "https://my.uconline.ac.nz/mod/scorm/player.php");
+  const activityId = explicitActivityIdFromDocument(document);
+  const first = detectCourseContext({
+    url: document.location.href,
+    title: courseTitleFromDocument(document),
+    pageTitle: document.title,
+    explicitCourseId: explicitCourseIdFromDocument(document),
+    explicitActivityId: activityId,
+    canonicalCourseUrl: canonicalCourseUrlFromDocument(document),
+  });
+  const second = detectCourseContext({
+    url: "https://my.uconline.ac.nz/mod/scorm/player.php#embedded-content",
+    title: courseTitleFromDocument(document),
+    pageTitle: document.title,
+    explicitCourseId: explicitCourseIdFromDocument(document),
+    explicitActivityId: activityId,
+  });
+  const otherPackage = detectCourseContext({
+    url: "https://my.uconline.ac.nz/mod/scorm/player.php",
+    title: "Other package",
+    explicitCourseId: "896",
+    explicitActivityId: "146309",
+  });
+
+  assert.equal(activityId, "146308");
+  assert.equal(first.moodle_course_id, 896);
+  assert.notEqual(first.moodle_course_id, 146308);
+  assert.equal(first.page_url, "https://my.uconline.ac.nz/mod/scorm/view.php?id=146308");
+  assert.equal(second.page_url, first.page_url);
+  assert.notEqual(otherPackage.page_url, first.page_url);
+  assert.equal(first.pageTitle, "Legal Method interactive activity");
+  assert.equal(first.title, "CRJU150 – Legal Method – MAIN COPY");
+});
+
+test("UC Online activity extraction never mistakes Moodle context ids for cmids", () => {
+  const document = ucOnlineFixture("scorm-context-only", "https://my.uconline.ac.nz/mod/scorm/player.php");
+  assert.equal(explicitActivityIdFromDocument(document), undefined);
+  assert.equal(explicitCourseIdFromDocument(document), "896");
+});
+
+test("SCORM activity extraction accepts an explicit Moodle body dataset cmid", () => {
+  const window = new Window({ url: "https://my.uconline.ac.nz/mod/scorm/player.php" });
+  window.document.body.dataset.cmid = "146310";
+  window.document.body.dataset.contextid = "165233";
+  assert.equal(explicitActivityIdFromDocument(window.document as unknown as Document), "146310");
 });
