@@ -34,6 +34,47 @@ class DeploymentPackageTests(unittest.TestCase):
             self.assertIn(token, script)
         self.assertNotIn("--password", script)
 
+    def test_backup_coordinates_api_stop_and_restart_with_failure_trap(self):
+        script = (ROOT / "deploy/scripts/backup-postgres.sh").read_text()
+        stop = script.index('stop api')
+        dump = script.index('pg_dump')
+        attachments = script.index('attachments.tar.gz')
+        self.assertLess(stop, dump)
+        self.assertLess(stop, attachments)
+        self.assertIn("trap", script)
+        self.assertIn("start api", script)
+        self.assertNotIn("stop db", script)
+        self.assertIn("exit_code=$?", script)
+
+    def test_verify_pilot_authenticates_and_requires_migration_head(self):
+        script = (ROOT / "deploy/scripts/verify-pilot.sh").read_text()
+        for token in (
+            "VERIFY_EMAIL", "VERIFY_PASSWORD", "/auth/login", "cookie-jar",
+            "dashboard_session", "Secure", "/dashboard", "alembic current",
+            "alembic heads", "current_revision", "head_revision",
+        ):
+            self.assertIn(token, script)
+        self.assertNotIn("${VERIFY_PASSWORD}", script)
+
+    def test_verify_pilot_restores_only_to_disposable_resources(self):
+        script = (ROOT / "deploy/scripts/verify-pilot.sh").read_text()
+        for token in (
+            "pg_restore", "createdb", "dropdb", "disposable_db", "users",
+            "attachments.tar.gz", "path safety", "mktemp -d", "SHA256SUMS",
+        ):
+            self.assertIn(token, script)
+        self.assertNotIn("--password", script)
+
+    def test_nightly_backup_systemd_units_are_installable(self):
+        service = (ROOT / "deploy/systemd/moodle-review-backup.service").read_text()
+        timer = (ROOT / "deploy/systemd/moodle-review-backup.timer").read_text()
+        self.assertIn("User=root", service)
+        self.assertIn("EnvironmentFile=/home/fldadmin/beta-testing-app/.env", service)
+        self.assertIn("ExecStart=/home/fldadmin/beta-testing-app/deploy/scripts/backup-postgres.sh", service)
+        self.assertIn("OnCalendar=*-*-* 02:00:00", timer)
+        self.assertIn("RandomizedDelaySec=1h", timer)
+        self.assertIn("Persistent=true", timer)
+
     def test_guides_cover_tailscale_restore_and_named_pilot_targets(self):
         operations = (ROOT / "docs/operations.md").read_text()
         pilot = (ROOT / "docs/pilot-test-script.md").read_text()
@@ -41,6 +82,17 @@ class DeploymentPackageTests(unittest.TestCase):
         self.assertIn("disposable", operations.lower())
         for token in ("CRJU150", "896", "9972", "9976", "118172", "146308", "Reviewer", "LD", "SME"):
             self.assertIn(token, pilot)
+        for route in (
+            "https://my.uconline.ac.nz/course/view.php?id=896",
+            "https://my.uconline.ac.nz/course/section.php?id=9972",
+            "https://my.uconline.ac.nz/course/section.php?id=9976",
+            "https://my.uconline.ac.nz/mod/page/view.php?id=118172",
+            "https://my.uconline.ac.nz/mod/scorm/view.php?id=146308",
+            "https://my.uconline.ac.nz/mod/scorm/player.php",
+        ):
+            self.assertIn(route, pilot)
+        self.assertIn("maintenance window", operations.lower())
+        self.assertIn("systemctl enable --now moodle-review-backup.timer", operations)
 
     def test_pilot_build_script_requires_external_private_key(self):
         script = (ROOT / "deploy/scripts/build-pilot-extension.sh").read_text()

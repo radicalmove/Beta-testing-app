@@ -1,0 +1,12 @@
+[Unit]
+Description=Moodle Course Review coordinated backup
+Requires=docker.service
+After=docker.service moodle-review.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/home/fldadmin/beta-testing-app
+EnvironmentFile=/home/fldadmin/beta-testing-app/.env
+ExecStart=/home/fldadmin/beta-testing-app/deploy/scripts/backup-postgres.sh
+

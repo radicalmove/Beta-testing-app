@@ -20,8 +20,19 @@ Use the resulting stable `https://<machine>.<tailnet>.ts.net` as `SERVICE_ORIGIN
 
 ## Backup and restore
 
-Run `deploy/scripts/backup-postgres.sh` from a root-owned timer. It locks concurrent runs, uses umask 077, PostgreSQL custom format, coordinated attachments tar, checksums, atomic rename, and retention. Credentials remain in the mode-0600 env file and container environment, not command arguments.
+Run `deploy/scripts/backup-postgres.sh` from the root-owned timer. The coordinated backup creates a brief maintenance window: it takes the lock, stops only the API, dumps the still-running database and archives attachments, then restarts the API even if backup creation fails. It is not an online snapshot. The script also uses umask 077, checksums, atomic rename, and retention. Credentials remain in the mode-0600 env file and container environment, not command arguments.
 
-Validate with `tar -tzf`, extract to a temporary directory, and run `sha256sum -c SHA256SUMS`. For a disposable restore drill, create an isolated PostgreSQL container/volume, run `pg_restore --list database.dump`, restore to a new empty test database, compare tables/row counts, extract attachments into a disposable directory, then destroy only those test resources. Never test against live data. A live restore requires approval, outage, a pre-restore backup, matching DB and attachment archives, migrations, and health checks.
+Install and enable the supplied nightly timer exactly as follows:
 
-Run `deploy/scripts/verify-pilot.sh https://<machine>.<tailnet>.ts.net [archive]` for non-destructive health, authentication, migration and archive checks. Docker was unavailable in the packaging environment, so run the exact Compose config command and disposable restore on Ubuntu before sign-off.
+```sh
+sudo install -o root -g root -m 0644 deploy/systemd/moodle-review-backup.service /etc/systemd/system/moodle-review-backup.service
+sudo install -o root -g root -m 0644 deploy/systemd/moodle-review-backup.timer /etc/systemd/system/moodle-review-backup.timer
+sudo install -o root -g root -m 0755 deploy/scripts/backup-postgres.sh /home/fldadmin/beta-testing-app/deploy/scripts/backup-postgres.sh
+sudo systemctl daemon-reload
+sudo systemctl enable --now moodle-review-backup.timer
+systemctl list-timers moodle-review-backup.timer
+```
+
+`verify-pilot.sh` validates archive paths and checksums, restores the custom dump into a uniquely named disposable database in the existing PostgreSQL container, queries the restored `users` table, then always drops that database. It separately extracts attachments into a disposable directory, checks readability, and cleans it up. An empty attachments directory is valid. It never restores into the production database. A live restore requires approval, outage, a pre-restore backup, matching DB and attachment archives, migrations, and health checks.
+
+Run `VERIFY_EMAIL=... VERIFY_PASSWORD=... deploy/scripts/verify-pilot.sh https://<machine>.<tailnet>.ts.net [archive]` using an existing approved pilot account. Do not place credentials in positional arguments or logs. The check verifies authenticated dashboard access, unauthenticated API rejection, exact Alembic head equality, and (when supplied) a disposable restore. Docker was unavailable in the packaging environment, so run the exact Compose config command and disposable restore on Ubuntu before sign-off.
