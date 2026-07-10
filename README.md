@@ -26,3 +26,7 @@ pytest tests/test_health.py -q
 ```
 
 Configuration is supplied through environment variables. The explicit `--env-file .env` option supplies values for Compose interpolation; `env_file` in the Compose file supplies them to the running containers. Do not commit the root `.env` file.
+
+## Private pilot
+
+Production uses Compose managed by systemd, loopback-only API binding, and Tailscale Serve for stable private HTTPS. See [operations](docs/operations.md) and the [pilot script](docs/pilot-test-script.md). Build with `deploy/scripts/build-pilot-extension.sh`, with its RSA private key outside the repo. In Chrome/Edge enable Developer mode and Load unpacked `extension/dist`; record the exact stable IDs/redirect URIs in server configuration. Never commit the key.

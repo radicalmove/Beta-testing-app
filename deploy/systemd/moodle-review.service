@@ -1,0 +1,25 @@
+[Unit]
+Description=Moodle Course Review private Compose service
+Requires=docker.service
+After=docker.service network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=fldadmin
+Group=docker
+WorkingDirectory=/home/fldadmin/beta-testing-app
+EnvironmentFile=/home/fldadmin/beta-testing-app/.env
+ExecStart=/usr/bin/docker compose --env-file /home/fldadmin/beta-testing-app/.env -f /home/fldadmin/beta-testing-app/deploy/docker-compose.yml up -d --build --remove-orphans
+ExecStop=/usr/bin/docker compose --env-file /home/fldadmin/beta-testing-app/.env -f /home/fldadmin/beta-testing-app/deploy/docker-compose.yml down
+TimeoutStartSec=300
+TimeoutStopSec=90
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/fldadmin/beta-testing-app
+
+[Install]
+WantedBy=multi-user.target
