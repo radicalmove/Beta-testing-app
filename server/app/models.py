@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Index, String, Text, Uuid, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Enum, Float, ForeignKey, Index, String, Text, Uuid, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -122,9 +122,7 @@ class PageLocation(Base):
     course_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("courses.id"), nullable=False)
     page_url: Mapped[str] = mapped_column(Text, nullable=False)
     page_title: Mapped[str] = mapped_column(String(512), nullable=False)
-    anchor_type: Mapped[AnchorType] = mapped_column(
-        Enum(AnchorType, values_callable=lambda items: [item.value for item in items]), nullable=False
-    )
+    anchor_type: Mapped[str] = mapped_column(String(32), nullable=False)
     selected_quote: Mapped[str | None] = mapped_column(Text)
     prefix: Mapped[str | None] = mapped_column(Text)
     suffix: Mapped[str | None] = mapped_column(Text)
@@ -134,7 +132,10 @@ class PageLocation(Base):
     relative_y: Mapped[float | None] = mapped_column(Float)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
-    __table_args__ = (Index("ix_page_locations_course_page", "course_id", "page_url"),)
+    __table_args__ = (
+        CheckConstraint("anchor_type IN ('text_highlight', 'visual_pin')", name="ck_page_locations_anchor_type"),
+        Index("ix_page_locations_course_page", "course_id", "page_url"),
+    )
 
 
 class Comment(Base):

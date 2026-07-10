@@ -1,6 +1,14 @@
 import uuid
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+def _absolute_http_url(value: str, field_name: str) -> str:
+    parsed = urlsplit(value.strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError(f"{field_name} must be an absolute http or https URL")
+    return value
 
 
 class RegistrationRequest(BaseModel):
@@ -30,12 +38,22 @@ class CourseResolveRequest(BaseModel):
     title: str = Field(min_length=1, max_length=512)
     moodle_course_id: int | None = Field(default=None, ge=1)
 
+    @field_validator("course_url")
+    @classmethod
+    def course_url_is_http_url(cls, value: str) -> str:
+        return _absolute_http_url(value, "course_url")
+
 
 class CourseConfirmRequest(BaseModel):
     target_course_id: uuid.UUID | None = None
     course_url: str | None = Field(default=None, min_length=1, max_length=4096)
     title: str | None = Field(default=None, min_length=1, max_length=512)
     moodle_course_id: int | None = Field(default=None, ge=1)
+
+    @field_validator("course_url")
+    @classmethod
+    def course_url_is_http_url(cls, value: str | None) -> str | None:
+        return None if value is None else _absolute_http_url(value, "course_url")
 
     @model_validator(mode="after")
     def has_one_resolution(self):
@@ -51,7 +69,7 @@ class CommentCreateRequest(BaseModel):
     page_url: str = Field(min_length=1, max_length=4096)
     page_title: str = Field(min_length=1, max_length=512)
     body: str = Field(min_length=1, max_length=10000)
-    category: str
+    category: str = "general"
     anchor_type: str
     selected_quote: str | None = Field(default=None, max_length=20000)
     prefix: str | None = Field(default=None, max_length=2000)
@@ -60,6 +78,11 @@ class CommentCreateRequest(BaseModel):
     dom_selector: str | None = Field(default=None, max_length=4000)
     relative_x: float | None = Field(default=None, ge=0, le=1)
     relative_y: float | None = Field(default=None, ge=0, le=1)
+
+    @field_validator("page_url")
+    @classmethod
+    def page_url_is_http_url(cls, value: str) -> str:
+        return _absolute_http_url(value, "page_url")
 
     @model_validator(mode="after")
     def valid_anchor(self):

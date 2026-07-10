@@ -34,4 +34,5 @@ def confirm(course_id: uuid.UUID, payload: CourseConfirmRequest, user: User = De
     try:
         return _course_json(confirm_course(db, source, **payload.model_dump()))
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        status_code = status.HTTP_409_CONFLICT if source.is_confirmed else status.HTTP_422_UNPROCESSABLE_ENTITY
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc

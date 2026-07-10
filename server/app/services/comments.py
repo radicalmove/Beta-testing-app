@@ -1,4 +1,5 @@
 import uuid
+from urllib.parse import urlsplit
 
 from sqlalchemy.orm import Session as DbSession
 
@@ -10,13 +11,16 @@ class AuthorizationError(Exception):
     pass
 
 
-def create_comment(db: DbSession, author: User, *, course_id: uuid.UUID, page_url: str, page_title: str, body: str, category: str, anchor_type: str, selected_quote: str | None = None, prefix: str | None = None, suffix: str | None = None, css_selector: str | None = None, dom_selector: str | None = None, relative_x: float | None = None, relative_y: float | None = None) -> Comment:
+def create_comment(db: DbSession, author: User, *, course_id: uuid.UUID, page_url: str, page_title: str, body: str, category: str = "general", anchor_type: str = "", selected_quote: str | None = None, prefix: str | None = None, suffix: str | None = None, css_selector: str | None = None, dom_selector: str | None = None, relative_x: float | None = None, relative_y: float | None = None) -> Comment:
     if not body.strip():
         raise ValueError("body is required")
     if not page_title.strip():
         raise ValueError("page_title is required")
     if not page_url.strip():
         raise ValueError("page_url is required")
+    parsed_url = urlsplit(page_url.strip())
+    if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
+        raise ValueError("page_url must be an absolute http or https URL")
     if (relative_x is None) != (relative_y is None):
         raise ValueError("relative_x and relative_y must be supplied together")
     if (relative_x is not None and not 0 <= relative_x <= 1) or (relative_y is not None and not 0 <= relative_y <= 1):
@@ -33,7 +37,7 @@ def create_comment(db: DbSession, author: User, *, course_id: uuid.UUID, page_ur
     else:
         raise ValueError("Invalid anchor type")
     instant = utc_now()
-    location = PageLocation(course_id=course_id, page_url=page_url.strip(), page_title=page_title.strip(), anchor_type=AnchorType(anchor_type), selected_quote=selected_quote, prefix=prefix, suffix=suffix, css_selector=css_selector, dom_selector=dom_selector, relative_x=relative_x, relative_y=relative_y, created_at=instant)
+    location = PageLocation(course_id=course_id, page_url=page_url.strip(), page_title=page_title.strip(), anchor_type=anchor_type, selected_quote=selected_quote, prefix=prefix, suffix=suffix, css_selector=css_selector, dom_selector=dom_selector, relative_x=relative_x, relative_y=relative_y, created_at=instant)
     db.add(location)
     db.flush()
     comment = Comment(course_id=course_id, location_id=location.id, author_user_id=author.id, body=body.strip(), category=CommentCategory(category), status=CommentStatus.OPEN, created_at=instant, updated_at=instant)

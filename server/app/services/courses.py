@@ -9,8 +9,8 @@ from app.security import utc_now
 
 def normalize_url(value: str) -> str:
     parsed = urlsplit(value.strip())
-    if not parsed.scheme or not parsed.netloc:
-        raise ValueError("course_url must be an absolute URL")
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("course_url must be an absolute http or https URL")
     return urlunsplit((parsed.scheme.lower(), parsed.netloc.lower(), parsed.path or "/", parsed.query, ""))
 
 
@@ -51,6 +51,8 @@ def resolve_course(db: DbSession, *, course_url: str, title: str, moodle_course_
 
 
 def confirm_course(db: DbSession, source: Course, *, target_course_id=None, moodle_course_id: int | str | None = None, course_url: str | None = None, title: str | None = None) -> Course:
+    if source.is_confirmed:
+        raise ValueError("Only an unconfirmed temporary course can be confirmed or mapped")
     if target_course_id is not None:
         target = db.get(Course, target_course_id)
         if target is None:
