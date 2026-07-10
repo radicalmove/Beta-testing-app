@@ -200,3 +200,5 @@ def test_page_comment_filter_rejects_non_http_and_overlong_urls(client):
     session.close()
     assert client.get("/api/comments", headers=beta, params={"course_id": course_id, "page_url": "javascript:alert(1)"}).status_code == 422
     assert client.get("/api/comments", headers=beta, params={"course_id": course_id, "page_url": "https://example.test/" + "a" * 4096}).status_code == 422
+    for page_url in (" https://example.test/page", "https://example.test/page "):
+        assert client.get("/api/comments", headers=beta, params={"course_id": course_id, "page_url": page_url}).status_code == 422

@@ -162,6 +162,26 @@ test("embedded review retries while the top frame is still resolving", async () 
   cleanup();
 });
 
+test("top navigation immediately removes stored markers before delayed responses return", async () => {
+  const window = new Window({ url: "https://moodle.example.invalid/mod/page/view.php?id=1" });
+  window.document.body.innerHTML = "<h1>Page one</h1><p>An important phrase here</p>";
+  const lists: Array<(response: any) => void> = [];
+  const comment = { id: "00000000-0000-4000-8000-000000000001", body: "Stored feedback", category: "general", status: "open", author_user_id: "00000000-0000-4000-8000-000000000002", author_role: "beta_tester", author_email: "beta@example.test", page_url: window.location.href, page_title: "Page one", anchor_type: "text_highlight", selected_quote: "important phrase", prefix: "An ", suffix: " here", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [] };
+  const runtime = { sendMessage: (message: any, callback: (response: any) => void) => {
+    if (message.type === "RESOLVE_COURSE") callback({ ok: true, data: { id: "123e4567-e89b-12d3-a456-426614174000" } });
+    else if (message.type === "LIST_PAGE_COMMENTS") lists.push(callback);
+    else callback({ ok: true, data: {} });
+  } };
+  const cleanup = startCourseReview(window as unknown as globalThis.Window & typeof globalThis, window.document as unknown as Document, runtime);
+  await new Promise((resolve) => setTimeout(resolve, 0)); lists[0]!({ ok: true, data: [comment] }); await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.ok(window.document.querySelector("[data-moodle-review-stored-highlight]"));
+  window.history.pushState({}, "", "/mod/page/view.php?id=2");
+  assert.equal(window.document.querySelector("[data-moodle-review-stored-highlight]"), null);
+  lists[0]!({ ok: true, data: [comment] }); await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(window.document.querySelector("[data-moodle-review-stored-highlight]"), null);
+  cleanup();
+});
+
 test("counts only inaccessible iframe DOMs", () => {
   const window = new Window();
   window.document.body.innerHTML = "<iframe id=accessible></iframe><iframe id=blocked></iframe>";

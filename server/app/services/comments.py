@@ -68,6 +68,8 @@ class PageComment:
 
 def normalized_page_url(value: str) -> str:
     clean = value.strip()
+    if value != clean:
+        raise ValueError("page_url must not contain leading or trailing whitespace")
     if len(clean) > 4096:
         raise ValueError("page_url must be at most 4096 characters")
     parsed = urlsplit(clean)

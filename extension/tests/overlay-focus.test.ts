@@ -20,6 +20,7 @@ test("overlay markup is a compact accessible toolbar with course and connection 
 });
 
 const context = { course_url: "https://learn.example/course/view.php?id=1", page_url: "https://learn.example/mod/page/view.php?id=2", title: "Law", pageTitle: "Week 2", moodle_course_id: 1, identityConfidence: "confirmed" as const };
+const storedHighlight = { id: "00000000-0000-4000-8000-000000000001", body: "Clarify this", category: "general", status: "open", author_user_id: "00000000-0000-4000-8000-000000000002", author_role: "beta_tester", author_email: "beta@example.test", page_url: context.page_url, page_title: "Week 2", anchor_type: "text_highlight" as const, selected_quote: "important phrase", prefix: "An ", suffix: " here", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [{ id: "00000000-0000-4000-8000-000000000003", body: "LD reply", author_user_id: "00000000-0000-4000-8000-000000000004", author_role: "ld_dcd", author_email: "ld@example.test" }], status_history: [] };
 
 test("mounted Shadow DOM traps focus, closes on Escape, and returns focus", () => {
   const window = new Window();
@@ -107,6 +108,33 @@ test("unresolved anchors render an accessible compact list with context hooks an
   assert.deepEqual(requested, ["c1"]);
   overlay.setUnresolvedAnchors([]);
   assert.equal(region.hidden, true);
+});
+
+test("stored highlight has a mounted keyboard button that opens its thread and cleans up", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  document.body.innerHTML = "<p>An important phrase here</p>";
+  const overlay = mountReviewOverlay(document, context, "connected");
+  overlay.setPageComments([storedHighlight]);
+  const marker = document.querySelector<HTMLButtonElement>("[data-moodle-review-stored-highlight]")!;
+  assert.ok(marker); assert.equal(marker.type, "button"); assert.match(marker.getAttribute("aria-label")!, /Clarify this/);
+  marker.click();
+  assert.match(document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!.textContent!, /LD reply/);
+  overlay.destroy(); assert.equal(document.querySelector("[data-moodle-review-stored-highlight]"), null);
+});
+
+test("take to context retries a late text anchor and reports an accessible failure with its quote", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected");
+  overlay.setPageComments([storedHighlight]);
+  assert.equal(document.querySelector("[data-moodle-review-stored-highlight]"), null);
+  document.body.insertAdjacentHTML("afterbegin", "<p>An important phrase here</p>");
+  assert.equal(overlay.takeToContext(storedHighlight.id), true);
+  assert.ok(document.querySelector("[data-moodle-review-stored-highlight]"));
+  document.querySelector("p")!.remove(); overlay.setPageComments([storedHighlight]);
+  assert.equal(overlay.takeToContext(storedHighlight.id), false);
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  assert.match(shadow.querySelector('[data-recovery-status]')!.textContent!, /original content could not be found/);
+  assert.match(shadow.querySelector("blockquote")!.textContent!, /important phrase/);
 });
 
 test("saves against the composer snapshot before offering a separate retryable screenshot action", async () => {

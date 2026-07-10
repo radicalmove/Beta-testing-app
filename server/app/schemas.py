@@ -5,7 +5,9 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 def _absolute_http_url(value: str, field_name: str) -> str:
-    parsed = urlsplit(value.strip())
+    if value != value.strip():
+        raise ValueError(f"{field_name} must not contain leading or trailing whitespace")
+    parsed = urlsplit(value)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise ValueError(f"{field_name} must be an absolute http or https URL")
     return value

@@ -161,7 +161,7 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
   let commentSequence = 0;
   let overlay: ReviewOverlay;
   const loadPageComments = async (pageUrl: string) => { const sequence = ++commentSequence; overlay.setPageComments([]); try { const comments = await send<PageComment[]>({ type: "LIST_PAGE_COMMENTS", page_url: pageUrl }); if (sequence === commentSequence && context.page_url === pageUrl) overlay.setPageComments(comments); } catch { if (sequence === commentSequence) overlay.setPageComments([]); } };
-  overlay = mountReviewOverlay(targetDocument, context, "connecting", { submit: async ({ body, category, anchor, screenshot, embeddedFrameUnavailable, contextSnapshot }) => {
+  overlay = mountReviewOverlay(targetDocument, context, "connecting", { onTakeToContext: (id) => { overlay.takeToContext(id); }, submit: async ({ body, category, anchor, screenshot, embeddedFrameUnavailable, contextSnapshot }) => {
     const snapshotCourseId = courseIds.get(contextSnapshot.course_url);
     if (!snapshotCourseId) throw new Error("The original course is no longer connected. Cancel and reopen the comment.");
     const fallbackSuffix = " — embedded content—frame access unavailable";
@@ -178,7 +178,9 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
     const signature = `${next.course_url}\n${next.page_url}\n${next.title}\n${next.pageTitle}\n${next.moodle_course_id ?? next.identityConfidence}`;
     if (signature === lastSignature) return;
     lastSignature = signature;
+    const pageChanged = context.page_url !== next.page_url;
     context = next;
+    if (pageChanged) { commentSequence += 1; overlay.setPageComments([]); }
     overlay.update(context, "connecting");
     const sequence = ++requestSequence;
     const requestedCourseUrl = context.course_url;
@@ -194,6 +196,8 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
     });
   };
   const lifecycle = createLifecycleController(targetWindow, targetDocument, refresh);
+  const clearNavigatedPage = () => { const next = currentContext(targetWindow, targetDocument); if (context.page_url !== next.page_url) { commentSequence += 1; overlay.setPageComments([]); } };
+  for (const eventName of ["popstate", "hashchange", "moodle-review:navigate"]) targetWindow.addEventListener(eventName, clearNavigatedPage);
   const scheduleTimeout = typeof targetWindow.setTimeout === "function" ? targetWindow.setTimeout.bind(targetWindow) : globalThis.setTimeout;
   const cancelTimeout = typeof targetWindow.clearTimeout === "function" ? targetWindow.clearTimeout.bind(targetWindow) : globalThis.clearTimeout;
   let fallbackTimer: ReturnType<typeof setTimeout>;
@@ -211,7 +215,7 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
   const onFrameReady = (event: MessageEvent) => { if (event.data?.type === "MOODLE_REVIEW_FRAME_READY") checkFrames(); };
   targetWindow.addEventListener("message", onFrameReady);
   refresh();
-  return () => { cancelTimeout(fallbackTimer); cancelTimeout(poll); cancelTimeout(latePoll); targetWindow.removeEventListener("message", onFrameReady); lifecycle.teardown(); overlay.destroy(); };
+  return () => { cancelTimeout(fallbackTimer); cancelTimeout(poll); cancelTimeout(latePoll); targetWindow.removeEventListener("message", onFrameReady); for (const eventName of ["popstate", "hashchange", "moodle-review:navigate"]) targetWindow.removeEventListener(eventName, clearNavigatedPage); lifecycle.teardown(); overlay.destroy(); };
 }
 
 type Runtime = { sendMessage(message: unknown, callback: (response: { ok?: boolean; status?: ConnectionStatus; error?: string; data?: unknown } | undefined) => void): void };
@@ -240,13 +244,17 @@ export function startEmbeddedReview(targetWindow: Window & typeof globalThis, ta
     let context = frameContext();
     let commentSequence = 0;
     const loadPageComments = async () => { const pageUrl = context.page_url; const sequence = ++commentSequence; overlay?.setPageComments([]); try { const comments = await send<PageComment[]>({ type: "LIST_PAGE_COMMENTS", page_url: pageUrl }); if (sequence === commentSequence && context.page_url === pageUrl) overlay?.setPageComments(comments); } catch { /* connection state remains usable */ } };
-    overlay = mountReviewOverlay(targetDocument, context, "connected", { submit: async ({ body, category, anchor, screenshot, contextSnapshot }) => {
+    overlay = mountReviewOverlay(targetDocument, context, "connected", { onTakeToContext: (id) => { overlay?.takeToContext(id); }, submit: async ({ body, category, anchor, screenshot, contextSnapshot }) => {
       const saved = await send<{ id?: string; screenshot_available?: boolean }>({ type: "CREATE_COMMENT", payload: { course_id: courseId, page_url: contextSnapshot.page_url, page_title: contextSnapshot.pageTitle, body, category, ...anchor }, screenshot_requested: screenshot });
       if (context.page_url === contextSnapshot.page_url) void loadPageComments();
       return saved;
     }, uploadScreenshot: (commentId, dataUrl) => send({ type: "UPLOAD_SCREENSHOT", comment_id: commentId, data_url: dataUrl }), cancelScreenshot: (commentId) => send({ type: "CANCEL_SCREENSHOT", comment_id: commentId }) });
-    const refresh = () => { context = frameContext(); overlay?.update(context, "connected"); void loadPageComments(); };
+    const refresh = () => { const next = frameContext(); if (context.page_url !== next.page_url) { commentSequence += 1; overlay?.setPageComments([]); } context = next; overlay?.update(context, "connected"); void loadPageComments(); };
     lifecycle = createLifecycleController(targetWindow, targetDocument, refresh);
+    const clearNavigatedPage = () => { const next = frameContext(); if (context.page_url !== next.page_url) { commentSequence += 1; overlay?.setPageComments([]); } };
+    for (const eventName of ["popstate", "hashchange", "moodle-review:navigate"]) targetWindow.addEventListener(eventName, clearNavigatedPage);
+    const previousTeardown = lifecycle.teardown.bind(lifecycle);
+    lifecycle.teardown = () => { for (const eventName of ["popstate", "hashchange", "moodle-review:navigate"]) targetWindow.removeEventListener(eventName, clearNavigatedPage); previousTeardown(); };
     void loadPageComments();
     runtime.sendMessage({ type: "REVIEW_FRAME_READY" }, () => undefined);
     try { targetWindow.parent.postMessage({ type: "MOODLE_REVIEW_FRAME_READY" }, "*"); } catch { /* trigger only */ }
