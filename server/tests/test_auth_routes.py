@@ -8,7 +8,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.db import Base, get_session
 from app.main import create_app
-from app.models import Session, User
+from app.models import Session, User, UserRole
 from app.services.accounts import register_account
 
 
@@ -72,6 +72,31 @@ def test_approved_login_issues_cookie_and_logout_revokes_it(client):
     check = client.db_factory()
     assert check.query(Session).one().revoked_at is not None
     check.close()
+
+
+def test_admin_browser_login_lands_on_account_approvals(client):
+    session = client.db_factory()
+    admin = register_account(session, email="admin@example.test", password="long enough password")
+    admin.role, admin.approved_at = UserRole.ADMIN, datetime.now(UTC)
+    member = register_account(session, email="member@example.test", password="long enough password")
+    session.commit()
+    member_id = str(member.id)
+    session.close()
+
+    client.get("/login")
+    login = client.post(
+        "/login",
+        data={
+            "email": "admin@example.test",
+            "password": "long enough password",
+            "csrf_token": client.cookies["csrf_token"],
+        },
+        follow_redirects=True,
+    )
+
+    assert login.status_code == 200
+    assert login.url.path == "/admin/users"
+    assert f'/admin/users/{member_id}/approve' in login.text
 
 
 def test_browser_mutations_require_a_valid_csrf_token(client):
