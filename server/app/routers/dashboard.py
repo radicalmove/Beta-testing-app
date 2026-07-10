@@ -11,6 +11,7 @@ from app.models import CommentCategory, CommentReadState, CommentReply, CommentS
 from app.routers.auth import _form_with_csrf
 from app.security import generate_token, utc_now
 from app.services.comments import AuthorizationError, create_reply, share_comment_with_user, update_comment_status, visible_comment_for, visible_comments_for
+from app.services.courses import confirm_course
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 templates = Jinja2Templates(directory="app/templates")
@@ -43,7 +44,42 @@ def index(request: Request, user: User = Depends(current_dashboard_user), db: Db
             if query.get("unread") and not unread: continue
             rows.append({"comment": comment, "location": location, "author": db.get(User, comment.author_user_id), "unread": unread})
         if rows or (user.role is UserRole.LD_DCD and not course.is_confirmed): cards.append({"course": course, "rows": rows})
-    return rendered(request, "dashboard/index.html", {"user": user, "cards": cards, "totals": totals, "statuses": list(CommentStatus), "categories": list(CommentCategory), "roles": [UserRole.BETA_TESTER, UserRole.SME, UserRole.LD_DCD], "filters": query})
+    confirmed_courses = list(db.scalars(select(Course).where(Course.is_confirmed.is_(True)).order_by(Course.title)))
+    feedback = {
+        "success": "Course mapping saved.",
+        "invalid": "Choose a valid confirmed course or confirm this as a new course.",
+        "not_found": "Course not found.",
+        "already_confirmed": "This course is already confirmed.",
+    }.get(query.get("reason") if query.get("mapping") == "error" else query.get("mapping"))
+    return rendered(request, "dashboard/index.html", {"user": user, "cards": cards, "totals": totals, "statuses": list(CommentStatus), "categories": list(CommentCategory), "roles": [UserRole.BETA_TESTER, UserRole.SME, UserRole.LD_DCD], "filters": query, "confirmed_courses": confirmed_courses, "mapping_feedback": feedback, "mapping_feedback_kind": query.get("mapping")})
+
+
+@router.post("/courses/{course_id}/confirm")
+async def confirm_dashboard_course(request: Request, course_id: uuid.UUID, user: User = Depends(current_dashboard_user), db: DbSession = Depends(get_session)):
+    if user.role is not UserRole.LD_DCD:
+        raise HTTPException(403, "LD/DCD access required")
+    data = await _form_with_csrf(request)
+    source = db.get(Course, course_id)
+    if source is None:
+        return RedirectResponse("/dashboard?mapping=error&reason=not_found", status_code=303)
+    if source.is_confirmed:
+        return RedirectResponse("/dashboard?mapping=error&reason=already_confirmed", status_code=303)
+    choice = str(data.get("mapping_choice", ""))
+    if choice == "new":
+        target_id = source.id
+    else:
+        try:
+            target_id = uuid.UUID(choice)
+        except ValueError:
+            return RedirectResponse("/dashboard?mapping=error&reason=invalid", status_code=303)
+        target = db.get(Course, target_id)
+        if target is None or not target.is_confirmed:
+            return RedirectResponse("/dashboard?mapping=error&reason=invalid", status_code=303)
+    try:
+        confirm_course(db, source, target_course_id=target_id)
+    except ValueError:
+        return RedirectResponse("/dashboard?mapping=error&reason=invalid", status_code=303)
+    return RedirectResponse("/dashboard?mapping=success", status_code=303)
 
 @router.get("/threads/{comment_id}", response_class=HTMLResponse)
 def thread(request: Request, comment_id: uuid.UUID, user: User = Depends(current_dashboard_user), db: DbSession = Depends(get_session)):

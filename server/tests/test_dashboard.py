@@ -8,7 +8,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.db import Base, get_session
 from app.main import create_app
-from app.models import Course, UserRole
+from app.models import Comment, Course, PageLocation, User, UserRole
 from app.services.accounts import register_account
 from app.services.comments import create_comment, create_reply
 
@@ -51,13 +51,20 @@ def seed(client):
 
 
 def test_ld_dashboard_groups_courses_filters_and_shows_totals_and_mapping_controls(dashboard_client):
-    comment_id, _ = seed(dashboard_client)
+    comment_id, unconfirmed_id = seed(dashboard_client)
     login(dashboard_client, "lead@example.test", UserRole.LD_DCD)
     response = dashboard_client.get("/dashboard?status=open&category=language_grammar&author_role=beta_tester&unread=1&page=Welcome")
     assert response.status_code == 200
     html = response.text
     assert "Justice 101" in html and "Welcome page" in html and "Open" in html
     assert "Draft course" in html and "Confirm course mapping" in html
+    assert f'action="/dashboard/courses/{unconfirmed_id}/confirm"' in html
+    assert 'name="csrf_token"' in html
+    assert 'name="mapping_choice"' in html
+    assert 'value="new"' in html and "Confirm as a new course" in html
+    assert f'value="{unconfirmed_id}"' not in html
+    assert "Map to an existing confirmed course" in html
+    assert "Justice 101" in html and 'selected' in html
     assert "Take me there" in html and "https://moodle.test/mod/page/view.php?id=42" in html
     assert f'/dashboard/threads/{comment_id}' in html
     for name in ("page", "category", "author_role", "status", "unread"):
@@ -87,3 +94,83 @@ def test_admin_is_redirected_to_admin_area_not_review_data(dashboard_client):
     seed(dashboard_client); login(dashboard_client, "admin@example.test", UserRole.ADMIN)
     response = dashboard_client.get("/dashboard", follow_redirects=False)
     assert response.status_code == 303 and response.headers["location"] == "/admin/users"
+
+
+def test_ld_can_map_an_unconfirmed_course_to_selected_existing_course_and_preserve_feedback(dashboard_client):
+    _, unconfirmed_id = seed(dashboard_client)
+    db = dashboard_client.db_factory()
+    source = db.get(Course, unconfirmed_id)
+    target = db.query(Course).filter(Course.is_confirmed.is_(True)).one()
+    beta = db.query(User).filter_by(email="beta@example.test").one()
+    comment = create_comment(db, beta, course_id=source.id, page_url="https://moodle.test/mod/page/view.php?id=88", page_title="Draft activity", body="Keep this feedback", category="general", anchor_type="text_highlight", selected_quote="this feedback", prefix="Keep ")
+    comment_id, location_id, target_id = comment.id, comment.location_id, target.id
+    db.close()
+    login(dashboard_client, "lead@example.test", UserRole.LD_DCD)
+    dashboard_client.get("/dashboard")
+    response = dashboard_client.post(
+        f"/dashboard/courses/{unconfirmed_id}/confirm",
+        data={"csrf_token": dashboard_client.cookies["csrf_token"], "mapping_choice": str(target_id)},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/dashboard?mapping=success"
+    db = dashboard_client.db_factory()
+    assert db.get(Course, unconfirmed_id) is None
+    assert db.get(Comment, comment_id).course_id == target_id
+    location = db.get(PageLocation, location_id)
+    assert location.course_id == target_id
+    assert (location.page_title, location.selected_quote, location.prefix) == ("Draft activity", "this feedback", "Keep ")
+
+
+def test_ld_can_confirm_an_unconfirmed_course_as_new(dashboard_client):
+    _, unconfirmed_id = seed(dashboard_client)
+    login(dashboard_client, "lead@example.test", UserRole.LD_DCD)
+    dashboard_client.get("/dashboard")
+    response = dashboard_client.post(
+        f"/dashboard/courses/{unconfirmed_id}/confirm",
+        data={"csrf_token": dashboard_client.cookies["csrf_token"], "mapping_choice": "new"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/dashboard?mapping=success"
+    db = dashboard_client.db_factory()
+    assert db.get(Course, unconfirmed_id).is_confirmed is True
+
+
+def test_course_mapping_browser_route_requires_csrf_and_ld_role(dashboard_client):
+    _, unconfirmed_id = seed(dashboard_client)
+    login(dashboard_client, "lead@example.test", UserRole.LD_DCD)
+    assert dashboard_client.post(f"/dashboard/courses/{unconfirmed_id}/confirm", data={"mapping_choice": "new"}).status_code == 403
+
+    for email, role in (("beta-map@example.test", UserRole.BETA_TESTER), ("sme-map@example.test", UserRole.SME), ("admin-map@example.test", UserRole.ADMIN)):
+        dashboard_client.cookies.clear()
+        login(dashboard_client, email, role)
+        dashboard_client.get("/login")
+        response = dashboard_client.post(
+            f"/dashboard/courses/{unconfirmed_id}/confirm",
+            data={"csrf_token": dashboard_client.cookies["csrf_token"], "mapping_choice": "new"},
+        )
+        assert response.status_code == 403
+
+
+def test_course_mapping_validation_conflict_and_not_found_redirect_with_accessible_feedback(dashboard_client):
+    _, unconfirmed_id = seed(dashboard_client)
+    login(dashboard_client, "lead@example.test", UserRole.LD_DCD)
+    dashboard_client.get("/dashboard")
+    csrf = dashboard_client.cookies["csrf_token"]
+
+    invalid = dashboard_client.post(f"/dashboard/courses/{unconfirmed_id}/confirm", data={"csrf_token": csrf, "mapping_choice": "not-a-course"}, follow_redirects=False)
+    assert invalid.status_code == 303 and "mapping=error" in invalid.headers["location"]
+    error_page = dashboard_client.get(invalid.headers["location"])
+    assert 'role="alert"' in error_page.text and "Choose a valid confirmed course" in error_page.text
+
+    missing = dashboard_client.post(f"/dashboard/courses/00000000-0000-0000-0000-000000000000/confirm", data={"csrf_token": csrf, "mapping_choice": "new"}, follow_redirects=False)
+    assert missing.status_code == 303 and "mapping=error" in missing.headers["location"]
+    assert "Course not found" in dashboard_client.get(missing.headers["location"]).text
+
+    ok = dashboard_client.post(f"/dashboard/courses/{unconfirmed_id}/confirm", data={"csrf_token": csrf, "mapping_choice": "new"}, follow_redirects=False)
+    assert ok.status_code == 303
+    conflict = dashboard_client.post(f"/dashboard/courses/{unconfirmed_id}/confirm", data={"csrf_token": csrf, "mapping_choice": "new"}, follow_redirects=False)
+    assert conflict.status_code == 303 and "mapping=error" in conflict.headers["location"]
+    assert "already confirmed" in dashboard_client.get(conflict.headers["location"]).text
+    assert 'role="status"' in dashboard_client.get(ok.headers["location"]).text
