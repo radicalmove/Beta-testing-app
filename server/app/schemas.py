@@ -113,3 +113,11 @@ class CommentStatusRequest(BaseModel):
         if value not in {"open", "in_progress", "awaiting_sme", "resolved", "deferred"}:
             raise ValueError("Invalid comment status")
         return value
+
+
+class CommentReplyRequest(BaseModel):
+    body: str = Field(min_length=1, max_length=10000)
+
+
+class CommentShareRequest(BaseModel):
+    user_id: uuid.UUID

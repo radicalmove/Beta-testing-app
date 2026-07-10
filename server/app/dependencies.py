@@ -16,6 +16,9 @@ def current_extension_user(request: Request, db: DbSession = Depends(get_session
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required") from exc
 
 
+current_api_user = current_extension_user
+
+
 def current_dashboard_user(request: Request, db: DbSession = Depends(get_session)) -> User:
     try:
         return verify_dashboard_session(db, request.cookies.get("dashboard_session", ""))

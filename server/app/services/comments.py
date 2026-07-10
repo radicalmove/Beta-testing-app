@@ -1,14 +1,39 @@
 import uuid
 from urllib.parse import urlsplit
 
-from sqlalchemy.orm import Session as DbSession
+from sqlalchemy import or_, select
+from sqlalchemy.orm import Session as DbSession, aliased
 
-from app.models import AnchorType, Comment, CommentCategory, CommentStatus, CommentStatusEvent, PageLocation, User, UserRole
+from app.models import AnchorType, Comment, CommentCategory, CommentReply, CommentShare, CommentStatus, CommentStatusEvent, PageLocation, User, UserRole
 from app.security import utc_now
 
 
 class AuthorizationError(Exception):
     pass
+
+
+def visible_comments_for(db: DbSession, user: User, course_id: uuid.UUID) -> list[Comment]:
+    """Return exactly the course threads this user is allowed to discover."""
+    query = select(Comment).where(Comment.course_id == course_id)
+    if user.role in {UserRole.LD_DCD, UserRole.ADMIN}:
+        return list(db.scalars(query.order_by(Comment.created_at)))
+    if user.role is UserRole.BETA_TESTER:
+        query = query.where(Comment.author_user_id == user.id)
+    elif user.role is UserRole.SME:
+        author = aliased(User)
+        query = query.join(author, Comment.author_user_id == author.id).outerjoin(CommentShare, CommentShare.comment_id == Comment.id).where(
+            or_(author.role == UserRole.SME, CommentShare.shared_with_user_id == user.id)
+        )
+    else:
+        query = query.where(False)
+    return list(db.scalars(query.order_by(Comment.created_at)))
+
+
+def visible_comment_for(db: DbSession, user: User, comment_id: uuid.UUID) -> Comment | None:
+    comment = db.get(Comment, comment_id)
+    if comment is None:
+        return None
+    return next((item for item in visible_comments_for(db, user, comment.course_id) if item.id == comment_id), None)
 
 
 def create_comment(db: DbSession, author: User, *, course_id: uuid.UUID, page_url: str, page_title: str, body: str, category: str = "general", anchor_type: str = "", selected_quote: str | None = None, prefix: str | None = None, suffix: str | None = None, css_selector: str | None = None, dom_selector: str | None = None, relative_x: float | None = None, relative_y: float | None = None) -> Comment:
@@ -59,3 +84,34 @@ def update_comment_status(db: DbSession, actor: User, comment: Comment, status: 
     db.commit()
     db.refresh(comment)
     return comment
+
+
+def create_reply(db: DbSession, actor: User, comment: Comment, body: str) -> CommentReply:
+    if not body.strip():
+        raise ValueError("body is required")
+    if actor.role is UserRole.BETA_TESTER and actor.id != comment.author_user_id:
+        raise AuthorizationError("Beta testers can reply only to their own threads")
+    reply = CommentReply(comment_id=comment.id, author_user_id=actor.id, body=body.strip(), created_at=utc_now())
+    db.add(reply)
+    db.commit()
+    db.refresh(reply)
+    return reply
+
+
+def share_comment_with_user(db: DbSession, actor: User, comment: Comment, shared_with: User) -> CommentShare:
+    if actor.role not in {UserRole.LD_DCD, UserRole.ADMIN}:
+        raise AuthorizationError("Only an LD/DCD or administrator can share a thread")
+    if shared_with.role is not UserRole.SME:
+        raise ValueError("Threads can be shared only with an SME account")
+    share = CommentShare(comment_id=comment.id, shared_with_user_id=shared_with.id, shared_by_user_id=actor.id, created_at=utc_now())
+    db.add(share)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        existing = db.scalar(select(CommentShare).where(CommentShare.comment_id == comment.id, CommentShare.shared_with_user_id == shared_with.id))
+        if existing is not None:
+            return existing
+        raise
+    db.refresh(share)
+    return share
