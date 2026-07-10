@@ -39,6 +39,9 @@ export function renderTextHighlight(document: Document, range: Range): () => voi
   }
   const marker = document.createElement("div"); marker.setAttribute("data-moodle-review-highlight", "true");
   marker.style.cssText = "position:fixed;pointer-events:none;z-index:2147483646;background:#f5b64255;border:2px solid #f5b642";
-  const rect = range.getBoundingClientRect(); Object.assign(marker.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` });
-  document.documentElement.append(marker); return () => marker.remove();
+  const place = () => { const rect = range.getBoundingClientRect(); Object.assign(marker.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` }); };
+  document.documentElement.append(marker); place();
+  document.defaultView?.addEventListener("resize", place);
+  document.defaultView?.addEventListener("scroll", place, true);
+  return () => { document.defaultView?.removeEventListener("resize", place); document.defaultView?.removeEventListener("scroll", place, true); marker.remove(); };
 }

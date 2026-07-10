@@ -16,22 +16,51 @@ export function validateCreateCommentMessage(message: unknown): { payload: Creat
   if (record.type !== "CREATE_COMMENT" || Object.keys(record).some((key) => !["type", "payload", "screenshot"].includes(key)) || (own(record, "screenshot") && typeof record.screenshot !== "boolean")) return invalid();
   if (!record.payload || typeof record.payload !== "object" || Array.isArray(record.payload)) return invalid();
   const payload = record.payload as Record<string, unknown>;
-  const allowed = ["course_id", "page_url", "page_title", "body", "category", "anchor_type", "selected_quote", "prefix", "suffix", "css_selector", "dom_selector", "relative_x", "relative_y"];
-  if (Object.keys(payload).some((key) => !allowed.includes(key))) return invalid();
-  const stringLimits: Record<string, number> = { selected_quote: 20000, prefix: 2000, suffix: 2000, css_selector: 4000, dom_selector: 4000 };
-  for (const [key, limit] of Object.entries(stringLimits)) if (own(payload, key) && (typeof payload[key] !== "string" || (payload[key] as string).length > limit)) return invalid();
+  const common = ["course_id", "page_url", "page_title", "body", "category", "anchor_type"];
+  const expected = payload.anchor_type === "text_highlight"
+    ? [...common, "selected_quote", "prefix", "suffix"]
+    : payload.anchor_type === "visual_pin"
+      ? [...common, "css_selector", "relative_x", "relative_y"]
+      : [];
+  if (!expected.length || Object.keys(payload).length !== expected.length || expected.some((key) => !own(payload, key))) return invalid();
   if (typeof payload.course_id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(payload.course_id)) return invalid();
   let page: URL; try { page = new URL(payload.page_url as string); } catch { return invalid(); }
   if (!["http:", "https:"].includes(page.protocol) || page.username || page.password || page.hash || page.href !== payload.page_url || page.href.length > 4096) return invalid();
-  for (const [key, max] of [["page_title", 512], ["body", 10000]] as const) if (typeof payload[key] !== "string" || !payload[key].trim() || payload[key].length > max) return invalid();
+  for (const [key, max] of [["page_title", 512], ["body", 10000]] as const) {
+    if (typeof payload[key] !== "string") return invalid();
+    payload[key] = payload[key].trim();
+    if (!payload[key] || (payload[key] as string).length > max) return invalid();
+  }
   const categories = ["language_grammar", "learning_design_content_flow", "accessibility", "technical_link_media_interaction", "assessment", "general"];
-  if (typeof payload.category !== "string" || !categories.includes(payload.category)) return invalid();
+  if (typeof payload.category !== "string") return invalid();
+  const category = payload.category.trim(); payload.category = category;
+  if (!categories.includes(category)) return invalid();
   if (payload.anchor_type === "text_highlight") {
-    if (typeof payload.selected_quote !== "string" || !payload.selected_quote.trim() || (typeof payload.prefix !== "string" && typeof payload.suffix !== "string" && typeof payload.css_selector !== "string")) return invalid();
+    if (typeof payload.selected_quote !== "string" || typeof payload.prefix !== "string" || typeof payload.suffix !== "string") return invalid();
+    const selectedQuote = payload.selected_quote.trim(); const prefix = payload.prefix; const suffix = payload.suffix; payload.selected_quote = selectedQuote;
+    if (!selectedQuote || selectedQuote.length > 20000 || prefix.length > 2000 || suffix.length > 2000) return invalid();
   } else if (payload.anchor_type === "visual_pin") {
-    if (typeof payload.css_selector !== "string" || !payload.css_selector || typeof payload.relative_x !== "number" || typeof payload.relative_y !== "number" || payload.relative_x < 0 || payload.relative_x > 1 || payload.relative_y < 0 || payload.relative_y > 1) return invalid();
+    if (typeof payload.css_selector !== "string" || typeof payload.relative_x !== "number" || typeof payload.relative_y !== "number") return invalid();
+    const selector = payload.css_selector.trim(); const relativeX = payload.relative_x; const relativeY = payload.relative_y; payload.css_selector = selector;
+    if (!selector || selector.length > 4000 || !Number.isFinite(relativeX) || !Number.isFinite(relativeY) || relativeX < 0 || relativeX > 1 || relativeY < 0 || relativeY > 1) return invalid();
   } else return invalid();
   return { payload: payload as CreateCommentPayload, screenshot: record.screenshot === true };
+}
+
+export async function handleCreateCommentBridge(
+  message: unknown,
+  sender: { id?: string; url?: string },
+  dependencies: {
+    authorize(sender: { id?: string; url?: string }): Promise<boolean>;
+    create(payload: CreateCommentPayload, screenshot: boolean): Promise<unknown>;
+  },
+): Promise<unknown> {
+  const validated = validateCreateCommentMessage(message);
+  let senderUrl: URL;
+  try { senderUrl = new URL(sender.url ?? ""); } catch { throw new Error("Unauthorized CREATE_COMMENT sender"); }
+  if (new URL(validated.payload.page_url).origin !== senderUrl.origin) throw new Error("CREATE_COMMENT page origin must match sender origin");
+  if (!await dependencies.authorize(sender)) throw new Error("Unauthorized CREATE_COMMENT sender");
+  return dependencies.create(validated.payload, validated.screenshot);
 }
 
 export function validateResolveCourseMessage(message: unknown): ResolveCoursePayload {
