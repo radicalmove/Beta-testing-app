@@ -75,8 +75,8 @@ def create_comment(db: DbSession, author: User, *, course_id: uuid.UUID, page_ur
 
 
 def update_comment_status(db: DbSession, actor: User, comment: Comment, status: str) -> Comment:
-    if actor.id != comment.author_user_id and actor.role not in {UserRole.LD_DCD, UserRole.ADMIN}:
-        raise AuthorizationError("Only the author or an LD/DCD or administrator can change comment status")
+    if actor.role is not UserRole.LD_DCD:
+        raise AuthorizationError("Only an LD/DCD can change comment status")
     new_status = CommentStatus(status)
     instant = utc_now()
     comment.status, comment.updated_at = new_status, instant
@@ -99,8 +99,8 @@ def create_reply(db: DbSession, actor: User, comment: Comment, body: str) -> Com
 
 
 def share_comment_with_user(db: DbSession, actor: User, comment: Comment, shared_with: User) -> CommentShare:
-    if actor.role not in {UserRole.LD_DCD, UserRole.ADMIN}:
-        raise AuthorizationError("Only an LD/DCD or administrator can share a thread")
+    if actor.role is not UserRole.LD_DCD:
+        raise AuthorizationError("Only an LD/DCD can share a thread")
     if shared_with.role is not UserRole.SME:
         raise ValueError("Threads can be shared only with an SME account")
     share = CommentShare(comment_id=comment.id, shared_with_user_id=shared_with.id, shared_by_user_id=actor.id, created_at=utc_now())
