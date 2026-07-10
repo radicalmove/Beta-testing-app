@@ -1,5 +1,9 @@
 declare const __MOODLE_PATTERNS__: string[];
 declare const __OPTIONAL_FRAME_PATTERNS__: string[];
+declare const chrome: any;
+
+import { detectCourseContext, explicitCourseIdFromDocument, type CourseContext } from "./course-context.ts";
+import { mountReviewOverlay, type ConnectionStatus, type ReviewOverlay } from "./overlay/root.ts";
 
 const MARKER = "data-moodle-review-extension";
 
@@ -50,6 +54,58 @@ if (typeof window !== "undefined" && typeof document !== "undefined") {
     document,
     moodlePatterns: __MOODLE_PATTERNS__,
     optionalFramePatterns: __OPTIONAL_FRAME_PATTERNS__,
-    inject: () => document.documentElement.dispatchEvent(new CustomEvent("moodle-review:bootstrap")),
+    inject: () => {
+      document.documentElement.dispatchEvent(new CustomEvent("moodle-review:bootstrap"));
+      if (window.top === window) startCourseReview();
+    },
   });
+}
+
+function pageLabel(document: Document): string {
+  return document.querySelector<HTMLElement>("h1")?.textContent?.trim() || document.title.trim() || "Current page";
+}
+
+function currentContext(): CourseContext {
+  return detectCourseContext({
+    url: window.location.href,
+    title: document.querySelector<HTMLElement>("[data-course-name], .page-header-headings h1")?.textContent?.trim() || document.title,
+    pageTitle: pageLabel(document),
+    explicitCourseId: explicitCourseIdFromDocument(document),
+  });
+}
+
+function startCourseReview(): void {
+  let context = currentContext();
+  let overlay: ReviewOverlay = mountReviewOverlay(document, context, "connecting");
+  let lastSignature = "";
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let requestSequence = 0;
+
+  const refresh = () => {
+    const next = currentContext();
+    const signature = `${next.page_url}\n${next.title}\n${next.pageTitle}\n${next.moodle_course_id ?? "temporary"}`;
+    if (signature === lastSignature) return;
+    lastSignature = signature;
+    context = next;
+    overlay.update(context, "connecting");
+    const sequence = ++requestSequence;
+    const payload = { course_url: context.course_url, title: context.title, ...(context.moodle_course_id ? { moodle_course_id: context.moodle_course_id } : {}) };
+    chrome.runtime.sendMessage({ type: "RESOLVE_COURSE", payload }, (response: { ok?: boolean; status?: ConnectionStatus } | undefined) => {
+      if (sequence !== requestSequence) return;
+      const status: ConnectionStatus = response?.ok ? "connected" : response?.status === "signed-out" ? "signed-out" : response?.status === "pending" ? "pending" : "offline";
+      overlay.update(context, status);
+    });
+  };
+  const schedule = () => { clearTimeout(timer); timer = setTimeout(refresh, 120); };
+  for (const eventName of ["popstate", "hashchange", "moodle-review:navigate"]) window.addEventListener(eventName, schedule);
+  for (const method of ["pushState", "replaceState"] as const) {
+    const original = history[method].bind(history);
+    history[method] = ((data: unknown, unused: string, url?: string | URL | null) => {
+      original(data, unused, url);
+      window.dispatchEvent(new Event("moodle-review:navigate"));
+    }) as History[typeof method];
+  }
+  const title = document.querySelector("title");
+  if (title) new MutationObserver(schedule).observe(title, { childList: true, subtree: true, characterData: true });
+  refresh();
 }
