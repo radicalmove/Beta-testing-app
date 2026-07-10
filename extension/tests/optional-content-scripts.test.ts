@@ -82,3 +82,37 @@ test("unchanged registration is left in place without an unregister gap", async 
   assert.equal(removed, 0);
   assert.equal(added, 0);
 });
+
+test("registration is replaced when any execution setting drifts", async () => {
+  const desired = {
+    id: OPTIONAL_CONTENT_SCRIPT_ID,
+    matches: ["https://rise.example.invalid/*"],
+    js: ["content.js"],
+    allFrames: true,
+    runAt: "document_idle" as const,
+    persistAcrossSessions: true,
+  };
+  const drifts = [
+    { js: ["old-content.js"] },
+    { allFrames: false },
+    { runAt: "document_start" as const },
+    { persistAcrossSessions: false },
+  ];
+
+  for (const drift of drifts) {
+    let removed = 0;
+    let registered: unknown[] = [];
+    const scripting = {
+      getRegisteredContentScripts: async () => [{ ...desired, ...drift }],
+      unregisterContentScripts: async () => { removed += 1; },
+      registerContentScripts: async (scripts: unknown[]) => { registered = scripts; },
+    };
+    await reconcileOptionalContentScript({
+      optionalPatterns: desired.matches,
+      grantedOrigins: desired.matches,
+      scripting,
+    });
+    assert.equal(removed, 1, `expected unregister for ${Object.keys(drift)[0]} drift`);
+    assert.deepEqual(registered, [desired]);
+  }
+});
