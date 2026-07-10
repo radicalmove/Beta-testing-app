@@ -24,9 +24,6 @@ dev = [
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
-filterwarnings = [
-    "ignore:Using `httpx` with `starlette.testclient` is deprecated:starlette.exceptions.StarletteDeprecationWarning",
-]
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
