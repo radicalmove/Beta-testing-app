@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import PositiveInt
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,7 +17,7 @@ class Settings(BaseSettings):
     bootstrap_admin_password: str | None = None
     dashboard_session_hours: int = 8
     attachment_storage_dir: str = "var/attachments"
-    attachment_max_bytes: int = 5 * 1024 * 1024
+    attachment_max_bytes: PositiveInt = 5 * 1024 * 1024
 
 
 @lru_cache

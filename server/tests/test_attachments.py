@@ -9,6 +9,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.config import get_settings
+from app.config import Settings
 from app.db import Base, get_session
 from app.main import create_app
 from app.models import Attachment, User, UserRole
@@ -92,6 +93,8 @@ def test_comment_author_can_upload_and_download_signature_verified_image(client,
     assert record.object_name != filename
     assert Path(record.object_name).name == record.object_name
     assert (client.storage_dir / record.object_name).read_bytes() == content
+    assert (client.storage_dir.stat().st_mode & 0o777) == 0o700
+    assert ((client.storage_dir / record.object_name).stat().st_mode & 0o777) == 0o600
     check.close()
 
 
@@ -108,6 +111,56 @@ def test_upload_rejects_unsupported_oversized_or_mismatched_content(client, file
 
     assert response.status_code == status_code
     assert not client.storage_dir.exists() or list(client.storage_dir.iterdir()) == []
+
+
+def test_object_name_collision_preserves_existing_file_and_retries(client, monkeypatch):
+    author, _ = headers_for(client, "collision-author@example.test", UserRole.BETA_TESTER)
+    comment_id = make_comment(client, author)
+    client.storage_dir.mkdir(mode=0o700)
+    collision_name = "already-there.png"
+    replacement_name = "new-object.png"
+    existing = client.storage_dir / collision_name
+    existing.write_bytes(b"pre-existing bytes")
+
+    names = iter((collision_name, replacement_name))
+    monkeypatch.setattr("app.services.attachments._new_object_name", lambda _media_type: next(names))
+
+    response = client.post(
+        f"/api/comments/{comment_id}/attachments",
+        headers=author,
+        files={"file": ("proof.png", io.BytesIO(PNG), "image/png")},
+    )
+
+    assert response.status_code == 201
+    assert existing.read_bytes() == b"pre-existing bytes"
+    assert (client.storage_dir / replacement_name).read_bytes() == PNG
+    assert sorted(path.name for path in client.storage_dir.iterdir()) == [collision_name, replacement_name]
+
+
+@pytest.mark.parametrize("value", (0, -1))
+def test_attachment_max_bytes_must_be_positive(value):
+    with pytest.raises(ValueError):
+        Settings(attachment_max_bytes=value)
+
+
+def test_database_failure_removes_temp_and_published_object(client, monkeypatch):
+    author, _ = headers_for(client, "db-failure-author@example.test", UserRole.BETA_TESTER)
+    comment_id = make_comment(client, author)
+
+    def fail_commit(_session):
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(client.db_factory.class_, "commit", fail_commit)
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        client.post(
+            f"/api/comments/{comment_id}/attachments",
+            headers=author,
+            files={"file": ("proof.png", io.BytesIO(PNG), "image/png")},
+        )
+
+    assert client.storage_dir.exists()
+    assert list(client.storage_dir.iterdir()) == []
 
 
 def test_upload_requires_visibility_then_author_or_ld_dcd_permission(client):

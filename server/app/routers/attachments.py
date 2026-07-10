@@ -27,14 +27,14 @@ def _attachment_json(attachment: Attachment) -> dict[str, str | int]:
 
 
 @router.post("/api/comments/{comment_id}/attachments", status_code=status.HTTP_201_CREATED)
-async def upload_attachment(comment_id: uuid.UUID, file: UploadFile = File(...), user: User = Depends(current_api_user), db: DbSession = Depends(get_session), settings: Settings = Depends(get_settings)) -> dict[str, str | int]:
+def upload_attachment(comment_id: uuid.UUID, file: UploadFile = File(...), user: User = Depends(current_api_user), db: DbSession = Depends(get_session), settings: Settings = Depends(get_settings)) -> dict[str, str | int]:
     comment = visible_comment_for(db, user, comment_id)
     if comment is None:
         raise HTTPException(status_code=404, detail="Comment not found")
     if user.id != comment.author_user_id and user.role is not UserRole.LD_DCD:
         raise HTTPException(status_code=403, detail="Only the comment author or an LD/DCD can attach a screenshot")
     try:
-        attachment = await store_attachment(db, user, comment, file, storage_dir=settings.attachment_storage_dir, max_bytes=settings.attachment_max_bytes)
+        attachment = store_attachment(db, user, comment, file, storage_dir=settings.attachment_storage_dir, max_bytes=settings.attachment_max_bytes)
         return _attachment_json(attachment)
     except UnsupportedAttachmentError as exc:
         raise HTTPException(status_code=415, detail=str(exc)) from exc

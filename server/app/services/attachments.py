@@ -19,6 +19,8 @@ class AttachmentTooLargeError(Exception):
 
 
 _EXTENSIONS = {"image/png": ".png", "image/jpeg": ".jpg"}
+_CHUNK_SIZE = 64 * 1024
+_SIGNATURE_BYTES = 8
 
 
 def visible_attachment_comment_for(db: DbSession, user: User, comment_id: uuid.UUID) -> Comment | None:
@@ -36,36 +38,52 @@ def _sniff_media_type(header: bytes) -> str | None:
     return None
 
 
-async def store_attachment(db: DbSession, uploader: User, comment: Comment, upload: UploadFile, *, storage_dir: str, max_bytes: int) -> Attachment:
+def _new_object_name(media_type: str) -> str:
+    return f"{uuid.uuid4().hex}{_EXTENSIONS[media_type]}"
+
+
+def store_attachment(db: DbSession, uploader: User, comment: Comment, upload: UploadFile, *, storage_dir: str, max_bytes: int) -> Attachment:
     claimed_type = (upload.content_type or "").lower()
     if claimed_type not in _EXTENSIONS:
         raise UnsupportedAttachmentError("Only PNG and JPEG screenshots are supported")
     if max_bytes < 1:
         raise ValueError("attachment_max_bytes must be positive")
 
-    content = bytearray()
-    while chunk := await upload.read(min(64 * 1024, max_bytes + 1 - len(content))):
-        content.extend(chunk)
-        if len(content) > max_bytes:
-            raise AttachmentTooLargeError(f"Attachment exceeds the {max_bytes}-byte limit")
-    detected_type = _sniff_media_type(content)
-    if detected_type is None or detected_type != claimed_type:
-        raise UnsupportedAttachmentError("File contents do not match the declared PNG or JPEG type")
-
     directory = Path(storage_dir).expanduser().resolve()
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-    object_name = f"{uuid.uuid4().hex}{_EXTENSIONS[detected_type]}"
-    final_path = directory / object_name
     temporary_path = directory / f".{uuid.uuid4().hex}.upload"
     fd = os.open(temporary_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    final_path: Path | None = None
+    published_by_this_call = False
     try:
+        size_bytes = 0
+        header = bytearray()
         with os.fdopen(fd, "wb") as target:
-            target.write(content)
+            while chunk := upload.file.read(_CHUNK_SIZE):
+                size_bytes += len(chunk)
+                if size_bytes > max_bytes:
+                    raise AttachmentTooLargeError(f"Attachment exceeds the {max_bytes}-byte limit")
+                if len(header) < _SIGNATURE_BYTES:
+                    header.extend(chunk[: _SIGNATURE_BYTES - len(header)])
+                target.write(chunk)
             target.flush()
             os.fsync(target.fileno())
-        # Hard-link publication is atomic and refuses to overwrite even in the
-        # extraordinarily unlikely event of an object-name collision.
-        os.link(temporary_path, final_path)
+
+        detected_type = _sniff_media_type(header)
+        if detected_type is None or detected_type != claimed_type:
+            raise UnsupportedAttachmentError("File contents do not match the declared PNG or JPEG type")
+
+        # Hard-link publication is atomic and refuses to overwrite. Generate a
+        # fresh object name on collision so cleanup can never touch that object.
+        while not published_by_this_call:
+            object_name = _new_object_name(detected_type)
+            candidate_path = directory / object_name
+            try:
+                os.link(temporary_path, candidate_path)
+            except FileExistsError:
+                continue
+            final_path = candidate_path
+            published_by_this_call = True
         temporary_path.unlink()
         attachment = Attachment(
             comment_id=comment.id,
@@ -73,7 +91,7 @@ async def store_attachment(db: DbSession, uploader: User, comment: Comment, uplo
             original_filename=Path(upload.filename or "screenshot").name[:255] or "screenshot",
             object_name=object_name,
             media_type=detected_type,
-            size_bytes=len(content),
+            size_bytes=size_bytes,
             created_at=utc_now(),
         )
         db.add(attachment)
@@ -83,7 +101,8 @@ async def store_attachment(db: DbSession, uploader: User, comment: Comment, uplo
     except Exception:
         db.rollback()
         temporary_path.unlink(missing_ok=True)
-        final_path.unlink(missing_ok=True)
+        if published_by_this_call and final_path is not None:
+            final_path.unlink(missing_ok=True)
         raise
 
 
