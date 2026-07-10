@@ -24,7 +24,7 @@ export function handleDialogKey(input: { key: string; shiftKey: boolean; activeI
 
 export type CommentAnchor = ({ anchor_type: "text_highlight" } & TextAnchor) | ({ anchor_type: "visual_pin" } & PinAnchor);
 export type UnresolvedAnchor = { id: string; label: string; quote?: string };
-export type ReviewOverlayOptions = { submit?: (input: { body: string; category: string; anchor: CommentAnchor; screenshot: boolean; embeddedFrameUnavailable: boolean; contextSnapshot: CourseContext }) => Promise<{ id?: string } | void>; uploadScreenshot?: (commentId: string, dataUrl: string) => Promise<void>; captureScreenshot?: () => Promise<string>; onFrameFallback?: () => void; onTakeToContext?: (id: string) => void };
+export type ReviewOverlayOptions = { submit?: (input: { body: string; category: string; anchor: CommentAnchor; screenshot: boolean; embeddedFrameUnavailable: boolean; contextSnapshot: CourseContext }) => Promise<{ id?: string; screenshot_available?: boolean } | void>; uploadScreenshot?: (commentId: string, dataUrl: string) => Promise<void>; cancelScreenshot?: (commentId: string) => Promise<void>; captureScreenshot?: () => Promise<string>; onFrameFallback?: () => void; onTakeToContext?: (id: string) => void };
 export type ReviewOverlay = { update(context: CourseContext, status: ConnectionStatus): void; showFrameFallback(): void; hideFrameFallback(): void; setUnresolvedAnchors(anchors: UnresolvedAnchor[]): void; destroy(): void };
 
 export function mountReviewOverlay(document: Document, context: CourseContext, status: ConnectionStatus = "connecting", options: ReviewOverlayOptions = {}): ReviewOverlay {
@@ -51,6 +51,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   let pinListener: ((event: PointerEvent) => void) | undefined;
   let fallbackPin = false;
   let composerContext: CourseContext | undefined;
+  let pendingScreenshotId: string | undefined;
   const cancelPin = (event: KeyboardEvent) => { if (event.key === "Escape" && pinListener) { ownerDocument.removeEventListener("pointerdown", pinListener, true); ownerDocument.removeEventListener("keydown", cancelPin, true); pinListener = undefined; fallbackPin = false; shadow.querySelector<HTMLElement>(".panel")!.hidden = true; returnFocus?.focus(); } };
   const mount = () => {
     const style = shadow.querySelector("style");
@@ -76,7 +77,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     }
   };
   const cleanupPreview = () => { previewCleanup?.(); previewCleanup = undefined; };
-  const closeDialog = () => { shadow.querySelector(".backdrop")?.remove(); composerContext = undefined; cleanupPreview(); fallbackPin = false; returnFocus?.focus(); };
+  const closeDialog = () => { if (pendingScreenshotId) void options.cancelScreenshot?.(pendingScreenshotId).catch(() => undefined); pendingScreenshotId = undefined; shadow.querySelector(".backdrop")?.remove(); composerContext = undefined; cleanupPreview(); fallbackPin = false; returnFocus?.focus(); };
   const openDialog = (trigger: HTMLElement, label: string, anchor: CommentAnchor) => {
     const contextSnapshot = { ...context };
     composerContext = contextSnapshot;
@@ -106,12 +107,18 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
         const commentId = saved && typeof saved.id === "string" ? saved.id : undefined;
         if (!commentId) throw new Error("Comment saved, but screenshot upload is unavailable.");
         const dialog = backdrop.querySelector<HTMLElement>(".dialog")!;
+        if (saved?.screenshot_available === false) {
+          dialog.innerHTML = `<h2>Comment saved</h2><p role="status">The comment was saved, but screenshot upload is unavailable.</p><div class="actions"><button type="button" data-cancel>Done</button></div>`;
+          dialog.querySelector("[data-cancel]")?.addEventListener("click", closeDialog);
+          return;
+        }
+        pendingScreenshotId = commentId;
         dialog.innerHTML = `<h2>Comment saved</h2><p>Your comment is saved. To add a screenshot, choose the current tab in the browser prompt.</p><div class="error" role="alert" hidden></div><div class="actions"><button type="button" data-cancel>Done</button><button type="button" class="primary" data-capture>Capture screenshot now</button></div>`;
         dialog.querySelector("[data-cancel]")?.addEventListener("click", closeDialog);
         dialog.querySelector("[data-capture]")?.addEventListener("click", async () => {
           const capture = dialog.querySelector<HTMLButtonElement>("[data-capture]")!; const captureError = dialog.querySelector<HTMLElement>(".error")!;
           capture.disabled = true; captureError.hidden = true;
-          try { const dataUrl = await (options.captureScreenshot ?? captureDisplayScreenshot)(); if (!options.uploadScreenshot) throw new Error("Screenshot upload is unavailable."); await options.uploadScreenshot(commentId, dataUrl); closeDialog(); }
+          try { const dataUrl = await (options.captureScreenshot ?? captureDisplayScreenshot)(); if (!options.uploadScreenshot) throw new Error("Screenshot upload is unavailable."); await options.uploadScreenshot(commentId, dataUrl); pendingScreenshotId = undefined; closeDialog(); }
           catch (caught) { captureError.textContent = caught instanceof Error ? caught.message : "Screenshot capture was cancelled."; captureError.hidden = false; capture.disabled = false; }
         });
       }

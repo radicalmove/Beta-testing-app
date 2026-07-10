@@ -1,6 +1,7 @@
 export type ResolveCoursePayload = { course_url: string; title: string; moodle_course_id?: number };
 export type CreateCommentPayload = { course_id: string; page_url: string; page_title: string; body: string; category: string; anchor_type: "text_highlight" | "visual_pin"; selected_quote?: string; prefix?: string; suffix?: string; css_selector?: string; dom_selector?: string; relative_x?: number; relative_y?: number };
 export type UploadScreenshotPayload = { comment_id: string; data_url: string };
+export type CancelScreenshotPayload = { comment_id: string };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function normalizeErrorMessage(error: unknown): string {
@@ -11,11 +12,11 @@ export function normalizeErrorMessage(error: unknown): string {
 
 const own = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
 
-export function validateCreateCommentMessage(message: unknown): { payload: CreateCommentPayload } {
+export function validateCreateCommentMessage(message: unknown): { payload: CreateCommentPayload; screenshotRequested?: true } {
   const invalid = (): never => { throw new Error("Invalid CREATE_COMMENT message"); };
   if (!message || typeof message !== "object" || Array.isArray(message)) return invalid();
   const record = message as Record<string, unknown>;
-  if (record.type !== "CREATE_COMMENT" || Object.keys(record).some((key) => !["type", "payload"].includes(key))) return invalid();
+  if (record.type !== "CREATE_COMMENT" || Object.keys(record).some((key) => !["type", "payload", "screenshot_requested"].includes(key)) || (own(record, "screenshot_requested") && typeof record.screenshot_requested !== "boolean")) return invalid();
   if (!record.payload || typeof record.payload !== "object" || Array.isArray(record.payload)) return invalid();
   const payload = record.payload as Record<string, unknown>;
   const common = ["course_id", "page_url", "page_title", "body", "category", "anchor_type"];
@@ -46,7 +47,7 @@ export function validateCreateCommentMessage(message: unknown): { payload: Creat
     const selector = payload.css_selector.trim(); const relativeX = payload.relative_x; const relativeY = payload.relative_y; payload.css_selector = selector;
     if (!selector || selector.length > 4000 || !Number.isFinite(relativeX) || !Number.isFinite(relativeY) || relativeX < 0 || relativeX > 1 || relativeY < 0 || relativeY > 1) return invalid();
   } else return invalid();
-  return { payload: payload as CreateCommentPayload };
+  return { payload: payload as CreateCommentPayload, ...(record.screenshot_requested === true ? { screenshotRequested: true as const } : {}) };
 }
 
 export function validateUploadScreenshotMessage(message: unknown): UploadScreenshotPayload {
@@ -56,13 +57,20 @@ export function validateUploadScreenshotMessage(message: unknown): UploadScreens
   return { comment_id: record.comment_id, data_url: record.data_url };
 }
 
+export function validateCancelScreenshotMessage(message: unknown): CancelScreenshotPayload {
+  if (!message || typeof message !== "object" || Array.isArray(message)) throw new Error("Invalid CANCEL_SCREENSHOT message");
+  const record = message as Record<string, unknown>;
+  if (record.type !== "CANCEL_SCREENSHOT" || Object.keys(record).sort().join() !== "comment_id,type" || typeof record.comment_id !== "string" || !uuid.test(record.comment_id)) throw new Error("Invalid CANCEL_SCREENSHOT message");
+  return { comment_id: record.comment_id };
+}
+
 export async function handleCreateCommentBridge(
   message: unknown,
   sender: { id?: string; url?: string },
   dependencies: {
     authorize(sender: { id?: string; url?: string }): Promise<boolean>;
     contextMatches?(sender: { id?: string; url?: string }, courseId: string): boolean;
-    create(payload: CreateCommentPayload): Promise<unknown>;
+    create(payload: CreateCommentPayload, screenshotRequested: boolean): Promise<unknown>;
   },
 ): Promise<unknown> {
   const validated = validateCreateCommentMessage(message);
@@ -71,7 +79,7 @@ export async function handleCreateCommentBridge(
   if (new URL(validated.payload.page_url).origin !== senderUrl.origin) throw new Error("CREATE_COMMENT page origin must match sender origin");
   if (!await dependencies.authorize(sender)) throw new Error("Unauthorized CREATE_COMMENT sender");
   if (dependencies.contextMatches?.(sender, validated.payload.course_id) !== true) throw new Error("CREATE_COMMENT course context mismatch");
-  return dependencies.create(validated.payload);
+  return dependencies.create(validated.payload, validated.screenshotRequested === true);
 }
 
 export function validateResolveCourseMessage(message: unknown): ResolveCoursePayload {

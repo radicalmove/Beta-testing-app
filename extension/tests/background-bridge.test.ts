@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { authorizeResolveSender, handleCreateCommentBridge, handleResolveCourseBridge, normalizeErrorMessage, validateCreateCommentMessage, validateResolveCourseMessage, validateUploadScreenshotMessage } from "../src/background-bridge.ts";
+import { authorizeResolveSender, handleCreateCommentBridge, handleResolveCourseBridge, normalizeErrorMessage, validateCancelScreenshotMessage, validateCreateCommentMessage, validateResolveCourseMessage, validateUploadScreenshotMessage } from "../src/background-bridge.ts";
 
 test("resolve schema accepts only bounded normalized course fields", () => {
   assert.deepEqual(validateResolveCourseMessage({ type: "RESOLVE_COURSE", payload: { course_url: "https://learn.example/course/view.php?id=7", title: "Law", moodle_course_id: 7 } }), { course_url: "https://learn.example/course/view.php?id=7", title: "Law", moodle_course_id: 7 });
@@ -56,9 +56,15 @@ test("unknown rejection values have safe useful response messages", () => {
 test("create comment bridge accepts only normalized context and anchor fields", () => {
   const payload = { course_id: "123e4567-e89b-12d3-a456-426614174000", page_url: "https://learn.example/mod/page/view.php?id=9", page_title: "Week 2", body: "Needs clarification", category: "general", anchor_type: "text_highlight", selected_quote: "this phrase", prefix: "before ", suffix: " after" };
   assert.deepEqual(validateCreateCommentMessage({ type: "CREATE_COMMENT", payload }), { payload });
-  assert.throws(() => validateCreateCommentMessage({ type: "CREATE_COMMENT", payload, screenshot: true }), /Invalid CREATE_COMMENT/);
+  assert.deepEqual(validateCreateCommentMessage({ type: "CREATE_COMMENT", payload, screenshot_requested: true }), { payload, screenshotRequested: true });
   assert.throws(() => validateCreateCommentMessage({ type: "CREATE_COMMENT", payload: { ...payload, token: "secret" } }), /Invalid CREATE_COMMENT/);
   assert.throws(() => validateCreateCommentMessage({ type: "CREATE_COMMENT", payload: { ...payload, page_url: "javascript:bad" } }), /Invalid CREATE_COMMENT/);
+});
+
+test("cancel screenshot messages have an exact UUID envelope", () => {
+  const message = { type: "CANCEL_SCREENSHOT", comment_id: "123e4567-e89b-12d3-a456-426614174000" };
+  assert.deepEqual(validateCancelScreenshotMessage(message), { comment_id: message.comment_id });
+  assert.throws(() => validateCancelScreenshotMessage({ ...message, extra: true }), /Invalid CANCEL_SCREENSHOT/);
 });
 
 test("create comment preserves an embedded activity hash route", () => {

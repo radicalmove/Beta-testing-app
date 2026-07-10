@@ -58,6 +58,8 @@ export class ReviewContextCache {
     const entry = this.authorizedEntry(sender, false, true); return entry?.id === courseId;
   }
 
+  courseId(sender: ReviewSender): string | undefined { return this.authorizedEntry(sender, false, true)?.id; }
+
   removeTab(tabId: number): void { this.entries.delete(tabId); }
 
   private authorizedEntry(sender: ReviewSender, requireSubframe: boolean, allowAnyFrame = false): Entry | undefined {
