@@ -2,7 +2,7 @@ declare const __MOODLE_PATTERNS__: string[];
 declare const __OPTIONAL_FRAME_PATTERNS__: string[];
 declare const chrome: any;
 
-import { detectCourseContext, explicitCourseIdFromDocument, type CourseContext } from "./course-context.ts";
+import { canonicalCourseUrlFromDocument, detectCourseContext, explicitCourseIdFromDocument, type CourseContext } from "./course-context.ts";
 import { mountReviewOverlay, type ConnectionStatus, type ReviewOverlay } from "./overlay/root.ts";
 
 const MARKER = "data-moodle-review-extension";
@@ -71,6 +71,7 @@ function currentContext(): CourseContext {
     title: document.querySelector<HTMLElement>("[data-course-name], .page-header-headings h1")?.textContent?.trim() || document.title,
     pageTitle: pageLabel(document),
     explicitCourseId: explicitCourseIdFromDocument(document),
+    canonicalCourseUrl: canonicalCourseUrlFromDocument(document),
   });
 }
 

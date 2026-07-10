@@ -48,23 +48,45 @@ export function detectCourseContext(input: {
   title: string;
   pageTitle?: string;
   explicitCourseId?: string | number | null;
+  canonicalCourseUrl?: string | null;
 }): CourseContext {
   const page_url = normalizePageUrl(input.url);
   const url = new URL(page_url);
+  let canonical: URL | undefined;
+  if (input.canonicalCourseUrl) {
+    try {
+      const normalized = normalizePageUrl(new URL(input.canonicalCourseUrl, url).href);
+      const candidate = new URL(normalized);
+      if (candidate.origin === url.origin && /\/course\/view\.php$/i.test(candidate.pathname)) canonical = candidate;
+    } catch { /* Ignore malformed DOM URLs and fall back to a derived boundary. */ }
+  }
   const explicit = positiveInteger(input.explicitCourseId);
   const courseParam = positiveInteger(url.searchParams.get("course"));
   const courseViewId = /\/course\/view\.php$/i.test(url.pathname) ? positiveInteger(url.searchParams.get("id")) : undefined;
-  const moodle_course_id = explicit ?? courseParam ?? courseViewId;
+  const canonicalId = canonical ? positiveInteger(canonical.searchParams.get("id")) : undefined;
+  const moodle_course_id = explicit ?? courseParam ?? courseViewId ?? canonicalId;
   const title = input.title.trim() || "Untitled Moodle course";
-  const context: CourseContext = { course_url: page_url, page_url, title, pageTitle: input.pageTitle?.trim() || title };
+  const stableTitle = title.toLocaleLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 64) || "untitled";
+  const temporaryIdentity = `temporary:${hashIdentity(`${url.origin}\n${title.toLocaleLowerCase()}`)}`;
+  const derivedCourseUrl = `${url.origin}/course/temporary/${stableTitle}-${temporaryIdentity.slice(10)}`;
+  const course_url = moodle_course_id !== undefined ? `${url.origin}/course/view.php?id=${moodle_course_id}` : canonical?.href ?? derivedCourseUrl;
+  const context: CourseContext = { course_url, page_url, title, pageTitle: input.pageTitle?.trim() || title };
   if (moodle_course_id !== undefined) context.moodle_course_id = moodle_course_id;
-  else context.temporaryIdentity = `temporary:${hashIdentity(`${url.origin}${url.pathname}?${url.searchParams}`)}`;
+  else context.temporaryIdentity = temporaryIdentity;
   return context;
 }
 
 export function explicitCourseIdFromDocument(document: Document): string | undefined {
-  const bodyId = document.body?.dataset.courseid ?? document.documentElement.dataset.courseid;
-  const metaId = document.querySelector<HTMLMetaElement>('meta[name="moodle-course-id"], meta[name="course-id"]')?.content;
-  const classId = Array.from(document.body?.classList ?? []).find((name) => /^course-\d+$/.test(name))?.slice(7);
-  return bodyId || metaId || classId;
+  const candidates = [
+    document.body?.dataset.courseid,
+    document.documentElement.dataset.courseid,
+    document.querySelector<HTMLMetaElement>('meta[name="moodle-course-id"], meta[name="course-id"]')?.content,
+    Array.from(document.body?.classList ?? []).find((name) => /^course-\d+$/.test(name))?.slice(7),
+  ];
+  return candidates.find((candidate) => positiveInteger(candidate) !== undefined)?.trim();
+}
+
+export function canonicalCourseUrlFromDocument(document: Document): string | undefined {
+  const element = document.querySelector<HTMLElement>('[data-course-url], link[rel="course"], a[data-course-link], .breadcrumb a[href*="/course/view.php"]');
+  return element?.dataset.courseUrl || element?.getAttribute("href") || undefined;
 }

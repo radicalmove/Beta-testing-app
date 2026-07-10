@@ -1,7 +1,9 @@
 import { ApiClient, authenticate, getActiveToken, type SessionToken } from "./api";
+import { authorizeResolveSender, handleResolveCourseBridge, type ResolveCoursePayload } from "./background-bridge.ts";
 import { reconcileOptionalContentScript } from "./optional-content-scripts";
 
 declare const chrome: any;
+declare const __MOODLE_PATTERNS__: string[];
 declare const __OPTIONAL_FRAME_PATTERNS__: string[];
 
 const DEFAULT_SERVICE_ORIGIN = "https://review.example.invalid";
@@ -30,8 +32,6 @@ async function serviceOrigin(): Promise<string> {
   return settings.serviceOrigin ?? DEFAULT_SERVICE_ORIGIN;
 }
 
-type ResolveCourseMessage = { type: "RESOLVE_COURSE"; payload: { course_url: string; title: string; moodle_course_id?: number } };
-
 async function activeToken(): Promise<string | undefined> {
   const stored = await chrome.storage.session.get(["apiToken", "expiresAt"]) as Partial<SessionToken>;
   const session = typeof stored.apiToken === "string" && typeof stored.expiresAt === "number" ? stored as SessionToken : undefined;
@@ -41,7 +41,7 @@ async function activeToken(): Promise<string | undefined> {
   });
 }
 
-async function resolveCourse(message: ResolveCourseMessage): Promise<unknown> {
+async function resolveCourse(payload: ResolveCoursePayload): Promise<unknown> {
   const client = new ApiClient({
     serviceOrigin: await serviceOrigin(),
     getToken: activeToken,
@@ -51,24 +51,32 @@ async function resolveCourse(message: ResolveCourseMessage): Promise<unknown> {
   const response = await client.request("/api/courses/resolve", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(message.payload),
+    body: JSON.stringify(payload),
   });
   if (response.status === 403) throw new Error("Account pending approval");
   if (!response.ok) throw new Error(`Course resolution failed (${response.status})`);
   return response.json();
 }
 
-chrome.runtime.onMessage.addListener((message: { type?: string }, _sender: unknown, sendResponse: (value: unknown) => void) => {
+chrome.runtime.onMessage.addListener((message: unknown, sender: { id?: string; url?: string }, sendResponse: (value: unknown) => void) => {
   let operation: Promise<unknown> | undefined;
-  if (message.type === "AUTHENTICATE") {
+  if (message && typeof message === "object" && (message as { type?: unknown }).type === "AUTHENTICATE") {
     operation = serviceOrigin().then((origin) => authenticate({
       serviceOrigin: origin,
       getRedirectUrl: () => chrome.identity.getRedirectURL(),
       launchWebAuthFlow: (details) => chrome.identity.launchWebAuthFlow(details),
       setSession: (session: SessionToken) => chrome.storage.session.set(session),
     }));
-  } else if (message.type === "RESOLVE_COURSE") {
-    operation = resolveCourse(message as ResolveCourseMessage);
+  } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "RESOLVE_COURSE") {
+    operation = handleResolveCourseBridge(message, sender, {
+      authorize: (candidate) => authorizeResolveSender(candidate, {
+        extensionId: chrome.runtime.id,
+        moodlePatterns: __MOODLE_PATTERNS__,
+        optionalPatterns: __OPTIONAL_FRAME_PATTERNS__,
+        hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }),
+      }),
+      resolve: resolveCourse,
+    });
   }
   if (!operation) return false;
   void operation.then((data) => sendResponse({ ok: true, data }), (error: Error) => {
