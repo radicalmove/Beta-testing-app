@@ -1,7 +1,10 @@
 import type { CourseContext } from "../course-context.ts";
+import { captureTextAnchor, type TextAnchor } from "../anchors/text.ts";
+import { renderTextHighlight } from "../anchors/recover.ts";
+import { capturePinAnchor, renderPin, type PinAnchor } from "../anchors/pin.ts";
 
 export const OVERLAY_HOST_ID = "moodle-course-review-overlay";
-export const overlayStyles = `:host{--review-navy:#16324f;--review-teal:#087f78;--review-pale:#edf7f6;--review-line:#c8d9dc;all:initial;position:fixed;z-index:2147483647;isolation:isolate;display:block;color:#152a38;font:14px/1.4 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.shell{position:fixed;right:18px;bottom:18px;z-index:2147483647;max-width:min(560px,calc(100vw - 36px));background:#fff;border:1px solid var(--review-line);border-radius:12px;box-shadow:0 10px 32px #16324f33;overflow:hidden}.toolbar{display:flex;align-items:center;gap:8px;padding:8px;background:var(--review-navy);color:#fff}.identity{min-width:0;padding:0 6px;flex:1}.course,.page{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.course{font-weight:700}.page{font-size:12px;color:#d7e8ec}button{appearance:none;border:1px solid #ffffff66;border-radius:7px;background:#fff;color:var(--review-navy);font:inherit;font-weight:650;padding:7px 9px;cursor:pointer}button:hover{background:var(--review-pale)}button:focus-visible,textarea:focus-visible{outline:3px solid #f5b642;outline-offset:2px}.icon{padding:7px 10px}.status{display:flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap}.dot{width:8px;height:8px;border-radius:50%;background:#f5b642}.connected .dot{background:#42d3b4}.signed-out .dot,.offline .dot{background:#ff8d85}.panel{padding:10px;background:#fff;border-top:1px solid var(--review-line)}.panel[hidden]{display:none}.backdrop{position:fixed;inset:0;background:#0b1f3380;display:grid;place-items:center;z-index:2147483647}.dialog{width:min(420px,calc(100vw - 32px));background:#fff;border-radius:12px;padding:18px;box-shadow:0 16px 44px #0005}.dialog h2{margin:0 0 10px;color:var(--review-navy);font-size:18px}.dialog textarea{box-sizing:border-box;width:100%;min-height:110px;border:1px solid var(--review-line);border-radius:7px;padding:8px;font:inherit}.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}.primary{background:var(--review-teal);color:#fff;border-color:var(--review-teal)}`;
+export const overlayStyles = `:host{--review-navy:#16324f;--review-teal:#087f78;--review-pale:#edf7f6;--review-line:#c8d9dc;all:initial;position:fixed!important;inset:auto!important;z-index:2147483647!important;isolation:isolate;display:block!important;color:#152a38;font:14px/1.4 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.shell{position:fixed;right:18px;bottom:18px;z-index:2147483647;max-width:min(560px,calc(100vw - 36px));background:#fff;border:1px solid var(--review-line);border-radius:12px;box-shadow:0 10px 32px #16324f33;overflow:hidden}.toolbar{display:flex;align-items:center;gap:8px;padding:8px;background:var(--review-navy);color:#fff}.identity{min-width:0;padding:0 6px;flex:1}.course,.page{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.course{font-weight:700}.page{font-size:12px;color:#d7e8ec}button,select,textarea{font:inherit}button{appearance:none;border:1px solid #ffffff66;border-radius:7px;background:#fff;color:var(--review-navy);font-weight:650;padding:7px 9px;cursor:pointer}button:hover{background:var(--review-pale)}button:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid #f5b642;outline-offset:2px}.icon{padding:7px 10px}.status{display:flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap}.dot{width:8px;height:8px;border-radius:50%;background:#f5b642}.connected .dot{background:#42d3b4}.signed-out .dot,.offline .dot{background:#ff8d85}.panel{padding:10px;background:#fff;border-top:1px solid var(--review-line)}.panel[hidden]{display:none}.backdrop{position:fixed;inset:0;background:#0b1f3380;display:grid;place-items:center;z-index:2147483647}.dialog{width:min(420px,calc(100vw - 32px));background:#fff;border-radius:12px;padding:18px;box-shadow:0 16px 44px #0005}.dialog h2{margin:0 0 10px;color:var(--review-navy);font-size:18px}.dialog textarea{box-sizing:border-box;width:100%;min-height:110px;border:1px solid var(--review-line);border-radius:7px;padding:8px}.field{display:grid;gap:4px;margin-top:9px}.preview{padding:8px;border-radius:7px;background:var(--review-pale);font-size:12px}.error{color:#a51d24}.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}.primary{background:var(--review-teal);color:#fff;border-color:var(--review-teal)}`;
 
 export type ConnectionStatus = "connecting" | "connected" | "pending" | "signed-out" | "offline";
 const statusLabels: Record<ConnectionStatus, string> = { connecting: "Connecting", connected: "Connected", pending: "Account pending", "signed-out": "Signed out", offline: "Offline" };
@@ -18,11 +21,13 @@ export function handleDialogKey(input: { key: string; shiftKey: boolean; activeI
   return { focusIndex: (input.activeIndex + delta + input.focusableCount) % input.focusableCount, close: false };
 }
 
-export type ReviewOverlay = { update(context: CourseContext, status: ConnectionStatus): void; destroy(): void };
+export type CommentAnchor = ({ anchor_type: "text_highlight" } & TextAnchor) | ({ anchor_type: "visual_pin" } & PinAnchor);
+export type ReviewOverlayOptions = { submit?: (input: { body: string; category: string; anchor: CommentAnchor; screenshot: boolean }) => Promise<void>; onFrameFallback?: () => void };
+export type ReviewOverlay = { update(context: CourseContext, status: ConnectionStatus): void; showFrameFallback(): void; destroy(): void };
 
-export function mountReviewOverlay(document: Document, context: CourseContext, status: ConnectionStatus = "connecting"): ReviewOverlay {
+export function mountReviewOverlay(document: Document, context: CourseContext, status: ConnectionStatus = "connecting", options: ReviewOverlayOptions = {}): ReviewOverlay {
   const existing = document.getElementById(OVERLAY_HOST_ID) as HTMLElement | null;
-  if (existing?.shadowRoot) return createController(existing, existing.shadowRoot, context, status);
+  if (existing?.shadowRoot) return createController(existing, existing.shadowRoot, context, status, options);
   const host = document.createElement("div");
   host.id = OVERLAY_HOST_ID;
   host.setAttribute("data-moodle-review-ui", "true");
@@ -32,14 +37,17 @@ export function mountReviewOverlay(document: Document, context: CourseContext, s
   const style = document.createElement("style");
   style.textContent = overlayStyles;
   shadow.append(style);
-  return createController(host, shadow, context, status);
+  return createController(host, shadow, context, status, options);
 }
 
-function createController(host: HTMLElement, shadow: ShadowRoot, initial: CourseContext, initialStatus: ConnectionStatus): ReviewOverlay {
+function createController(host: HTMLElement, shadow: ShadowRoot, initial: CourseContext, initialStatus: ConnectionStatus, options: ReviewOverlayOptions): ReviewOverlay {
   const ownerDocument = host.ownerDocument;
   let context = initial;
   let status = initialStatus;
   let returnFocus: HTMLElement | null = null;
+  let previewCleanup: (() => void) | undefined;
+  let pinListener: ((event: PointerEvent) => void) | undefined;
+  const cancelPin = (event: KeyboardEvent) => { if (event.key === "Escape" && pinListener) { ownerDocument.removeEventListener("pointerdown", pinListener, true); ownerDocument.removeEventListener("keydown", cancelPin, true); pinListener = undefined; shadow.querySelector<HTMLElement>(".panel")!.hidden = true; returnFocus?.focus(); } };
   const mount = () => {
     const style = shadow.querySelector("style");
     shadow.innerHTML = "";
@@ -63,26 +71,48 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
       statusNode.replaceChildren("Connection: ", dot, statusLabels[status]);
     }
   };
-  const closeDialog = () => { shadow.querySelector(".backdrop")?.remove(); returnFocus?.focus(); };
-  const openDialog = (trigger: HTMLElement, label: string) => {
+  const cleanupPreview = () => { previewCleanup?.(); previewCleanup = undefined; };
+  const closeDialog = () => { shadow.querySelector(".backdrop")?.remove(); cleanupPreview(); returnFocus?.focus(); };
+  const openDialog = (trigger: HTMLElement, label: string, anchor: CommentAnchor) => {
     returnFocus = trigger;
     const backdrop = ownerDocument.createElement("div");
     backdrop.className = "backdrop";
-    backdrop.innerHTML = `<div class="dialog" role="dialog" aria-modal="true" aria-labelledby="review-dialog-title"><h2 id="review-dialog-title">${escapeHtml(label)}</h2><label>Comment<textarea data-initial-focus></textarea></label><div class="actions"><button type="button" data-cancel>Cancel</button><button type="button" class="primary">Save comment</button></div></div>`;
+    const preview = anchor.anchor_type === "text_highlight" ? `“${anchor.selected_quote}”` : `Pin: ${anchor.css_selector}`;
+    backdrop.innerHTML = `<div class="dialog" role="dialog" aria-modal="true" aria-labelledby="review-dialog-title"><h2 id="review-dialog-title">${escapeHtml(label)}</h2><div class="preview">${escapeHtml(preview)}</div><label class="field">Comment<textarea data-initial-focus required></textarea></label><label class="field">Category (optional)<select><option value="general">General</option><option value="language_grammar">Language / grammar</option><option value="learning_design_content_flow">Learning design / content flow</option><option value="accessibility">Accessibility</option><option value="technical_link_media_interaction">Technical / link / media / interaction</option><option value="assessment">Assessment</option></select></label><label class="field"><span><input type="checkbox" data-screenshot> Include a screenshot of the visible viewport</span><small>Only captured when you save this comment.</small></label><div class="error" role="alert" hidden></div><div class="actions"><button type="button" data-cancel>Cancel</button><button type="button" class="primary" data-save>Save comment</button></div></div>`;
     backdrop.addEventListener("keydown", (event) => {
-      const focusable = Array.from(backdrop.querySelectorAll<HTMLElement>("textarea,button"));
+      const focusable = Array.from(backdrop.querySelectorAll<HTMLElement>("textarea,select,input,button"));
       const activeIndex = Math.max(0, focusable.indexOf(shadow.activeElement as HTMLElement));
       const outcome = handleDialogKey({ key: event.key, shiftKey: event.shiftKey, activeIndex, focusableCount: focusable.length });
       if (event.key === "Tab" || outcome.close) event.preventDefault();
       if (outcome.close) closeDialog(); else if (event.key === "Tab") focusable[outcome.focusIndex]?.focus();
     });
     backdrop.querySelector("[data-cancel]")?.addEventListener("click", closeDialog);
+    backdrop.querySelector("[data-save]")?.addEventListener("click", async () => {
+      const textarea = backdrop.querySelector<HTMLTextAreaElement>("textarea")!; const error = backdrop.querySelector<HTMLElement>(".error")!;
+      if (anchor.anchor_type === "text_highlight" && !anchor.selected_quote) { error.textContent = "Select text on the page before saving."; error.hidden = false; returnFocus?.focus(); return; }
+      if (!textarea.value.trim()) { error.textContent = "Enter a comment before saving."; error.hidden = false; textarea.focus(); return; }
+      const save = backdrop.querySelector<HTMLButtonElement>("[data-save]")!; save.disabled = true; error.hidden = true;
+      try { await options.submit?.({ body: textarea.value.trim(), category: backdrop.querySelector<HTMLSelectElement>("select")!.value, anchor, screenshot: backdrop.querySelector<HTMLInputElement>("[data-screenshot]")!.checked }); closeDialog(); }
+      catch (caught) { error.textContent = caught instanceof Error ? caught.message : "Could not save comment."; error.hidden = false; save.disabled = false; }
+    });
     shadow.append(backdrop);
     backdrop.querySelector<HTMLElement>("[data-initial-focus]")?.focus();
   };
   const bind = () => {
-    shadow.querySelector<HTMLElement>('[data-action="highlight"]')?.addEventListener("click", (event) => openDialog(event.currentTarget as HTMLElement, "Comment on highlighted text"));
-    shadow.querySelector<HTMLElement>('[data-action="pin"]')?.addEventListener("click", (event) => openDialog(event.currentTarget as HTMLElement, "Add a page pin"));
+    shadow.querySelector<HTMLElement>('[data-action="highlight"]')?.addEventListener("click", (event) => {
+      const selection = ownerDocument.defaultView?.getSelection();
+      if (!selection?.rangeCount) { openDialog(event.currentTarget as HTMLElement, "Comment on highlighted text", { anchor_type: "text_highlight", selected_quote: "", prefix: "", suffix: "" }); return; }
+      const range = selection.getRangeAt(0); const anchor = captureTextAnchor(range, ownerDocument);
+      if (!anchor) { openDialog(event.currentTarget as HTMLElement, "Comment on highlighted text", { anchor_type: "text_highlight", selected_quote: "", prefix: "", suffix: "" }); return; }
+      previewCleanup = renderTextHighlight(ownerDocument, range.cloneRange()); openDialog(event.currentTarget as HTMLElement, "Comment on highlighted text", { anchor_type: "text_highlight", ...anchor });
+    });
+    shadow.querySelector<HTMLElement>('[data-action="pin"]')?.addEventListener("click", (event) => {
+      if (pinListener) { ownerDocument.removeEventListener("pointerdown", pinListener, true); ownerDocument.removeEventListener("keydown", cancelPin, true); }
+      returnFocus = event.currentTarget as HTMLElement; shadow.querySelector<HTMLElement>(".panel")!.hidden = false; shadow.querySelector<HTMLElement>(".panel")!.textContent = "Select a point on the page. Press Escape to cancel.";
+      pinListener = (pointer) => { const element = ownerDocument.elementFromPoint(pointer.clientX, pointer.clientY) as HTMLElement | null; const anchor = element && capturePinAnchor(element, pointer.clientX, pointer.clientY); if (!anchor) return; pointer.preventDefault(); ownerDocument.removeEventListener("pointerdown", pinListener!, true); ownerDocument.removeEventListener("keydown", cancelPin, true); pinListener = undefined; previewCleanup = renderPin(ownerDocument, anchor); openDialog(returnFocus!, "Add a page pin", { anchor_type: "visual_pin", ...anchor }); };
+      ownerDocument.addEventListener("pointerdown", pinListener, true);
+      ownerDocument.addEventListener("keydown", cancelPin, true);
+    });
     shadow.querySelector<HTMLElement>('[data-action="panel"]')?.addEventListener("click", (event) => {
       const button = event.currentTarget as HTMLElement;
       const panel = shadow.querySelector<HTMLElement>(".panel")!;
@@ -93,5 +123,13 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   };
   mount();
   updateLabels();
-  return { update(next, nextStatus) { context = next; status = nextStatus; updateLabels(); }, destroy() { host.remove(); } };
+  return {
+    update(next, nextStatus) { context = next; status = nextStatus; updateLabels(); },
+    showFrameFallback() {
+      const panel = shadow.querySelector<HTMLElement>(".panel")!; panel.hidden = false;
+      panel.innerHTML = `<strong>embedded content—frame access unavailable</strong><p>Place a pin on the embedded content instead.</p><button type="button" data-parent-pin>Place parent-page pin</button>`;
+      panel.querySelector<HTMLElement>("[data-parent-pin]")?.addEventListener("click", () => { options.onFrameFallback?.(); shadow.querySelector<HTMLElement>('[data-action="pin"]')?.click(); });
+    },
+    destroy() { if (pinListener) ownerDocument.removeEventListener("pointerdown", pinListener, true); ownerDocument.removeEventListener("keydown", cancelPin, true); cleanupPreview(); host.remove(); },
+  };
 }

@@ -1,5 +1,5 @@
 import { ApiClient, authenticate, getActiveToken, type SessionToken } from "./api";
-import { authorizeResolveSender, handleResolveCourseBridge, normalizeErrorMessage, type ResolveCoursePayload } from "./background-bridge.ts";
+import { authorizeResolveSender, handleResolveCourseBridge, normalizeErrorMessage, validateCreateCommentMessage, type CreateCommentPayload, type ResolveCoursePayload } from "./background-bridge.ts";
 import { reconcileOptionalContentScript } from "./optional-content-scripts";
 
 declare const chrome: any;
@@ -58,7 +58,29 @@ async function resolveCourse(payload: ResolveCoursePayload): Promise<unknown> {
   return response.json();
 }
 
-chrome.runtime.onMessage.addListener((message: unknown, sender: { id?: string; url?: string }, sendResponse: (value: unknown) => void) => {
+function client(): Promise<ApiClient> {
+  return serviceOrigin().then((origin) => new ApiClient({ serviceOrigin: origin, getToken: activeToken, clearToken: () => chrome.storage.session.remove(["apiToken", "expiresAt"]), onSignedOut: () => undefined }));
+}
+
+async function createComment(payload: CreateCommentPayload, screenshot: boolean, windowId?: number): Promise<unknown> {
+  const api = await client();
+  const response = await api.request("/api/comments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  if (response.status === 403) throw new Error("Account pending approval");
+  if (!response.ok) throw new Error(`Comment creation failed (${response.status})`);
+  const comment = await response.json() as { id?: string };
+  if (!screenshot || typeof comment.id !== "string") return comment;
+  try {
+    const dataUrl = await chrome.tabs.captureVisibleTab(windowId, { format: "png" });
+    const blob = await (await fetch(dataUrl)).blob(); const form = new FormData(); form.append("file", blob, "visible-viewport.png");
+    const upload = await api.request(`/api/comments/${comment.id}/attachments`, { method: "POST", body: form });
+    if (!upload.ok) throw new Error(`Screenshot upload failed (${upload.status})`);
+    return { ...comment, attachment: await upload.json() };
+  } catch (error) {
+    return { ...comment, screenshot_error: normalizeErrorMessage(error) };
+  }
+}
+
+chrome.runtime.onMessage.addListener((message: unknown, sender: { id?: string; url?: string; tab?: { windowId?: number } }, sendResponse: (value: unknown) => void) => {
   let operation: Promise<unknown> | undefined;
   if (message && typeof message === "object" && (message as { type?: unknown }).type === "AUTHENTICATE") {
     operation = serviceOrigin().then((origin) => authenticate({
@@ -77,6 +99,13 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: { id?: string; u
       }),
       resolve: resolveCourse,
     });
+  } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "CREATE_COMMENT") {
+    operation = (async () => {
+      const validated = validateCreateCommentMessage(message);
+      if (!await authorizeResolveSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) })) throw new Error("Unauthorized CREATE_COMMENT sender");
+      const senderUrl = new URL(sender.url!); if (new URL(validated.payload.page_url).origin !== senderUrl.origin) throw new Error("CREATE_COMMENT page origin must match sender origin");
+      return createComment(validated.payload, validated.screenshot, sender.tab?.windowId);
+    })();
   }
   if (!operation) return false;
   void operation.then((data) => sendResponse({ ok: true, data }), (error: unknown) => {

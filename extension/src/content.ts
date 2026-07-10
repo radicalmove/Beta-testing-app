@@ -78,6 +78,7 @@ if (typeof window !== "undefined" && typeof document !== "undefined") {
     inject: () => {
       document.documentElement.dispatchEvent(new CustomEvent("moodle-review:bootstrap"));
       if (window.top === window) return startCourseReview(window, document, chrome.runtime);
+      window.top?.postMessage({ type: "MOODLE_REVIEW_FRAME_AVAILABLE" }, "*");
     },
   });
 }
@@ -94,6 +95,13 @@ function currentContext(targetWindow: Window & typeof globalThis, targetDocument
     explicitCourseId: explicitCourseIdFromDocument(targetDocument),
     canonicalCourseUrl: canonicalCourseUrlFromDocument(targetDocument),
   });
+}
+
+export function hasInaccessibleFrame(targetDocument: Document): boolean {
+  for (const frame of Array.from(targetDocument.querySelectorAll("iframe"))) {
+    try { if (!frame.contentDocument) return true; } catch { return true; }
+  }
+  return false;
 }
 
 export function createLifecycleController(targetWindow: Window & typeof globalThis, targetDocument: Document, refresh: () => void, delay = 120): { teardown(): void; flush(): void } {
@@ -128,9 +136,14 @@ export function createLifecycleController(targetWindow: Window & typeof globalTh
   } };
 }
 
-export function startCourseReview(targetWindow: Window & typeof globalThis = window, targetDocument: Document = document, runtime: { sendMessage(message: unknown, callback: (response: { ok?: boolean; status?: ConnectionStatus } | undefined) => void): void } = chrome.runtime): () => void {
+export function startCourseReview(targetWindow: Window & typeof globalThis = window, targetDocument: Document = document, runtime: { sendMessage(message: unknown, callback: (response: { ok?: boolean; status?: ConnectionStatus; error?: string; data?: unknown } | undefined) => void): void } = chrome.runtime): () => void {
   let context = currentContext(targetWindow, targetDocument);
-  let overlay: ReviewOverlay = mountReviewOverlay(targetDocument, context, "connecting");
+  let courseId: string | undefined;
+  const send = <T>(message: unknown) => new Promise<T>((resolve, reject) => runtime.sendMessage(message, (response) => response?.ok ? resolve(response.data as T) : reject(new Error(response?.error ?? "Review service unavailable"))));
+  let overlay: ReviewOverlay = mountReviewOverlay(targetDocument, context, "connecting", { submit: async ({ body, category, anchor, screenshot }) => {
+    if (!courseId) throw new Error("Course is not connected yet.");
+    await send({ type: "CREATE_COMMENT", payload: { course_id: courseId, page_url: context.page_url, page_title: context.pageTitle, body, category, ...anchor }, screenshot });
+  } });
   let lastSignature = "";
   let requestSequence = 0;
 
@@ -145,11 +158,17 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
     const payload = { course_url: context.course_url, title: context.title, ...(context.moodle_course_id ? { moodle_course_id: context.moodle_course_id } : {}) };
     runtime.sendMessage({ type: "RESOLVE_COURSE", payload }, (response) => {
       if (sequence !== requestSequence) return;
+      const resolved = response?.data as { id?: unknown } | undefined;
+      courseId = response?.ok && typeof resolved?.id === "string" ? resolved.id : undefined;
       const status: ConnectionStatus = response?.ok ? "connected" : response?.status === "signed-out" ? "signed-out" : response?.status === "pending" ? "pending" : "offline";
       overlay.update(context, status);
     });
   };
   const lifecycle = createLifecycleController(targetWindow, targetDocument, refresh);
+  const detectInaccessibleFrames = () => {
+    if (hasInaccessibleFrame(targetDocument)) overlay.showFrameFallback();
+  };
+  detectInaccessibleFrames();
   refresh();
   return () => { lifecycle.teardown(); overlay.destroy(); };
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { authorizeResolveSender, handleResolveCourseBridge, normalizeErrorMessage, validateResolveCourseMessage } from "../src/background-bridge.ts";
+import { authorizeResolveSender, handleResolveCourseBridge, normalizeErrorMessage, validateCreateCommentMessage, validateResolveCourseMessage } from "../src/background-bridge.ts";
 
 test("resolve schema accepts only bounded normalized course fields", () => {
   assert.deepEqual(validateResolveCourseMessage({ type: "RESOLVE_COURSE", payload: { course_url: "https://learn.example/course/view.php?id=7", title: "Law", moodle_course_id: 7 } }), { course_url: "https://learn.example/course/view.php?id=7", title: "Law", moodle_course_id: 7 });
@@ -51,4 +51,11 @@ test("bridge rejects a payload whose course origin differs from the authorized s
 test("unknown rejection values have safe useful response messages", () => {
   assert.equal(normalizeErrorMessage("network down"), "network down");
   assert.equal(normalizeErrorMessage({ reason: "secret" }), "Unexpected background error");
+});
+
+test("create comment bridge accepts only normalized context and anchor fields", () => {
+  const payload = { course_id: "123e4567-e89b-12d3-a456-426614174000", page_url: "https://learn.example/mod/page/view.php?id=9", page_title: "Week 2", body: "Needs clarification", category: "general", anchor_type: "text_highlight", selected_quote: "this phrase", prefix: "before ", suffix: " after" };
+  assert.deepEqual(validateCreateCommentMessage({ type: "CREATE_COMMENT", payload, screenshot: true }), { payload, screenshot: true });
+  assert.throws(() => validateCreateCommentMessage({ type: "CREATE_COMMENT", payload: { ...payload, token: "secret" } }), /Invalid CREATE_COMMENT/);
+  assert.throws(() => validateCreateCommentMessage({ type: "CREATE_COMMENT", payload: { ...payload, page_url: "javascript:bad" } }), /Invalid CREATE_COMMENT/);
 });
