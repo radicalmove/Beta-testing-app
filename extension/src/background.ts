@@ -1,8 +1,29 @@
 import { authenticate, type SessionToken } from "./api";
+import { reconcileOptionalContentScript } from "./optional-content-scripts";
 
 declare const chrome: any;
+declare const __OPTIONAL_FRAME_PATTERNS__: string[];
 
 const DEFAULT_SERVICE_ORIGIN = "https://review.example.invalid";
+
+let optionalRegistration = Promise.resolve();
+
+function refreshOptionalContentScript(): void {
+  optionalRegistration = optionalRegistration.then(async () => {
+    const permissions = await chrome.permissions.getAll();
+    await reconcileOptionalContentScript({
+      optionalPatterns: __OPTIONAL_FRAME_PATTERNS__,
+      grantedOrigins: permissions.origins ?? [],
+      scripting: chrome.scripting,
+    });
+  }).catch((error: Error) => console.error("Unable to refresh optional frame injection", error));
+}
+
+refreshOptionalContentScript();
+chrome.runtime.onStartup.addListener(refreshOptionalContentScript);
+chrome.runtime.onInstalled.addListener(refreshOptionalContentScript);
+chrome.permissions.onAdded.addListener(refreshOptionalContentScript);
+chrome.permissions.onRemoved.addListener(refreshOptionalContentScript);
 
 async function serviceOrigin(): Promise<string> {
   const settings = await chrome.storage.local.get("serviceOrigin");
