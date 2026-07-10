@@ -1,5 +1,5 @@
 import uuid
-from collections import Counter
+from collections import Counter, defaultdict
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -30,9 +30,12 @@ def index(request: Request, user: User = Depends(current_dashboard_user), db: Db
     if redirect := admin_redirect(user): return redirect
     query, cards, totals = request.query_params, [], Counter()
     projected = dashboard_comments_for(db, user)
+    projected_by_course = defaultdict(list)
+    for item in projected:
+        projected_by_course[item.comment.course_id].append(item)
     for course in db.scalars(select(Course).order_by(Course.title)):
         rows = []
-        for item in projected:
+        for item in projected_by_course[course.id]:
             comment, location, unread = item.comment, item.location, item.unread
             if comment.course_id != course.id: continue
             totals[comment.status.value] += 1
@@ -91,14 +94,18 @@ def thread(request: Request, comment_id: uuid.UUID, user: User = Depends(current
     db.commit()
     replies = list(db.scalars(select(CommentReply).where(CommentReply.comment_id == comment.id).order_by(CommentReply.created_at)))
     events = list(db.scalars(select(CommentStatusEvent).where(CommentStatusEvent.comment_id == comment.id).order_by(CommentStatusEvent.created_at)))
-    people = {person.id: person for person in db.scalars(select(User))}
+    actor_ids = {comment.author_user_id}
+    actor_ids.update(reply.author_user_id for reply in replies)
+    actor_ids.update(event.actor_user_id for event in events)
+    people = dict(db.execute(select(User.id, User.email).where(User.id.in_(actor_ids))).all())
     location = db.get(PageLocation, comment.location_id) if comment.location_id else None
-    smes = list(db.scalars(select(User).where(User.role == UserRole.SME, User.approved_at.is_not(None)).order_by(User.email))) if user.role is UserRole.LD_DCD else []
+    smes = list(db.execute(select(User.id, User.email).where(User.role == UserRole.SME, User.approved_at.is_not(None)).order_by(User.email))) if user.role is UserRole.LD_DCD else []
     share_feedback = {
         "invalid_recipient": "Choose a valid SME account before sharing.",
         "not_sme": "Choose a valid SME account before sharing.",
     }.get(request.query_params.get("share_error"))
-    return rendered(request, "dashboard/thread.html", {"user": user, "comment": comment, "location": location, "replies": replies, "events": events, "people": people, "smes": smes, "status_choices": allowed_status_choices(comment.status), "status_terminal": not bool(allowed_status_choices(comment.status)[1:]), "share_feedback": share_feedback})
+    status_choices = allowed_status_choices(comment.status)[1:]
+    return rendered(request, "dashboard/thread.html", {"user": user, "comment": comment, "location": location, "replies": replies, "events": events, "people": people, "smes": smes, "status_choices": status_choices, "status_terminal": not bool(status_choices), "share_feedback": share_feedback})
 
 @router.post("/threads/{comment_id}/reply")
 async def reply(request: Request, comment_id: uuid.UUID, user: User = Depends(current_dashboard_user), db: DbSession = Depends(get_session)):

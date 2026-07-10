@@ -111,11 +111,27 @@ def test_status_control_selects_current_state_and_only_offers_valid_transitions(
 
     html = dashboard_client.get(f"/dashboard/threads/{comment_id}").text
     select = re.search(r'<select id="status".*?</select>', html).group()
-    assert set(re.findall(r'<option value="([^"]+)"', select)) == expected
-    assert re.search(r'<option value="([^"]+)"\s+selected', select).group(1) == current
+    offered = set(re.findall(r'<option value="([^"]*)"', select))
+    assert offered == (expected - {current}) | {""}
+    placeholder = re.search(r'<option value=""[^>]*selected[^>]*disabled[^>]*>', select)
+    assert placeholder and current.replace("_", " ").title() in select
+    assert 'aria-describedby="status-instructions"' in select
     assert ('disabled aria-disabled="true"' in select) is disabled
     status_form = re.search(r'<form method="post" action="[^"]+/status">.*?</form>', html).group()
     assert ('<button disabled aria-disabled="true">' in status_form) is disabled
+
+
+def test_status_submission_rejects_no_op_while_form_requires_a_transition(dashboard_client):
+    comment_id, _ = seed(dashboard_client)
+    login(dashboard_client, "lead-no-op@example.test", UserRole.LD_DCD)
+    page = dashboard_client.get(f"/dashboard/threads/{comment_id}")
+    assert 'value="" selected disabled' in page.text
+    response = dashboard_client.post(
+        f"/dashboard/threads/{comment_id}/status",
+        data={"status": "open", "csrf_token": dashboard_client.cookies["csrf_token"]},
+        follow_redirects=False,
+    )
+    assert response.status_code == 422
 
 
 @pytest.mark.parametrize(
@@ -182,6 +198,47 @@ def test_share_form_rejects_non_sme_and_unauthorized_without_server_error(dashbo
         follow_redirects=False,
     )
     assert unauthorized.status_code == 403
+
+
+def test_share_form_rejects_unapproved_sme_selected_by_crafted_request(dashboard_client):
+    comment_id, _ = seed(dashboard_client)
+    login(dashboard_client, "lead-unapproved-share@example.test", UserRole.LD_DCD)
+    db = dashboard_client.db_factory()
+    pending = register_account(db, email="pending-sme@example.test", password="long enough password")
+    pending.role = UserRole.SME
+    db.commit()
+    pending_id = pending.id
+    db.close()
+    page = dashboard_client.get(f"/dashboard/threads/{comment_id}")
+    assert "pending-sme@example.test" not in page.text
+    response = dashboard_client.post(
+        f"/dashboard/threads/{comment_id}/share",
+        data={"user_id": str(pending_id), "csrf_token": dashboard_client.cookies["csrf_token"]},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    error_page = dashboard_client.get(response.headers["location"])
+    assert 'role="alert"' in error_page.text and "valid SME" in error_page.text
+
+
+def test_thread_user_query_projects_only_referenced_actor_identity(dashboard_client):
+    from sqlalchemy import event
+
+    comment_id, _ = seed(dashboard_client)
+    login(dashboard_client, "lead-projection@example.test", UserRole.LD_DCD)
+    statements = []
+    engine = dashboard_client.db_factory.kw["bind"]
+    def capture(*args):
+        if "FROM users" in args[2]:
+            statements.append(args[2])
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        assert dashboard_client.get(f"/dashboard/threads/{comment_id}").status_code == 200
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+    actor_queries = [sql for sql in statements if "users.id IN" in sql]
+    assert actor_queries
+    assert all("password_hash" not in sql for sql in actor_queries)
 
 
 def test_dashboard_retains_all_filter_selections(dashboard_client):

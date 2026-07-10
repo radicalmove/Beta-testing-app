@@ -155,6 +155,7 @@ def test_health_returns_ok(client):
 - [ ] **Step 3: Run the dashboard tests; verify failure.**
 - [ ] **Step 4: Implement dashboard queries using the same central visibility service. Show course cards, status chips, thread audit history, comment sharing controls for LD/DCD, and unread-reply markers.**
 - [ ] **Step 5: Run the dashboard tests and a Playwright keyboard smoke test; verify PASS.**
+- **Deferred Task 7 keyboard verification:** this server-only slice validates the keyboard contract from rendered HTML and CSS semantics (including focus-visible styling and no positive `tabindex`). The Playwright keyboard smoke remains deferred until the extension end-to-end harness is introduced in Tasks 9–11.
 - [ ] **Step 6: Commit: `feat: add UCO-styled review dashboard`.**
 
 ### Task 8: Scaffold the Manifest V3 extension and authenticated API client

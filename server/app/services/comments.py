@@ -180,7 +180,7 @@ def create_reply(db: DbSession, actor: User, comment: Comment, body: str) -> Com
 def share_comment_with_user(db: DbSession, actor: User, comment: Comment, shared_with: User) -> CommentShare:
     if actor.role is not UserRole.LD_DCD:
         raise AuthorizationError("Only an LD/DCD can share a thread")
-    if shared_with.role is not UserRole.SME:
+    if shared_with.role is not UserRole.SME or shared_with.approved_at is None:
         raise ValueError("Threads can be shared only with an SME account")
     share = CommentShare(comment_id=comment.id, shared_with_user_id=shared_with.id, shared_by_user_id=actor.id, created_at=utc_now())
     db.add(share)
