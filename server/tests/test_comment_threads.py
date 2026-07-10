@@ -58,13 +58,14 @@ def test_replies_status_history_and_unauthorized_transitions(client):
 
     assert client.post(f"/api/comments/{comment_id}/replies", headers=beta, json={"body": "more detail"}).status_code == 201
     assert client.post(f"/api/comments/{comment_id}/status", headers=sme, json={"status": "in_progress"}).status_code == 404
-    for status in ["in_progress", "awaiting_sme", "resolved", "deferred"]:
+    for status in ["in_progress", "awaiting_sme", "resolved"]:
         assert client.post(f"/api/comments/{comment_id}/status", headers=lead, json={"status": status}).status_code == 200
+    assert client.post(f"/api/comments/{comment_id}/status", headers=lead, json={"status": "deferred"}).status_code == 422
 
     detail = client.get(f"/api/comments/{comment_id}", headers=lead)
     assert detail.status_code == 200
-    assert detail.json()["status"] == "deferred"
-    assert [event["status"] for event in detail.json()["status_history"]] == ["open", "in_progress", "awaiting_sme", "resolved", "deferred"]
+    assert detail.json()["status"] == "resolved"
+    assert [event["status"] for event in detail.json()["status_history"]] == ["open", "in_progress", "awaiting_sme", "resolved"]
     assert [reply["body"] for reply in detail.json()["replies"]] == ["more detail"]
 
 

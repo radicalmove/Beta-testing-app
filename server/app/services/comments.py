@@ -2,7 +2,7 @@ import uuid
 from urllib.parse import urlsplit
 
 from sqlalchemy import or_, select
-from sqlalchemy.orm import Session as DbSession, aliased
+from sqlalchemy.orm import Session as DbSession
 
 from app.models import AnchorType, Comment, CommentCategory, CommentReply, CommentShare, CommentStatus, CommentStatusEvent, PageLocation, User, UserRole
 from app.security import utc_now
@@ -20,9 +20,16 @@ def visible_comments_for(db: DbSession, user: User, course_id: uuid.UUID) -> lis
     if user.role is UserRole.BETA_TESTER:
         query = query.where(Comment.author_user_id == user.id)
     elif user.role is UserRole.SME:
-        author = aliased(User)
-        query = query.join(author, Comment.author_user_id == author.id).outerjoin(CommentShare, CommentShare.comment_id == Comment.id).where(
-            or_(author.role == UserRole.SME, CommentShare.shared_with_user_id == user.id)
+        shared_with_user = select(CommentShare.id).where(
+            CommentShare.comment_id == Comment.id,
+            CommentShare.shared_with_user_id == user.id,
+        ).exists()
+        query = query.where(
+            or_(
+                Comment.author_user_id == user.id,
+                Comment.author_role == UserRole.SME,
+                shared_with_user,
+            )
         )
     else:
         query = query.where(False)
@@ -65,7 +72,7 @@ def create_comment(db: DbSession, author: User, *, course_id: uuid.UUID, page_ur
     location = PageLocation(course_id=course_id, page_url=page_url.strip(), page_title=page_title.strip(), anchor_type=anchor_type, selected_quote=selected_quote, prefix=prefix, suffix=suffix, css_selector=css_selector, dom_selector=dom_selector, relative_x=relative_x, relative_y=relative_y, created_at=instant)
     db.add(location)
     db.flush()
-    comment = Comment(course_id=course_id, location_id=location.id, author_user_id=author.id, body=body.strip(), category=CommentCategory(category), status=CommentStatus.OPEN, created_at=instant, updated_at=instant)
+    comment = Comment(course_id=course_id, location_id=location.id, author_user_id=author.id, author_role=author.role, body=body.strip(), category=CommentCategory(category), status=CommentStatus.OPEN, created_at=instant, updated_at=instant)
     db.add(comment)
     db.flush()
     db.add(CommentStatusEvent(comment_id=comment.id, actor_user_id=author.id, status=CommentStatus.OPEN, created_at=instant))
@@ -78,6 +85,15 @@ def update_comment_status(db: DbSession, actor: User, comment: Comment, status: 
     if actor.role is not UserRole.LD_DCD:
         raise AuthorizationError("Only an LD/DCD can change comment status")
     new_status = CommentStatus(status)
+    allowed_transitions = {
+        CommentStatus.OPEN: {CommentStatus.IN_PROGRESS, CommentStatus.DEFERRED},
+        CommentStatus.IN_PROGRESS: {CommentStatus.AWAITING_SME, CommentStatus.RESOLVED, CommentStatus.DEFERRED},
+        CommentStatus.AWAITING_SME: {CommentStatus.IN_PROGRESS, CommentStatus.RESOLVED, CommentStatus.DEFERRED},
+        CommentStatus.RESOLVED: set(),
+        CommentStatus.DEFERRED: set(),
+    }
+    if new_status not in allowed_transitions[comment.status]:
+        raise ValueError(f"Invalid status transition: {comment.status.value} -> {new_status.value}")
     instant = utc_now()
     comment.status, comment.updated_at = new_status, instant
     db.add(CommentStatusEvent(comment_id=comment.id, actor_user_id=actor.id, status=new_status, created_at=instant))
@@ -89,7 +105,10 @@ def update_comment_status(db: DbSession, actor: User, comment: Comment, status: 
 def create_reply(db: DbSession, actor: User, comment: Comment, body: str) -> CommentReply:
     if not body.strip():
         raise ValueError("body is required")
-    if actor.role is UserRole.BETA_TESTER and actor.id != comment.author_user_id:
+    if comment.author_role is UserRole.BETA_TESTER:
+        if actor.id != comment.author_user_id and actor.role is not UserRole.LD_DCD:
+            raise AuthorizationError("Only the beta author or an LD/DCD can reply to a beta thread")
+    elif actor.role is UserRole.BETA_TESTER and actor.id != comment.author_user_id:
         raise AuthorizationError("Beta testers can reply only to their own threads")
     reply = CommentReply(comment_id=comment.id, author_user_id=actor.id, body=body.strip(), created_at=utc_now())
     db.add(reply)

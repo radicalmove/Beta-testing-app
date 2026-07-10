@@ -1,3 +1,4 @@
+import uuid
 from datetime import UTC, datetime
 
 import pytest
@@ -9,6 +10,7 @@ from sqlalchemy.pool import StaticPool
 from app.db import Base, get_session
 from app.main import create_app
 from app.models import User, UserRole
+from app.services.accounts import change_role
 from app.services.accounts import create_extension_login_code, exchange_extension_login_code
 from app.services.courses import resolve_course
 
@@ -71,7 +73,7 @@ def test_course_thread_visibility_is_role_safe_and_shares_are_per_user(client, v
     sme_thread = make_comment(client, sme_one, course_id, "SME discussion")
     assert client.post(f"/api/comments/{beta_one_thread}/replies", headers=lead, json={"body": "LD answer"}).status_code == 201
     assert client.post(f"/api/comments/{beta_one_thread}/share", headers=lead, json={"user_id": sme_one_id}).status_code == 201
-    assert client.post(f"/api/comments/{beta_one_thread}/replies", headers=sme_one, json={"body": "SME-side note"}).status_code == 201
+    assert client.post(f"/api/comments/{beta_one_thread}/replies", headers=sme_one, json={"body": "SME-side note"}).status_code == 403
 
     headers_by_viewer = {"beta_one": beta_one, "beta_two": beta_two, "sme_one": sme_one, "sme_two": sme_two, "lead": lead}
     expected_by_viewer = {
@@ -87,3 +89,55 @@ def test_course_thread_visibility_is_role_safe_and_shares_are_per_user(client, v
     assert [reply["body"] for reply in beta_detail.json()["replies"]] == ["LD answer"]
     assert client.get(f"/api/comments/{beta_one_thread}", headers=sme_two).status_code == 404
     assert client.post(f"/api/comments/{beta_one_thread}/replies", headers=sme_two, json={"body": "leak"}).status_code == 404
+
+
+def test_promoted_beta_author_does_not_expose_historical_beta_thread_to_other_smes(client):
+    beta, beta_id = headers_for(client, "beta@example.test", UserRole.BETA_TESTER)
+    other_sme, _ = headers_for(client, "other-sme@example.test", UserRole.SME)
+    admin, _ = headers_for(client, "admin@example.test", UserRole.ADMIN)
+    session = client.db_factory()
+    course = resolve_course(session, moodle_course_id=12, course_url="https://moodle.example/course/view.php?id=12", title="Law")
+    course_id = str(course.id)
+    beta_thread = make_comment(client, beta, course_id, "Historical beta feedback")
+    beta_user = session.get(User, uuid.UUID(beta_id))
+    admin_user = session.query(User).filter_by(email="admin@example.test").one()
+    change_role(session, admin_user, beta_user, UserRole.SME)
+    session.close()
+
+    assert {item["id"] for item in client.get("/api/comments", headers=other_sme, params={"course_id": course_id}).json()} == set()
+    assert {item["id"] for item in client.get("/api/comments", headers=beta, params={"course_id": course_id}).json()} == {beta_thread}
+
+
+def test_sme_threads_with_multiple_shares_are_not_duplicated(client):
+    sme_one, _ = headers_for(client, "sme-one@example.test", UserRole.SME)
+    sme_two, sme_two_id = headers_for(client, "sme-two@example.test", UserRole.SME)
+    sme_three, sme_three_id = headers_for(client, "sme-three@example.test", UserRole.SME)
+    lead, _ = headers_for(client, "lead@example.test", UserRole.LD_DCD)
+    session = client.db_factory()
+    course = resolve_course(session, moodle_course_id=12, course_url="https://moodle.example/course/view.php?id=12", title="Law")
+    course_id = str(course.id)
+    session.close()
+    thread = make_comment(client, sme_one, course_id, "SME discussion")
+    assert client.post(f"/api/comments/{thread}/share", headers=lead, json={"user_id": sme_two_id}).status_code == 201
+    assert client.post(f"/api/comments/{thread}/share", headers=lead, json={"user_id": sme_three_id}).status_code == 201
+
+    response = client.get("/api/comments", headers=sme_two, params={"course_id": course_id})
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()] == [thread]
+
+
+def test_beta_thread_replies_are_limited_to_author_and_ld_dcd(client):
+    beta, _ = headers_for(client, "beta@example.test", UserRole.BETA_TESTER)
+    lead, _ = headers_for(client, "lead@example.test", UserRole.LD_DCD)
+    admin, _ = headers_for(client, "admin@example.test", UserRole.ADMIN)
+    session = client.db_factory()
+    course = resolve_course(session, moodle_course_id=12, course_url="https://moodle.example/course/view.php?id=12", title="Law")
+    course_id = str(course.id)
+    session.close()
+    thread = make_comment(client, beta, course_id, "Beta feedback")
+
+    assert client.post(f"/api/comments/{thread}/replies", headers=admin, json={"body": "Admin answer"}).status_code == 403
+    assert client.post(f"/api/comments/{thread}/replies", headers=lead, json={"body": "LD answer"}).status_code == 201
+    assert client.post(f"/api/comments/{thread}/replies", headers=beta, json={"body": "Thanks"}).status_code == 201
+    detail = client.get(f"/api/comments/{thread}", headers=beta)
+    assert [reply["body"] for reply in detail.json()["replies"]] == ["LD answer", "Thanks"]

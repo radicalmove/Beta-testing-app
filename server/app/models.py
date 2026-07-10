@@ -145,6 +145,11 @@ class Comment(Base):
     course_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("courses.id"), nullable=False)
     location_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("page_locations.id"))
     author_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    author_role: Mapped[UserRole] = mapped_column(
+        Enum(UserRole, values_callable=lambda roles: [role.value for role in roles]),
+        nullable=False,
+        default=UserRole.BETA_TESTER,
+    )
     body: Mapped[str] = mapped_column(Text, nullable=False)
     category: Mapped[CommentCategory] = mapped_column(Enum(CommentCategory, values_callable=lambda items: [item.value for item in items]), nullable=False)
     status: Mapped[CommentStatus] = mapped_column(Enum(CommentStatus, values_callable=lambda items: [item.value for item in items]), nullable=False, default=CommentStatus.OPEN)

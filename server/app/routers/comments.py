@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session as DbSession
 
 from app.db import get_session
 from app.dependencies import current_api_user
-from app.models import Comment, CommentReply, CommentStatusEvent, Course, User
+from app.models import Comment, CommentReply, CommentStatusEvent, Course, User, UserRole
 from app.schemas import CommentCreateRequest, CommentReplyRequest, CommentShareRequest, CommentStatusRequest
 from app.services.comments import AuthorizationError, create_comment, create_reply, share_comment_with_user, update_comment_status, visible_comment_for, visible_comments_for
 
@@ -20,9 +20,9 @@ def _comment_json(comment: Comment, db: DbSession | None = None, viewer: User | 
     result = {"id": str(comment.id), "course_id": str(comment.course_id), "location_id": str(comment.location_id), "author_user_id": str(comment.author_user_id), "category": comment.category.value, "status": comment.status.value, "body": comment.body}
     if db is not None and viewer is not None:
         replies = list(db.query(CommentReply).filter_by(comment_id=comment.id).order_by(CommentReply.created_at))
-        if viewer.role.value == "beta_tester":
+        if viewer.role is UserRole.BETA_TESTER:
             allowed = {viewer.id}
-            allowed.update(user.id for user in db.query(User).filter(User.role.in_(["ld_dcd", "admin"])))
+            allowed.update(user.id for user in db.query(User).filter(User.role == UserRole.LD_DCD))
             replies = [reply for reply in replies if reply.author_user_id in allowed]
         result["replies"] = [_reply_json(reply) for reply in replies]
         events = list(db.query(CommentStatusEvent).filter_by(comment_id=comment.id).order_by(CommentStatusEvent.created_at))
@@ -49,6 +49,8 @@ def set_status(comment_id: uuid.UUID, payload: CommentStatusRequest, user: User 
         return _comment_json(update_comment_status(db, user, comment, payload.status))
     except AuthorizationError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("")

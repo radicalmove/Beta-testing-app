@@ -1,6 +1,8 @@
 from datetime import UTC, datetime
 
 from app.models import Comment, CommentStatusEvent, User, UserRole
+import pytest
+
 from app.services.comments import AuthorizationError, create_comment, update_comment_status
 from app.services.courses import resolve_course
 
@@ -31,5 +33,33 @@ def test_non_owner_cannot_change_status_but_ld_can(db_session):
         assert False, "expected an ownership error"
     except AuthorizationError:
         pass
+    update_comment_status(db_session, lead, comment, "in_progress")
     update_comment_status(db_session, lead, comment, "resolved")
     assert comment.status == "resolved"
+
+
+@pytest.mark.parametrize("target", ["open", "awaiting_sme", "resolved"])
+def test_open_rejects_skipped_or_noop_status_transitions(db_session, target):
+    owner = User(email="owner@example.test", password_hash="hash", approved_at=datetime.now(UTC), created_at=datetime.now(UTC))
+    lead = User(email="lead@example.test", password_hash="hash", role=UserRole.LD_DCD, approved_at=datetime.now(UTC), created_at=datetime.now(UTC))
+    db_session.add_all([owner, lead])
+    course = resolve_course(db_session, moodle_course_id=12, course_url="https://moodle.example/course/view.php?id=12", title="Law")
+    comment = create_comment(db_session, owner, course_id=course.id, page_url="https://moodle.example/page/9", page_title="Unit 1", body="Fix", category="assessment", anchor_type="text_highlight", selected_quote="Fix", css_selector="#content")
+
+    with pytest.raises(ValueError, match="Invalid status transition"):
+        update_comment_status(db_session, lead, comment, target)
+
+
+@pytest.mark.parametrize("terminal", ["resolved", "deferred"])
+def test_terminal_statuses_reject_reversals(db_session, terminal):
+    owner = User(email=f"owner-{terminal}@example.test", password_hash="hash", approved_at=datetime.now(UTC), created_at=datetime.now(UTC))
+    lead = User(email=f"lead-{terminal}@example.test", password_hash="hash", role=UserRole.LD_DCD, approved_at=datetime.now(UTC), created_at=datetime.now(UTC))
+    db_session.add_all([owner, lead])
+    course = resolve_course(db_session, moodle_course_id=12, course_url=f"https://moodle.example/course/view.php?id={terminal}", title="Law")
+    comment = create_comment(db_session, owner, course_id=course.id, page_url="https://moodle.example/page/9", page_title="Unit 1", body="Fix", category="assessment", anchor_type="text_highlight", selected_quote="Fix", css_selector="#content")
+    update_comment_status(db_session, lead, comment, terminal if terminal == "deferred" else "in_progress")
+    if terminal == "resolved":
+        update_comment_status(db_session, lead, comment, terminal)
+
+    with pytest.raises(ValueError, match="Invalid status transition"):
+        update_comment_status(db_session, lead, comment, "in_progress")
