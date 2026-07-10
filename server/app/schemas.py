@@ -49,8 +49,10 @@ class CourseConfirmRequest(BaseModel):
 class CommentCreateRequest(BaseModel):
     course_id: uuid.UUID
     page_url: str = Field(min_length=1, max_length=4096)
+    page_title: str = Field(min_length=1, max_length=512)
     body: str = Field(min_length=1, max_length=10000)
     category: str
+    anchor_type: str
     selected_quote: str | None = Field(default=None, max_length=20000)
     prefix: str | None = Field(default=None, max_length=2000)
     suffix: str | None = Field(default=None, max_length=2000)
@@ -61,10 +63,21 @@ class CommentCreateRequest(BaseModel):
 
     @model_validator(mode="after")
     def valid_anchor(self):
-        if self.category not in {"content", "design", "assessment", "accessibility", "technical", "other"}:
+        if not self.page_title.strip():
+            raise ValueError("page_title is required")
+        if self.category not in {"language_grammar", "learning_design_content_flow", "accessibility", "technical_link_media_interaction", "assessment", "general"}:
             raise ValueError("Invalid comment category")
+        if self.anchor_type not in {"text_highlight", "visual_pin"}:
+            raise ValueError("Invalid anchor type")
         if (self.relative_x is None) != (self.relative_y is None):
             raise ValueError("relative_x and relative_y must be supplied together")
+        quote = self.selected_quote and self.selected_quote.strip()
+        selector = (self.css_selector and self.css_selector.strip()) or (self.dom_selector and self.dom_selector.strip())
+        context = (self.prefix and self.prefix.strip()) or (self.suffix and self.suffix.strip())
+        if self.anchor_type == "text_highlight" and (not quote or not (context or selector)):
+            raise ValueError("text_highlight requires a selected_quote and context or selector")
+        if self.anchor_type == "visual_pin" and (not selector or self.relative_x is None or self.relative_y is None):
+            raise ValueError("visual_pin requires a selector and paired coordinates")
         return self
 
 

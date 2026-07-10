@@ -26,7 +26,7 @@ def test_confirm_mapping_reuses_existing_course_and_moves_comments_without_dupli
     db_session.add(author)
     temporary = resolve_course(db_session, course_url="https://moodle.example/course/view.php?x=1", title="Intro")
     existing = resolve_course(db_session, moodle_course_id=777, course_url="https://moodle.example/course/view.php?id=777", title="Intro")
-    comment = Comment(course_id=temporary.id, author_user_id=author.id, body="Needs work", category="content", status="open", created_at=datetime.now(UTC), updated_at=datetime.now(UTC))
+    comment = Comment(course_id=temporary.id, author_user_id=author.id, body="Needs work", category="learning_design_content_flow", status="open", created_at=datetime.now(UTC), updated_at=datetime.now(UTC))
     db_session.add(comment)
     db_session.commit()
 
@@ -41,7 +41,7 @@ def test_confirm_mapping_upgrades_temporary_course_to_a_new_stable_identity_with
     author = User(email="tester@example.test", password_hash="hash", approved_at=datetime.now(UTC), created_at=datetime.now(UTC))
     db_session.add(author)
     temporary = resolve_course(db_session, course_url="https://moodle.example/course/view.php?id=88", title="Intro")
-    comment = Comment(course_id=temporary.id, author_user_id=author.id, body="Needs work", category="content", status="open", created_at=datetime.now(UTC), updated_at=datetime.now(UTC))
+    comment = Comment(course_id=temporary.id, author_user_id=author.id, body="Needs work", category="learning_design_content_flow", status="open", created_at=datetime.now(UTC), updated_at=datetime.now(UTC))
     db_session.add(comment)
     db_session.commit()
 

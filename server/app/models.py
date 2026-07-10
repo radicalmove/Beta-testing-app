@@ -16,12 +16,17 @@ class UserRole(str, enum.Enum):
 
 
 class CommentCategory(str, enum.Enum):
-    CONTENT = "content"
-    DESIGN = "design"
+    LANGUAGE_GRAMMAR = "language_grammar"
+    LEARNING_DESIGN_CONTENT_FLOW = "learning_design_content_flow"
     ASSESSMENT = "assessment"
     ACCESSIBILITY = "accessibility"
-    TECHNICAL = "technical"
-    OTHER = "other"
+    TECHNICAL_LINK_MEDIA_INTERACTION = "technical_link_media_interaction"
+    GENERAL = "general"
+
+
+class AnchorType(str, enum.Enum):
+    TEXT_HIGHLIGHT = "text_highlight"
+    VISUAL_PIN = "visual_pin"
 
 
 class CommentStatus(str, enum.Enum):
@@ -116,6 +121,10 @@ class PageLocation(Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     course_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("courses.id"), nullable=False)
     page_url: Mapped[str] = mapped_column(Text, nullable=False)
+    page_title: Mapped[str] = mapped_column(String(512), nullable=False)
+    anchor_type: Mapped[AnchorType] = mapped_column(
+        Enum(AnchorType, values_callable=lambda items: [item.value for item in items]), nullable=False
+    )
     selected_quote: Mapped[str | None] = mapped_column(Text)
     prefix: Mapped[str | None] = mapped_column(Text)
     suffix: Mapped[str | None] = mapped_column(Text)
