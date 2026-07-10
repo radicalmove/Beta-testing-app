@@ -56,6 +56,13 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   let storedAnchorCleanups: Array<() => void> = [];
   let loadedComments = new Map<string, PageComment>();
   let openThreads = new Map<string, () => void>();
+  const repositioners = new Set<() => void>();
+  let repositionFrame: number | undefined;
+  const repositionAll = () => { repositionFrame = undefined; for (const reposition of repositioners) reposition(); };
+  const scheduleReposition = () => { if (repositionFrame === undefined) repositionFrame = ownerDocument.defaultView?.requestAnimationFrame(repositionAll); };
+  ownerDocument.defaultView?.addEventListener("resize", scheduleReposition);
+  ownerDocument.defaultView?.addEventListener("scroll", scheduleReposition, true);
+  const trackReposition = (reposition: () => void, marker: HTMLElement) => { repositioners.add(reposition); reposition(); storedAnchorCleanups.push(() => { repositioners.delete(reposition); marker.remove(); }); };
   const cancelPin = (event: KeyboardEvent) => { if (event.key === "Escape" && pinListener) { ownerDocument.removeEventListener("pointerdown", pinListener, true); ownerDocument.removeEventListener("keydown", cancelPin, true); pinListener = undefined; fallbackPin = false; shadow.querySelector<HTMLElement>(".panel")!.hidden = true; returnFocus?.focus(); } };
   const mount = () => {
     const style = shadow.querySelector("style");
@@ -176,8 +183,9 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
           panel.hidden = false;
           const article = ownerDocument.createElement("article");
           const heading = ownerDocument.createElement("h2"); heading.textContent = `${comment.category.replaceAll("_", " ")} · ${comment.status.replaceAll("_", " ")}`;
-          const body = ownerDocument.createElement("p"); body.textContent = comment.body; article.append(heading, body);
-          for (const reply of comment.replies) { const node = ownerDocument.createElement("p"); node.textContent = `${reply.author_role.replaceAll("_", " ")} (${reply.author_email}): ${reply.body}`; article.append(node); }
+          const byline = ownerDocument.createElement("p"); byline.textContent = `${comment.author.display_name} (${comment.author.role.replaceAll("_", " ")})`;
+          const body = ownerDocument.createElement("p"); body.textContent = comment.body; article.append(heading, byline, body);
+          for (const reply of comment.replies) { const node = ownerDocument.createElement("p"); node.textContent = `${reply.author.display_name} (${reply.author.role.replaceAll("_", " ")}): ${reply.body}`; article.append(node); }
           panel.replaceChildren(article);
         };
         openThreads.set(comment.id, openThread);
@@ -187,8 +195,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
             storedAnchorCleanups.push(renderTextHighlight(ownerDocument, recovered.range));
             const marker = ownerDocument.createElement("button"); marker.type = "button"; marker.id = `moodle-review-highlight-${comment.id}`; marker.dataset.moodleReviewStoredHighlight = comment.id; marker.setAttribute("aria-label", `Open feedback: ${comment.body}`); marker.textContent = "Comment"; marker.style.cssText = "position:fixed;z-index:2147483646;border:2px solid white;border-radius:999px;background:#087f78;color:white;padding:4px 7px;font:600 12px/1.2 system-ui;box-shadow:0 2px 8px #0005"; marker.addEventListener("click", openThread);
             const place = () => { const position = recovered.range.getBoundingClientRect(); marker.hidden = position.width === 0 && position.height === 0; marker.style.left = `${Math.max(0, position.left)}px`; marker.style.top = `${Math.max(0, position.bottom + 4)}px`; };
-            ownerDocument.documentElement.append(marker); place(); ownerDocument.defaultView?.addEventListener("resize", place); ownerDocument.defaultView?.addEventListener("scroll", place, true);
-            storedAnchorCleanups.push(() => { ownerDocument.defaultView?.removeEventListener("resize", place); ownerDocument.defaultView?.removeEventListener("scroll", place, true); marker.remove(); });
+            ownerDocument.documentElement.append(marker); trackReposition(place, marker);
           }
           else unresolved.push({ id: comment.id, label: `${comment.page_title} · ${comment.body}`, quote: comment.selected_quote });
         } else if (comment.anchor_type === "visual_pin" && comment.css_selector && comment.relative_x !== null && comment.relative_y !== null) {
@@ -198,8 +205,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
           else {
             const marker = ownerDocument.createElement("button"); marker.type = "button"; marker.dataset.moodleReviewStoredPin = comment.id; marker.setAttribute("aria-label", `Open feedback: ${comment.body}`); marker.style.cssText = "position:fixed;z-index:2147483646;width:24px;height:24px;border-radius:50%;border:2px solid white;background:#087f78;color:white;transform:translate(-50%,-50%)"; marker.textContent = "•"; marker.addEventListener("click", openThread);
             const place = () => { const position = recoverPinAnchor(ownerDocument, anchor); marker.hidden = position.status !== "resolved"; if (position.status === "resolved") { marker.style.left = `${position.x}px`; marker.style.top = `${position.y}px`; } };
-            ownerDocument.documentElement.append(marker); place(); ownerDocument.defaultView?.addEventListener("resize", place); ownerDocument.defaultView?.addEventListener("scroll", place, true);
-            storedAnchorCleanups.push(() => { ownerDocument.defaultView?.removeEventListener("resize", place); ownerDocument.defaultView?.removeEventListener("scroll", place, true); marker.remove(); });
+            ownerDocument.documentElement.append(marker); trackReposition(place, marker);
           }
         }
         const item = ownerDocument.createElement("button"); item.type = "button"; item.textContent = comment.body; item.addEventListener("click", openThread); panel.append(item);
@@ -227,11 +233,12 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
       return false;
     },
     showFrameFallback() {
-      const panel = shadow.querySelector<HTMLElement>(".panel")!; panel.hidden = false;
-      panel.innerHTML = `<strong>embedded content—frame access unavailable</strong><p>Place a pin on the embedded content instead.</p><button type="button" data-parent-pin>Place parent-page pin</button>`;
-      panel.querySelector<HTMLElement>("[data-parent-pin]")?.addEventListener("click", () => { fallbackPin = true; options.onFrameFallback?.(); shadow.querySelector<HTMLElement>('[data-action="pin"]')?.click(); });
+      let region = shadow.querySelector<HTMLElement>("[data-frame-fallback]");
+      if (!region) { region = ownerDocument.createElement("section"); region.dataset.frameFallback = "true"; region.setAttribute("role", "status"); region.setAttribute("aria-live", "polite"); region.setAttribute("aria-labelledby", "frame-fallback-heading"); shadow.querySelector(".shell")?.append(region); }
+      region.hidden = false; region.innerHTML = `<strong id="frame-fallback-heading">embedded content—frame access unavailable</strong><p>Place a pin on the embedded content instead.</p><button type="button" data-parent-pin>Place parent-page pin</button>`;
+      region.querySelector<HTMLElement>("[data-parent-pin]")?.addEventListener("click", () => { fallbackPin = true; options.onFrameFallback?.(); shadow.querySelector<HTMLElement>('[data-action="pin"]')?.click(); });
     },
-    hideFrameFallback() { const panel = shadow.querySelector<HTMLElement>(".panel"); if (panel?.querySelector("[data-parent-pin]")) { panel.hidden = true; panel.replaceChildren("No comments on this page yet."); } },
+    hideFrameFallback() { const region = shadow.querySelector<HTMLElement>("[data-frame-fallback]"); if (region) region.hidden = true; },
     setUnresolvedAnchors(anchors) {
       let region = shadow.querySelector<HTMLElement>("[data-unresolved]");
       if (!region) {
@@ -252,6 +259,6 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
       }
       region.replaceChildren(heading, list);
     },
-    destroy() { if (pinListener) ownerDocument.removeEventListener("pointerdown", pinListener, true); ownerDocument.removeEventListener("keydown", cancelPin, true); cleanupPreview(); for (const cleanup of storedAnchorCleanups) cleanup(); host.remove(); },
+    destroy() { if (pinListener) ownerDocument.removeEventListener("pointerdown", pinListener, true); ownerDocument.removeEventListener("keydown", cancelPin, true); ownerDocument.defaultView?.removeEventListener("resize", scheduleReposition); ownerDocument.defaultView?.removeEventListener("scroll", scheduleReposition, true); if (repositionFrame !== undefined) ownerDocument.defaultView?.cancelAnimationFrame(repositionFrame); cleanupPreview(); for (const cleanup of storedAnchorCleanups) cleanup(); host.remove(); },
   };
 }

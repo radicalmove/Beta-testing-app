@@ -12,7 +12,8 @@ test("beta creation gains an LD reply while SME replies remain hidden from beta"
 
   const [visible] = backend.list(pageUrl);
   assert.equal(visible.body, "Beta body");
-  assert.deepEqual(visible.replies.map((reply) => reply.body), ["Fixture LD reply"]);
+  backend.reply(created.id, { role: "beta_tester", userId: "beta-1", email: "beta@example.test" }, "Beta follow-up");
+  assert.deepEqual(backend.list(pageUrl)[0].replies.map((reply) => reply.body), ["Fixture LD reply", "Beta follow-up"]);
 });
 
 test("SME pins are visible to LD/DCD", () => {
@@ -22,6 +23,14 @@ test("SME pins are visible to LD/DCD", () => {
   backend.setViewer({ role: "ld_dcd", userId: "ld-1", email: "ld@example.test" });
 
   assert.deepEqual(backend.list(pageUrl).map((comment) => comment.body), ["SME pin"]);
+});
+
+test("all approved SMEs see SME-authored threads regardless of author", () => {
+  const backend = new StatefulCommentBackend();
+  backend.setViewer({ role: "sme", userId: "sme-a", email: "a@example.test", displayName: "SME A" });
+  backend.create({ page_url: pageUrl, page_title: "Fixture", body: "SME A thread", category: "general", anchor_type: "visual_pin", selected_quote: null, prefix: null, suffix: null, css_selector: "#target", dom_selector: null, relative_x: 0.5, relative_y: 0.5 });
+  backend.setViewer({ role: "sme", userId: "sme-b", email: "b@example.test", displayName: "SME B" });
+  assert.deepEqual(backend.list(pageUrl).map((comment) => comment.body), ["SME A thread"]);
 });
 
 test("dashboard share transitions a beta comment from hidden to selected-SME-only", () => {

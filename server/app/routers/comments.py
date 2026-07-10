@@ -20,17 +20,16 @@ def _page_comment_json(projected: PageComment) -> dict:
     comment, location, author = projected.comment, projected.location, projected.author
     return {
         "id": str(comment.id), "body": comment.body, "category": comment.category.value,
-        "status": comment.status.value, "author_user_id": str(author.id), "author_role": author.role.value,
-        "author_email": author.email, "page_url": location.page_url, "page_title": location.page_title,
+        "status": comment.status.value, "author": {"display_name": author.display_name, "role": author.role.value}, "page_url": location.page_url, "page_title": location.page_title,
         "anchor_type": location.anchor_type.value if hasattr(location.anchor_type, "value") else location.anchor_type, "selected_quote": location.selected_quote,
         "prefix": location.prefix, "suffix": location.suffix, "css_selector": location.css_selector,
         "dom_selector": location.dom_selector, "relative_x": location.relative_x, "relative_y": location.relative_y,
         "replies": [
-            {"id": str(reply.id), "body": reply.body, "author_user_id": str(reply_author.id), "author_role": reply_author.role.value, "author_email": reply_author.email}
+            {"id": str(reply.id), "body": reply.body, "author": {"display_name": reply_author.display_name, "role": reply_author.role.value}}
             for reply, reply_author in projected.replies
         ],
         "status_history": [
-            {"status": event.status.value, "actor_user_id": str(actor.id), "actor_role": actor.role.value}
+            {"status": event.status.value, "created_at": event.created_at.isoformat(), "actor": actor.display_name}
             for event, actor in projected.status_events
         ],
     }
@@ -46,7 +45,7 @@ def _comment_json(comment: Comment, db: DbSession | None = None, viewer: User | 
             replies = [reply for reply in replies if reply.author_user_id in allowed]
         result["replies"] = [_reply_json(reply) for reply in replies]
         events = list(db.query(CommentStatusEvent).filter_by(comment_id=comment.id).order_by(CommentStatusEvent.created_at))
-        result["status_history"] = [{"status": event.status.value, "actor_user_id": str(event.actor_user_id)} for event in events]
+        result["status_history"] = [{"status": event.status.value, "created_at": event.created_at.isoformat()} for event in events]
     return result
 
 

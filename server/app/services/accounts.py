@@ -24,8 +24,12 @@ class AccountAlreadyExistsError(Exception):
     pass
 
 
-def register_account(db: DbSession, *, email: str, password: str) -> User:
-    user = User(email=email.strip().lower(), password_hash=hash_password(password), created_at=utc_now())
+def register_account(db: DbSession, *, email: str, password: str, display_name: str | None = None) -> User:
+    name = (email.split("@", 1)[0] or "User") if display_name is None else display_name
+    name = name.strip()
+    if not name or len(name) > 100:
+        raise ValueError("Display name must contain 1 to 100 characters")
+    user = User(email=email.strip().lower(), display_name=name, password_hash=hash_password(password), created_at=utc_now())
     db.add(user)
     try:
         db.commit()
@@ -55,7 +59,7 @@ def approve_account(db: DbSession, actor: User, user: User) -> User:
     return user
 
 
-def provision_bootstrap_admin(db: DbSession, *, email: str, password: str) -> User | None:
+def provision_bootstrap_admin(db: DbSession, *, email: str, password: str, display_name: str = "Administrator") -> User | None:
     """Provision exactly one admin from deployment secrets, never from a web request."""
     if db.bind.dialect.name == "postgresql":
         db.execute(text("SELECT pg_advisory_xact_lock(:lock_id)"), {"lock_id": 661315270689})
@@ -64,8 +68,11 @@ def provision_bootstrap_admin(db: DbSession, *, email: str, password: str) -> Us
     if db.scalar(select(User).where(User.role == UserRole.ADMIN)) is not None:
         db.commit()
         return None
+    display_name = display_name.strip()
+    if not display_name or len(display_name) > 100:
+        raise ValueError("Display name must contain 1 to 100 characters")
     instant = utc_now()
-    user = User(email=email.strip().lower(), password_hash=hash_password(password), role=UserRole.ADMIN, approved_at=instant, created_at=instant)
+    user = User(email=email.strip().lower(), display_name=display_name, password_hash=hash_password(password), role=UserRole.ADMIN, approved_at=instant, created_at=instant)
     db.add(user)
     db.flush()
     db.add_all([

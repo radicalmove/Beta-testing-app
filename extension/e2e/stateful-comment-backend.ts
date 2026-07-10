@@ -1,5 +1,5 @@
 export type FixtureRole = "beta_tester" | "sme" | "ld_dcd";
-export type FixtureViewer = { role: FixtureRole; userId: string; email: string };
+export type FixtureViewer = { role: FixtureRole; userId: string; email: string; displayName?: string };
 
 type Anchor = {
   page_url: string; page_title: string; body: string; category: string;
@@ -9,9 +9,9 @@ type Anchor = {
   relative_x: number | null; relative_y: number | null;
 };
 
-type Reply = { id: string; body: string; author_user_id: string; author_role: FixtureRole; author_email: string };
+type Reply = { id: string; body: string; authorId: string; author: { display_name: string; role: FixtureRole } };
 type Comment = Anchor & {
-  id: string; status: "open"; author_user_id: string; author_role: FixtureRole; author_email: string;
+  id: string; status: "open"; authorId: string; author: { display_name: string; role: FixtureRole };
   replies: Reply[]; status_history: unknown[]; sharedSmeIds: Set<string>;
 };
 
@@ -25,7 +25,7 @@ export class StatefulCommentBackend {
   setViewer(viewer: FixtureViewer) { this.viewer = viewer; }
 
   create(input: Anchor) {
-    const comment: Comment = { ...input, id: uuid(this.sequence++), status: "open", author_user_id: this.viewer.userId, author_role: this.viewer.role, author_email: this.viewer.email, replies: [], status_history: [], sharedSmeIds: new Set() };
+    const comment: Comment = { ...input, id: uuid(this.sequence++), status: "open", authorId: this.viewer.userId, author: this.publicAuthor(this.viewer), replies: [], status_history: [], sharedSmeIds: new Set() };
     if (this.viewer.role === "beta_tester") this.addReply(comment, { role: "ld_dcd", userId: uuid(2), email: "ld@example.test" }, "Fixture LD reply");
     this.comments.push(comment);
     return { id: comment.id, screenshot_available: false };
@@ -39,19 +39,19 @@ export class StatefulCommentBackend {
   share(commentId: string, selectedSmeId: string) { this.required(commentId).sharedSmeIds.add(selectedSmeId); }
 
   list(pageUrl: string) {
-    return this.comments.filter((comment) => comment.page_url === pageUrl && this.canView(comment)).map((comment) => ({
+    return this.comments.filter((comment) => comment.page_url === pageUrl && this.canView(comment)).map(({ authorId: _authorId, sharedSmeIds: _shares, ...comment }) => ({
       ...comment,
-      replies: comment.replies.filter((reply) => this.viewer.role !== "beta_tester" || reply.author_role === "ld_dcd").map((reply) => ({ ...reply })),
-      sharedSmeIds: undefined,
+      replies: comment.replies.filter((reply) => this.viewer.role !== "beta_tester" || reply.authorId === this.viewer.userId || reply.author.role === "ld_dcd").map(({ authorId: _replyAuthorId, ...reply }) => reply),
     }));
   }
 
   private canView(comment: Comment) {
     if (this.viewer.role === "ld_dcd") return true;
-    if (this.viewer.role === "beta_tester") return comment.author_role === "beta_tester" && comment.author_user_id === this.viewer.userId;
-    return (comment.author_role === "sme" && comment.author_user_id === this.viewer.userId) || (comment.author_role === "beta_tester" && comment.sharedSmeIds.has(this.viewer.userId));
+    if (this.viewer.role === "beta_tester") return comment.author.role === "beta_tester" && comment.authorId === this.viewer.userId;
+    return comment.author.role === "sme" || (comment.author.role === "beta_tester" && comment.sharedSmeIds.has(this.viewer.userId));
   }
 
-  private addReply(comment: Comment, author: FixtureViewer, body: string) { comment.replies.push({ id: uuid(this.sequence++), body, author_user_id: author.userId, author_role: author.role, author_email: author.email }); }
+  private addReply(comment: Comment, author: FixtureViewer, body: string) { comment.replies.push({ id: uuid(this.sequence++), body, authorId: author.userId, author: this.publicAuthor(author) }); }
+  private publicAuthor(author: FixtureViewer) { return { display_name: author.displayName ?? author.email.split("@", 1)[0], role: author.role }; }
   private required(id: string) { const comment = this.comments.find((entry) => entry.id === id); if (!comment) throw new Error(`Unknown fixture comment ${id}`); return comment; }
 }

@@ -139,7 +139,7 @@ test("LIST_PAGE_COMMENTS derives course from cache and validates API data", asyn
   const result = await handleListPageCommentsBridge({ type: "LIST_PAGE_COMMENTS", page_url: pageUrl }, { id: "ours", url: pageUrl }, {
     authorize: async () => true,
     courseId: () => "00000000-0000-4000-8000-000000000090",
-    list: async (courseId, requestedPage) => { requested = { courseId, pageUrl: requestedPage }; return [{ id: "00000000-0000-4000-8000-000000000001", body: "Feedback", category: "general", status: "open", author_user_id: "00000000-0000-4000-8000-000000000002", author_role: "beta_tester", author_email: "beta@example.test", page_url: requestedPage, page_title: "Topic", anchor_type: "visual_pin", selected_quote: null, prefix: null, suffix: null, css_selector: "#main", dom_selector: null, relative_x: 0.2, relative_y: 0.8, replies: [], status_history: [] }]; },
+    list: async (courseId, requestedPage) => { requested = { courseId, pageUrl: requestedPage }; return [{ id: "00000000-0000-4000-8000-000000000001", body: "Feedback", category: "general", status: "open", author: { display_name: "beta@example.test", role: "beta_tester" }, page_url: requestedPage, page_title: "Topic", anchor_type: "visual_pin", selected_quote: null, prefix: null, suffix: null, css_selector: "#main", dom_selector: null, relative_x: 0.2, relative_y: 0.8, replies: [], status_history: [] }]; },
   });
   assert.deepEqual(requested, { courseId: "00000000-0000-4000-8000-000000000090", pageUrl });
   assert.equal(result.length, 1);
@@ -148,7 +148,7 @@ test("LIST_PAGE_COMMENTS derives course from cache and validates API data", asyn
 
 test("page comment response rejects extra fields and wrong pages", () => {
   const pageUrl = "https://example.test/page";
-  const base = { id: "00000000-0000-4000-8000-000000000001", body: "Feedback", category: "general", status: "open", author_user_id: "00000000-0000-4000-8000-000000000002", author_role: "beta_tester", author_email: "beta@example.test", page_url: pageUrl, page_title: "Page", anchor_type: "text_highlight", selected_quote: "words", prefix: "before", suffix: "after", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [] };
+  const base = { id: "00000000-0000-4000-8000-000000000001", body: "Feedback", category: "general", status: "open", author: { display_name: "beta@example.test", role: "beta_tester" }, page_url: pageUrl, page_title: "Page", anchor_type: "text_highlight", selected_quote: "words", prefix: "before", suffix: "after", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [] };
   assert.equal(validatePageCommentsResponse([base], pageUrl).length, 1);
   assert.throws(() => validatePageCommentsResponse([{ ...base, secret: true }], pageUrl), /Invalid page comments response/);
   assert.throws(() => validatePageCommentsResponse([{ ...base, page_url: "https://example.test/other" }], pageUrl), /Invalid page comments response/);

@@ -97,9 +97,9 @@ def thread(request: Request, comment_id: uuid.UUID, user: User = Depends(current
     actor_ids = {comment.author_user_id}
     actor_ids.update(reply.author_user_id for reply in replies)
     actor_ids.update(event.actor_user_id for event in events)
-    people = dict(db.execute(select(User.id, User.email).where(User.id.in_(actor_ids))).all())
+    people = dict(db.execute(select(User.id, User.display_name).where(User.id.in_(actor_ids))).all())
     location = db.get(PageLocation, comment.location_id) if comment.location_id else None
-    smes = list(db.execute(select(User.id, User.email).where(User.role == UserRole.SME, User.approved_at.is_not(None)).order_by(User.email))) if user.role is UserRole.LD_DCD else []
+    smes = list(db.execute(select(User.id, User.display_name, User.email).where(User.role == UserRole.SME, User.approved_at.is_not(None)).order_by(User.display_name))) if user.role is UserRole.LD_DCD else []
     share_feedback = {
         "invalid_recipient": "Choose a valid SME account before sharing.",
         "not_sme": "Choose a valid SME account before sharing.",

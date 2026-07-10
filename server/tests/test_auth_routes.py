@@ -33,16 +33,24 @@ def client(monkeypatch):
 
 
 def test_json_registration_creates_a_pending_account(client):
-    response = client.post("/auth/register", json={"email": "new@example.test", "password": "long enough password"})
+    response = client.post("/auth/register", json={"display_name": "New Tester", "email": "new@example.test", "password": "long enough password"})
 
     assert response.status_code == 201
     assert response.json()["status"] == "pending"
     user = client.db_factory().query(User).one()
     assert user.approved_at is None
+    assert user.display_name == "New Tester"
+
+
+def test_json_registration_requires_a_trimmed_display_name(client):
+    missing = client.post("/auth/register", json={"email": "new@example.test", "password": "long enough password"})
+    blank = client.post("/auth/register", json={"display_name": "   ", "email": "new@example.test", "password": "long enough password"})
+    assert missing.status_code == 422
+    assert blank.status_code == 422
 
 
 def test_json_registration_rejects_a_duplicate_email_with_a_conflict_response(client):
-    payload = {"email": "new@example.test", "password": "long enough password"}
+    payload = {"display_name": "New Tester", "email": "new@example.test", "password": "long enough password"}
     assert client.post("/auth/register", json=payload).status_code == 201
 
     response = client.post("/auth/register", json=payload)
@@ -54,14 +62,14 @@ def test_json_registration_rejects_a_duplicate_email_with_a_conflict_response(cl
 @pytest.mark.parametrize("email", ["   ", " @ ", " user@ "])
 def test_json_registration_strips_email_before_validating_it(client, email):
     response = client.post(
-        "/auth/register", json={"email": email, "password": "long enough password"}
+        "/auth/register", json={"display_name": "New Tester", "email": email, "password": "long enough password"}
     )
 
     assert response.status_code == 422
 
 
 def test_login_rejects_pending_accounts_with_a_generic_failure(client):
-    client.post("/auth/register", json={"email": "new@example.test", "password": "long enough password"})
+    client.post("/auth/register", json={"display_name": "New Tester", "email": "new@example.test", "password": "long enough password"})
 
     response = client.post("/auth/login", json={"email": "new@example.test", "password": "long enough password"})
 
@@ -123,7 +131,7 @@ def test_browser_mutations_require_a_valid_csrf_token(client):
 
     page = client.get("/register")
     csrf = client.cookies.get("csrf_token")
-    accepted = client.post("/register", data={"email": "new@example.test", "password": "long enough password", "csrf_token": csrf}, follow_redirects=False)
+    accepted = client.post("/register", data={"display_name": "New Tester", "email": "new@example.test", "password": "long enough password", "csrf_token": csrf}, follow_redirects=False)
     assert page.status_code == 200
     assert accepted.status_code == 303
 

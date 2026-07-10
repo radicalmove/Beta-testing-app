@@ -14,6 +14,7 @@ def _absolute_http_url(value: str, field_name: str) -> str:
 
 
 class RegistrationRequest(BaseModel):
+    display_name: str = Field(min_length=1, max_length=100)
     email: str = Field(min_length=3, max_length=320)
     password: str = Field(min_length=12, max_length=256)
 
@@ -23,6 +24,14 @@ class RegistrationRequest(BaseModel):
         value = value.strip().lower()
         if "@" not in value or value.startswith("@") or value.endswith("@"):
             raise ValueError("Invalid email address")
+        return value
+
+    @field_validator("display_name")
+    @classmethod
+    def clean_display_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value or any(ord(character) < 32 or ord(character) == 127 for character in value):
+            raise ValueError("Display name is required")
         return value
 
 

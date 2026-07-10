@@ -42,6 +42,7 @@ class User(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False)
+    display_name: Mapped[str] = mapped_column(String(100), nullable=False, default="User")
     password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
     role: Mapped[UserRole] = mapped_column(
         Enum(UserRole, values_callable=lambda roles: [role.value for role in roles]),
@@ -51,7 +52,11 @@ class User(Base):
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
-    __table_args__ = (Index("ix_users_email", "email"), Index("ix_users_role", "role"))
+    __table_args__ = (
+        CheckConstraint("length(trim(display_name)) BETWEEN 1 AND 100", name="ck_users_display_name_length"),
+        Index("ix_users_email", "email"),
+        Index("ix_users_role", "role"),
+    )
 
 
 class Session(Base):

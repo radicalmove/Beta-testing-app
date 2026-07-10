@@ -20,7 +20,7 @@ test("overlay markup is a compact accessible toolbar with course and connection 
 });
 
 const context = { course_url: "https://learn.example/course/view.php?id=1", page_url: "https://learn.example/mod/page/view.php?id=2", title: "Law", pageTitle: "Week 2", moodle_course_id: 1, identityConfidence: "confirmed" as const };
-const storedHighlight = { id: "00000000-0000-4000-8000-000000000001", body: "Clarify this", category: "general", status: "open", author_user_id: "00000000-0000-4000-8000-000000000002", author_role: "beta_tester", author_email: "beta@example.test", page_url: context.page_url, page_title: "Week 2", anchor_type: "text_highlight" as const, selected_quote: "important phrase", prefix: "An ", suffix: " here", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [{ id: "00000000-0000-4000-8000-000000000003", body: "LD reply", author_user_id: "00000000-0000-4000-8000-000000000004", author_role: "ld_dcd", author_email: "ld@example.test" }], status_history: [] };
+const storedHighlight = { id: "00000000-0000-4000-8000-000000000001", body: "Clarify this", category: "general", status: "open", author: { display_name: "beta@example.test", role: "beta_tester" }, page_url: context.page_url, page_title: "Week 2", anchor_type: "text_highlight" as const, selected_quote: "important phrase", prefix: "An ", suffix: " here", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [{ id: "00000000-0000-4000-8000-000000000003", body: "LD reply", author: { display_name: "ld@example.test", role: "ld_dcd" } }], status_history: [] };
 
 test("mounted Shadow DOM traps focus, closes on Escape, and returns focus", () => {
   const window = new Window();
@@ -120,6 +120,31 @@ test("stored highlight has a mounted keyboard button that opens its thread and c
   marker.click();
   assert.match(document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!.textContent!, /LD reply/);
   overlay.destroy(); assert.equal(document.querySelector("[data-moodle-review-stored-highlight]"), null);
+});
+
+test("frame fallback does not replace loaded comments when shown and hidden", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  document.body.innerHTML = "<p>An important phrase here</p>";
+  const overlay = mountReviewOverlay(document, context, "connected");
+  overlay.setPageComments([storedHighlight]); overlay.showFrameFallback();
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  assert.match(shadow.querySelector(".panel")!.textContent!, /Clarify this/);
+  assert.match(shadow.querySelector("[data-frame-fallback]")!.textContent!, /frame access unavailable/);
+  overlay.hideFrameFallback();
+  assert.match(shadow.querySelector(".panel")!.textContent!, /Clarify this/);
+  assert.equal((shadow.querySelector("[data-frame-fallback]") as HTMLElement).hidden, true);
+});
+
+test("stored markers share one overlay scroll and resize scheduler", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  document.body.innerHTML = '<div id="target"></div>';
+  const counts = { scroll: 0, resize: 0 }; const original = window.addEventListener.bind(window);
+  window.addEventListener = ((type: string, listener: any, options?: any) => { if (type === "scroll" || type === "resize") counts[type] += 1; return original(type, listener, options); }) as any;
+  const overlay = mountReviewOverlay(document, context, "connected");
+  const pin = { ...storedHighlight, anchor_type: "visual_pin" as const, selected_quote: null, prefix: null, suffix: null, css_selector: "#target", relative_x: 0.2, relative_y: 0.3 };
+  overlay.setPageComments([pin, { ...pin, id: "00000000-0000-4000-8000-000000000099" }]);
+  assert.deepEqual(counts, { scroll: 1, resize: 1 });
+  overlay.destroy();
 });
 
 test("take to context retries a late text anchor and reports an accessible failure with its quote", () => {

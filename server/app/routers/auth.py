@@ -62,7 +62,7 @@ async def register_form(request: Request, db: DbSession = Depends(get_session)) 
     data = await _form_with_csrf(request)
     try:
         payload = RegistrationRequest.model_validate(data)
-        user = register_account(db, email=payload.email, password=payload.password)
+        user = register_account(db, email=payload.email, password=payload.password, display_name=payload.display_name)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail="Invalid registration details") from exc
     except AccountAlreadyExistsError as exc:
@@ -73,7 +73,7 @@ async def register_form(request: Request, db: DbSession = Depends(get_session)) 
 @router.post("/auth/register", status_code=status.HTTP_201_CREATED)
 def register_json(payload: RegistrationRequest, db: DbSession = Depends(get_session)) -> dict[str, str]:
     try:
-        user = register_account(db, email=payload.email, password=payload.password)
+        user = register_account(db, email=payload.email, password=payload.password, display_name=payload.display_name)
     except AccountAlreadyExistsError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"status": "pending" if user.approved_at is None else "approved"}

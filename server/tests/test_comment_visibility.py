@@ -1,3 +1,4 @@
+import json
 import uuid
 from datetime import UTC, datetime
 
@@ -181,8 +182,13 @@ def test_page_comment_list_returns_anchors_and_role_filtered_conversation(client
     assert item["anchor_type"] == "visual_pin"
     assert item["css_selector"] == "#region-main"
     assert item["relative_x"] == 0.25 and item["relative_y"] == 0.75
-    assert item["author_role"] == "beta_tester"
-    assert [(reply["body"], reply["author_role"]) for reply in item["replies"]] == [("Visible LD reply", "ld_dcd")]
+    assert item["author"]["role"] == "beta_tester"
+    assert [(reply["body"], reply["author"]["role"]) for reply in item["replies"]] == [("Visible LD reply", "ld_dcd")]
+    assert item["author"]["display_name"]
+    encoded = json.dumps(item)
+    assert "email" not in encoded
+    assert "author_user_id" not in encoded
+    assert "actor_user_id" not in encoded
     assert item["status_history"][0]["status"] == "open"
 
     selected = client.get("/api/comments", headers=selected_sme, params={"course_id": course_id, "page_url": page_url})
@@ -190,6 +196,12 @@ def test_page_comment_list_returns_anchors_and_role_filtered_conversation(client
     assert client.get("/api/comments", headers=other_sme, params={"course_id": course_id, "page_url": page_url}).json() == []
     lead_page = client.get("/api/comments", headers=lead, params={"course_id": course_id, "page_url": page_url})
     assert {reply["body"] for reply in lead_page.json()[0]["replies"]} == {"Visible LD reply", "Hidden SME reply"}
+    for page_payload in (response.json(), selected.json(), lead_page.json()):
+        encoded = json.dumps(page_payload)
+        assert "email" not in encoded
+        assert "author_user_id" not in encoded
+        assert "actor_user_id" not in encoded
+        assert page_payload[0]["author"]["display_name"]
 
 
 def test_page_comment_filter_rejects_non_http_and_overlong_urls(client):

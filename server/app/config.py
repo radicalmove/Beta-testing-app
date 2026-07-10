@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     extension_redirect_uris: str = ""
     bootstrap_admin_email: str | None = None
+    bootstrap_admin_display_name: str = "Administrator"
     bootstrap_admin_password: str | None = None
     dashboard_session_hours: int = 8
     attachment_storage_dir: str = "var/attachments"
