@@ -5,8 +5,9 @@ from pathlib import Path
 from fastapi import UploadFile
 from sqlalchemy.orm import Session as DbSession
 
-from app.models import Attachment, Comment, User
+from app.models import Attachment, Comment, User, UserRole
 from app.security import utc_now
+from app.services.comments import visible_comment_for
 
 
 class UnsupportedAttachmentError(Exception):
@@ -18,6 +19,13 @@ class AttachmentTooLargeError(Exception):
 
 
 _EXTENSIONS = {"image/png": ".png", "image/jpeg": ".jpg"}
+
+
+def visible_attachment_comment_for(db: DbSession, user: User, comment_id: uuid.UUID) -> Comment | None:
+    """Apply thread visibility without the comment-only administrator bypass."""
+    if user.role is UserRole.ADMIN:
+        return None
+    return visible_comment_for(db, user, comment_id)
 
 
 def _sniff_media_type(header: bytes) -> str | None:

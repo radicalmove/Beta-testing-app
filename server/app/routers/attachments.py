@@ -8,7 +8,7 @@ from app.config import Settings, get_settings
 from app.db import get_session
 from app.dependencies import current_api_user
 from app.models import Attachment, User, UserRole
-from app.services.attachments import AttachmentTooLargeError, UnsupportedAttachmentError, attachment_path, store_attachment
+from app.services.attachments import AttachmentTooLargeError, UnsupportedAttachmentError, attachment_path, store_attachment, visible_attachment_comment_for
 from app.services.comments import visible_comment_for
 
 
@@ -45,7 +45,7 @@ async def upload_attachment(comment_id: uuid.UUID, file: UploadFile = File(...),
 @router.get("/api/attachments/{attachment_id}", response_class=FileResponse)
 def download_attachment(attachment_id: uuid.UUID, user: User = Depends(current_api_user), db: DbSession = Depends(get_session), settings: Settings = Depends(get_settings)) -> FileResponse:
     attachment = db.get(Attachment, attachment_id)
-    if attachment is None or visible_comment_for(db, user, attachment.comment_id) is None:
+    if attachment is None or visible_attachment_comment_for(db, user, attachment.comment_id) is None:
         raise HTTPException(status_code=404, detail="Attachment not found")
     path = attachment_path(attachment, settings.attachment_storage_dir)
     if not path.is_file():

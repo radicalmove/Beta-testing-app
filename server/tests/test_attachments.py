@@ -125,10 +125,32 @@ def test_upload_requires_visibility_then_author_or_ld_dcd_permission(client):
 def test_download_requires_thread_visibility(client):
     author, _ = headers_for(client, "author@example.test", UserRole.BETA_TESTER)
     other_beta, _ = headers_for(client, "other@example.test", UserRole.BETA_TESTER)
+    selected_sme, selected_sme_id = headers_for(client, "selected-sme@example.test", UserRole.SME)
     lead, _ = headers_for(client, "lead@example.test", UserRole.LD_DCD)
+    admin, _ = headers_for(client, "admin@example.test", UserRole.ADMIN)
     comment_id = make_comment(client, author)
     uploaded = client.post(f"/api/comments/{comment_id}/attachments", headers=author, files={"file": ("proof.png", PNG, "image/png")})
     attachment_id = uploaded.json()["id"]
+    assert client.post(f"/api/comments/{comment_id}/share", headers=lead, json={"user_id": selected_sme_id}).status_code == 201
 
     assert client.get(f"/api/attachments/{attachment_id}", headers=other_beta).status_code == 404
+    assert client.get(f"/api/attachments/{attachment_id}", headers=author).status_code == 200
+    assert client.get(f"/api/attachments/{attachment_id}", headers=selected_sme).status_code == 200
     assert client.get(f"/api/attachments/{attachment_id}", headers=lead).status_code == 200
+    denied = client.get(f"/api/attachments/{attachment_id}", headers=admin)
+    assert denied.status_code == 404
+    assert denied.json() == {"detail": "Attachment not found"}
+    assert "proof.png" not in denied.text
+    assert str(client.storage_dir) not in denied.text
+
+
+def test_sme_visible_course_thread_allows_attachment_download(client):
+    author, _ = headers_for(client, "author-sme@example.test", UserRole.SME)
+    other_sme, _ = headers_for(client, "other-sme@example.test", UserRole.SME)
+    comment_id = make_comment(client, author)
+    uploaded = client.post(f"/api/comments/{comment_id}/attachments", headers=author, files={"file": ("sme-proof.png", PNG, "image/png")})
+
+    download = client.get(f"/api/attachments/{uploaded.json()['id']}", headers=other_sme)
+
+    assert download.status_code == 200
+    assert download.content == PNG
