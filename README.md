@@ -5,8 +5,14 @@ Private FastAPI service for collecting Moodle course-review feedback. This initi
 ## Run locally
 
 1. Create a local environment file: `cp .env.example .env`, then replace the placeholder database password in both relevant values.
-2. Start the service: `docker compose -f deploy/docker-compose.yml up --build`.
+2. Start the service: `docker compose --env-file .env -f deploy/docker-compose.yml up --build`.
 3. Check [http://localhost:8000/health](http://localhost:8000/health); it returns `{"status":"ok"}`.
+
+Use the same explicit environment file when validating Compose configuration:
+
+```sh
+docker compose --env-file .env -f deploy/docker-compose.yml config
+```
 
 ## Test
 
@@ -17,4 +23,4 @@ python -m pip install -e ".[dev]"
 pytest tests/test_health.py -q
 ```
 
-Configuration is supplied through environment variables. Do not commit the root `.env` file.
+Configuration is supplied through environment variables. The explicit `--env-file .env` option supplies values for Compose interpolation; `env_file` in the Compose file supplies them to the running containers. Do not commit the root `.env` file.
