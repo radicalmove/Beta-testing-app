@@ -6,7 +6,7 @@ from app.config import get_settings
 from app.dependencies import current_dashboard_user
 from app import models  # noqa: F401 -- ensure model metadata is available to migrations.
 from app.models import User, UserRole
-from app.routers import admin, auth
+from app.routers import admin, auth, comments, courses
 
 
 def create_app() -> FastAPI:
@@ -15,6 +15,8 @@ def create_app() -> FastAPI:
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
     app.include_router(auth.router)
     app.include_router(admin.router)
+    app.include_router(courses.router)
+    app.include_router(comments.router)
 
     @app.get("/", response_class=HTMLResponse)
     def landing(user: User = Depends(current_dashboard_user)) -> Response:
