@@ -41,6 +41,25 @@ def test_json_registration_creates_a_pending_account(client):
     assert user.approved_at is None
 
 
+def test_json_registration_rejects_a_duplicate_email_with_a_conflict_response(client):
+    payload = {"email": "new@example.test", "password": "long enough password"}
+    assert client.post("/auth/register", json=payload).status_code == 201
+
+    response = client.post("/auth/register", json=payload)
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "An account with that email already exists"}
+
+
+@pytest.mark.parametrize("email", ["   ", " @ ", " user@ "])
+def test_json_registration_strips_email_before_validating_it(client, email):
+    response = client.post(
+        "/auth/register", json={"email": email, "password": "long enough password"}
+    )
+
+    assert response.status_code == 422
+
+
 def test_login_rejects_pending_accounts_with_a_generic_failure(client):
     client.post("/auth/register", json={"email": "new@example.test", "password": "long enough password"})
 

@@ -15,6 +15,7 @@ from app.security import dashboard_cookie_settings, generate_token
 from app.services.accounts import (
     AccountNotApprovedError,
     AuthenticationError,
+    AccountAlreadyExistsError,
     authenticate_account,
     create_dashboard_session,
     create_extension_login_code,
@@ -64,12 +65,17 @@ async def register_form(request: Request, db: DbSession = Depends(get_session)) 
         user = register_account(db, email=payload.email, password=payload.password)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail="Invalid registration details") from exc
+    except AccountAlreadyExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return RedirectResponse("/login?registered=1", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/auth/register", status_code=status.HTTP_201_CREATED)
 def register_json(payload: RegistrationRequest, db: DbSession = Depends(get_session)) -> dict[str, str]:
-    user = register_account(db, email=payload.email, password=payload.password)
+    try:
+        user = register_account(db, email=payload.email, password=payload.password)
+    except AccountAlreadyExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"status": "pending" if user.approved_at is None else "approved"}
 
 

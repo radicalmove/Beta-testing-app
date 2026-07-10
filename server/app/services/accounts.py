@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DbSession
 
 from app.models import AuditEvent, ExtensionLoginCode, Session, User, UserRole
@@ -19,10 +20,18 @@ class AuthorizationError(Exception):
     pass
 
 
+class AccountAlreadyExistsError(Exception):
+    pass
+
+
 def register_account(db: DbSession, *, email: str, password: str) -> User:
     user = User(email=email.strip().lower(), password_hash=hash_password(password), created_at=utc_now())
     db.add(user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise AccountAlreadyExistsError("An account with that email already exists") from exc
     db.refresh(user)
     return user
 
@@ -48,7 +57,12 @@ def approve_account(db: DbSession, actor: User, user: User) -> User:
 
 def provision_bootstrap_admin(db: DbSession, *, email: str, password: str) -> User | None:
     """Provision exactly one admin from deployment secrets, never from a web request."""
+    if db.bind.dialect.name == "postgresql":
+        db.execute(text("SELECT pg_advisory_xact_lock(:lock_id)"), {"lock_id": 661315270689})
+    elif db.bind.dialect.name == "sqlite":
+        db.execute(text("BEGIN IMMEDIATE"))
     if db.scalar(select(User).where(User.role == UserRole.ADMIN)) is not None:
+        db.commit()
         return None
     instant = utc_now()
     user = User(email=email.strip().lower(), password_hash=hash_password(password), role=UserRole.ADMIN, approved_at=instant, created_at=instant)

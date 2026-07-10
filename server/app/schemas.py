@@ -8,9 +8,10 @@ class RegistrationRequest(BaseModel):
     @field_validator("email")
     @classmethod
     def email_has_at_sign(cls, value: str) -> str:
+        value = value.strip().lower()
         if "@" not in value or value.startswith("@") or value.endswith("@"):
             raise ValueError("Invalid email address")
-        return value.strip().lower()
+        return value
 
 
 class ExtensionTokenRequest(BaseModel):

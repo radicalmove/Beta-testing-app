@@ -66,3 +66,19 @@ def test_admin_browser_mutations_require_csrf(client):
     client.post("/auth/login", json={"email": "admin@example.test", "password": "long enough password"})
 
     assert client.post(f"/admin/users/{member_id}/approve", data={}).status_code == 403
+
+
+@pytest.mark.parametrize("payload", [{}, {"role": None}, {"role": "not-a-role"}])
+def test_admin_role_changes_reject_malformed_json_with_validation_response(client, payload):
+    session = client.db_factory()
+    admin = register_account(session, email="admin@example.test", password="long enough password")
+    admin.role, admin.approved_at = UserRole.ADMIN, datetime.now(UTC)
+    member = register_account(session, email="member@example.test", password="long enough password")
+    session.commit()
+    member_id = str(member.id)
+    session.close()
+    client.post("/auth/login", json={"email": "admin@example.test", "password": "long enough password"})
+
+    response = client.post(f"/admin/users/{member_id}/role", json=payload)
+
+    assert response.status_code == 422

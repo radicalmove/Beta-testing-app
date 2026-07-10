@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
@@ -65,9 +66,15 @@ async def set_role(request: Request, user_id: str, user: User = Depends(current_
     _admin(user)
     is_json = request.headers.get("content-type", "").startswith("application/json")
     if is_json:
-        payload = RoleChangeRequest.model_validate(await request.json())
+        try:
+            payload = RoleChangeRequest.model_validate(await request.json())
+        except (ValidationError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail="Invalid role") from exc
     else:
-        payload = RoleChangeRequest.model_validate(await _form_with_csrf(request))
+        try:
+            payload = RoleChangeRequest.model_validate(await _form_with_csrf(request))
+        except ValidationError as exc:
+            raise HTTPException(status_code=422, detail="Invalid role") from exc
     try:
         role = UserRole(payload.role)
     except ValueError as exc:
