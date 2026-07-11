@@ -15,8 +15,8 @@ case "$DELIVERY_ROOT" in
   /|"$ROOT"|"$ROOT"/extension|"$ROOT"/extension/dist) echo "unsafe DELIVERY_ROOT: $DELIVERY_ROOT" >&2; exit 1 ;;
 esac
 
-python3 -c 'from pathlib import Path; from deploy.scripts.release_artifacts import git_identity; print(git_identity(Path(".")))' \
-  >/dev/null
+(cd "$ROOT" && python3 -c 'from pathlib import Path; from deploy.scripts.release_artifacts import git_identity; print(git_identity(Path(".")))') >/dev/null
+[[ ${RELEASE_PREFLIGHT_ONLY:-0} == 1 ]] && exit 0
 
 (cd "$ROOT/extension" && npm test && npm run typecheck)
 (cd "$ROOT/server" && python3 -m pytest -q)
