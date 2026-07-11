@@ -69,3 +69,30 @@ test("successful authentication moves focus to the first review control", async 
   assert.equal(shadow.activeElement, shadow.querySelector('[data-action="highlight"]'));
   assert.match(shadow.querySelector('[aria-live="polite"]')!.textContent!, /Connected/);
 });
+
+test("an authentication completion cannot overwrite a newer external state update", async () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  let finish!: (outcome: { status: "connected" }) => void;
+  const authentication = new Promise<{ status: "connected" }>((resolve) => { finish = resolve; });
+  const overlay = mountReviewOverlay(document, context, "signed-out", { onAuthenticate: () => authentication });
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  shadow.querySelector<HTMLElement>('[data-action="authenticate"]')!.click();
+  overlay.update(context, "offline");
+  finish({ status: "connected" }); await tick();
+  assert.match(shadow.querySelector('[data-auth-status]')!.textContent!, /Offline/);
+  assert.equal(shadow.querySelector('[data-action="authenticate"]')!.textContent, "Retry");
+  assert.equal(shadow.querySelector('[data-action="highlight"]'), null);
+});
+
+test("identity and status updates preserve an open review panel toggle state", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected");
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  shadow.querySelector<HTMLElement>('[data-action="panel"]')!.click();
+  assert.equal(shadow.querySelector<HTMLElement>(".panel")!.hidden, false);
+  overlay.update({ ...context, pageTitle: "Week 3" }, "connected");
+  const toggle = shadow.querySelector<HTMLElement>('[data-action="panel"]')!;
+  assert.equal(shadow.querySelector<HTMLElement>(".panel")!.hidden, false);
+  assert.equal(toggle.getAttribute("aria-expanded"), "true");
+  assert.equal(toggle.getAttribute("aria-label"), "Close review panel");
+});

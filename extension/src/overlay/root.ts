@@ -56,6 +56,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   let context = initial;
   let status = initialStatus;
   let authenticating = false;
+  let stateVersion = 0;
   let returnFocus: HTMLElement | null = null;
   let previewCleanup: (() => void) | undefined;
   let pinListener: ((event: PointerEvent) => void) | undefined;
@@ -92,23 +93,29 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   const renderStateControls = (message = statusLabels[status]) => {
     const toolbar = shadow.querySelector<HTMLElement>(".toolbar");
     if (!toolbar) return;
+    const panelOpen = shadow.querySelector<HTMLElement>(".panel")?.hidden === false;
     const statusNode = toolbar.querySelector<HTMLElement>("[data-auth-status]");
     if (statusNode) { statusNode.className = `status ${status}`; const messageNode = statusNode.querySelector<HTMLElement>("[data-status-message]"); if (messageNode) messageNode.textContent = message; }
     toolbar.querySelector("[data-auth-action]")?.remove(); toolbar.querySelector("[data-review-controls]")?.remove();
     const wrapper = ownerDocument.createElement("div"); wrapper.innerHTML = createStateActions(status); toolbar.append(...Array.from(wrapper.childNodes));
     bind();
+    const panelToggle = toolbar.querySelector<HTMLElement>('[data-action="panel"]');
+    if (panelToggle) { panelToggle.setAttribute("aria-expanded", String(panelOpen)); panelToggle.setAttribute("aria-label", panelOpen ? "Close review panel" : "Open review panel"); }
   };
   const bindStateControls = () => {
     shadow.querySelector<HTMLButtonElement>('[data-action="authenticate"]')?.addEventListener("click", async (event) => {
       if (authenticating) return;
       authenticating = true;
+      const attemptVersion = ++stateVersion;
       const button = event.currentTarget as HTMLButtonElement; button.disabled = true; button.textContent = "Signing in…"; button.setAttribute("aria-busy", "true");
       try {
         const outcome = await options.onAuthenticate?.();
+        if (attemptVersion !== stateVersion) return;
         status = outcome?.status ?? "signed-out"; authenticating = false; renderStateControls(outcome?.message);
         if (status === "connected") shadow.querySelector<HTMLElement>('[data-action="highlight"]')?.focus();
         else shadow.querySelector<HTMLElement>('[data-action="authenticate"]')?.focus();
       } catch {
+        if (attemptVersion !== stateVersion) return;
         status = "signed-out"; authenticating = false; renderStateControls("Sign-in failed—try again"); shadow.querySelector<HTMLElement>('[data-action="authenticate"]')?.focus();
       }
     });
@@ -192,7 +199,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   updateLabels();
   return {
     update(next, nextStatus) {
-      context = next; status = nextStatus; updateLabels();
+      stateVersion += 1; authenticating = false; context = next; status = nextStatus; updateLabels();
       const dialog = shadow.querySelector<HTMLElement>(".dialog");
       if (dialog && composerContext && (composerContext.page_url !== next.page_url || composerContext.course_url !== next.course_url) && !dialog.querySelector("[data-context-warning]")) {
         const warning = ownerDocument.createElement("p"); warning.dataset.contextWarning = "true"; warning.className = "error"; warning.textContent = "The page changed. This comment will stay attached to the page where you opened it."; dialog.querySelector(".preview")?.after(warning);
