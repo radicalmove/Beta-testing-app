@@ -2,7 +2,7 @@ import type { CourseContext } from "../course-context.ts";
 import { captureTextAnchor, type TextAnchor } from "../anchors/text.ts";
 import { recoverTextAnchor, renderTextHighlight } from "../anchors/recover.ts";
 import { capturePinAnchor, recoverPinAnchor, renderPin, type PinAnchor } from "../anchors/pin.ts";
-import { captureDisplayScreenshot } from "../screenshot-flow.ts";
+import { captureDisplayScreenshot } from "../screenshot-capture.ts";
 import type { PageComment } from "../background-bridge.ts";
 
 export const OVERLAY_HOST_ID = "moodle-course-review-overlay";

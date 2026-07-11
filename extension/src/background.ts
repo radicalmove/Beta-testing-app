@@ -1,6 +1,6 @@
 import { ApiClient, authenticate, getActiveToken, type SessionToken } from "./api";
 import { authorizeResolveSender, handleCreateCommentBridge, handleListPageCommentsBridge, handleResolveCourseBridge, normalizeErrorMessage, validateCancelScreenshotMessage, validateUploadScreenshotMessage, type CreateCommentPayload, type ResolveCoursePayload } from "./background-bridge.ts";
-import { validateScreenshotDataUrl } from "./screenshot-flow.ts";
+import { validateScreenshotDataUrl } from "./screenshot-validation.ts";
 import { reconcileOptionalContentScript } from "./optional-content-scripts";
 import { ReviewContextCache, validateContextMessage, type ReviewSender } from "./review-context.ts";
 import { ScreenshotCapabilities } from "./screenshot-capabilities.ts";

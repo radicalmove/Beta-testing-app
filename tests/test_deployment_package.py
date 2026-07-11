@@ -100,5 +100,9 @@ class DeploymentPackageTests(unittest.TestCase):
             self.assertIn(token, script)
         self.assertIn('OPTIONAL_FRAME_PATTERNS="${OPTIONAL_FRAME_PATTERNS-}"', script)
 
+    def test_built_content_script_is_classic_and_self_contained(self):
+        content_script = (ROOT / "extension/dist/content.js").read_text()
+        self.assertNotRegex(content_script, r"(?m)^\s*import(?:\s|\{)")
+
 if __name__ == "__main__":
     unittest.main()
