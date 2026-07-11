@@ -2,10 +2,51 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Window } from "happy-dom";
 
-import { mountReviewOverlay, OVERLAY_HOST_ID } from "../src/overlay/root.ts";
+import { mountReviewOverlay, OVERLAY_HOST_ID, overlayStyles } from "../src/overlay/root.ts";
 
 const context = { course_url: "https://learn.example/course/view.php?id=1", page_url: "https://learn.example/mod/page/view.php?id=2", title: "Law", pageTitle: "Week 2", moodle_course_id: 1, identityConfidence: "confirmed" as const };
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+const contrastRatio = (foreground: string, background: string): number => {
+  const luminance = (hex: string) => {
+    const channels = hex.match(/[\da-f]{2}/gi)!.map((value) => Number.parseInt(value, 16) / 255)
+      .map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * channels[0]! + 0.7152 * channels[1]! + 0.0722 * channels[2]!;
+  };
+  const [lighter, darker] = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+  return (lighter! + 0.05) / (darker! + 0.05);
+};
+
+test("UCO visual tokens provide deterministic WCAG AA contrast", () => {
+  assert.match(overlayStyles, /--review-red:#d73b3d/);
+  assert.match(overlayStyles, /font:14px\/1\.4 Poppins,Arial,sans-serif/);
+  assert.ok(contrastRatio("#ffffff", "#000000") >= 4.5, "header text must meet AA");
+  assert.ok(contrastRatio("#ffffff", "#d73b3d") >= 4.5, "primary action text must meet AA");
+  assert.ok(contrastRatio("#000000", "#ffffff") >= 4.5, "panel text must meet AA");
+  assert.ok(contrastRatio("#000000", "#f2f2f2") >= 4.5, "secondary control text must meet AA");
+  assert.ok(contrastRatio("#000000", "#ffd54f") >= 3, "focus indicator must contrast with adjacent black");
+  assert.ok(contrastRatio("#000000", "#ffffff") >= 3, "focus surround must contrast with adjacent white");
+});
+
+test("overlay styles remain isolated, keyboard-visible, and usable at 320 CSS pixels", () => {
+  assert.match(overlayStyles, /^:host\{/);
+  assert.match(overlayStyles, /all:initial/);
+  assert.match(overlayStyles, /outline:3px solid #ffd54f/);
+  assert.match(overlayStyles, /box-shadow:0 0 0 5px #000/);
+  assert.match(overlayStyles, /@media\(max-width:420px\)/);
+  assert.match(overlayStyles, /width:calc\(100vw - 16px\)/);
+  assert.match(overlayStyles, /flex-wrap:wrap/);
+  assert.doesNotMatch(overlayStyles, /(?:^|})\s*(?:body|html|\.moodle)/);
+});
+
+test("connected status stays textual with a decorative green indicator", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  mountReviewOverlay(document, context, "connected");
+  const status = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!.querySelector<HTMLElement>("[data-auth-status]")!;
+  assert.match(status.textContent!, /Connection:\s*Connected/);
+  assert.equal(status.querySelector(".dot")?.getAttribute("aria-hidden"), "true");
+  assert.match(overlayStyles, /\.connected \.dot\{background:#16833b\}/);
+});
 
 test("signed-out, pending, and offline states expose deterministic accessible controls", () => {
   for (const [status, label, action] of [
