@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pytest
@@ -9,7 +9,8 @@ from sqlalchemy.pool import StaticPool
 
 from app.db import Base, get_session
 from app.main import create_app
-from app.models import Comment, Course, User, UserRole
+from app.models import Comment, Course, CourseMembership, MembershipState, Session, User, UserRole
+from app.security import token_hash, utc_now
 from app.services.accounts import create_extension_login_code, exchange_extension_login_code
 from app.services.courses import resolve_course
 
@@ -43,6 +44,21 @@ def extension_headers(client, role=UserRole.BETA_TESTER):
     token = exchange_extension_login_code(session, code, "https://abcdefghijklmnop.chromiumapp.org/")
     session.close()
     return {"Authorization": f"Bearer {token}"}
+
+
+def bound_extension_headers(client, course: Course, role=UserRole.BETA_TESTER):
+    session = client.db_factory()
+    user = User(email=f"bound-{course.moodle_course_id}@example.test", display_name="Bound reviewer", password_hash="hash", role=UserRole.BETA_TESTER, approved_at=utc_now(), created_at=utc_now())
+    session.add(user)
+    session.flush()
+    membership = CourseMembership(user_id=user.id, course_id=course.id, role=role, state=MembershipState.APPROVED, approved_at=utc_now(), created_at=utc_now(), updated_at=utc_now())
+    session.add(membership)
+    session.flush()
+    raw_token = f"bound-token-{course.moodle_course_id}"
+    session.add(Session(user_id=user.id, membership_id=membership.id, token_hash=token_hash(raw_token), kind="extension", expires_at=utc_now() + timedelta(hours=8), created_at=utc_now()))
+    session.commit()
+    session.close()
+    return {"Authorization": f"Bearer {raw_token}"}
 
 
 def test_extension_comment_route_defaults_omitted_category_to_general(client):
@@ -93,3 +109,22 @@ def test_extension_routes_reject_non_http_absolute_course_and_page_urls(client, 
 
     assert resolved.status_code == 422
     assert comment.status_code == 422
+
+
+def test_bound_session_cannot_list_or_create_comments_in_another_course(client):
+    session = client.db_factory()
+    own = resolve_course(session, moodle_course_id=896, course_url="https://moodle.example/course/view.php?id=896", title="Own")
+    other = resolve_course(session, moodle_course_id=897, course_url="https://moodle.example/course/view.php?id=897", title="Other")
+    own_id, other_id = own.id, other.id
+    session.close()
+    headers = bound_extension_headers(client, Course(id=own_id, moodle_course_id="896"))
+
+    listed = client.get(f"/api/comments?course_id={other_id}", headers=headers)
+    created = client.post("/api/comments", headers=headers, json={
+        "course_id": str(other_id), "page_url": "https://moodle.example/mod/page/view.php?id=9",
+        "page_title": "Unit", "body": "Cross-course", "anchor_type": "text_highlight",
+        "selected_quote": "Cross", "css_selector": "#content",
+    })
+
+    assert listed.status_code == 404
+    assert created.status_code == 404

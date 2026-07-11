@@ -5,18 +5,23 @@ from sqlalchemy.orm import Session as DbSession
 
 from app.db import get_session
 from app.models import User, UserRole
-from app.services.accounts import AuthenticationError, verify_dashboard_session, verify_extension_session
+from app.services.accounts import AuthenticationError, ExtensionAccess, verify_dashboard_session, verify_extension_access
 
 
-def current_extension_user(request: Request, db: DbSession = Depends(get_session)) -> User:
+def current_extension_user(request: Request, db: DbSession = Depends(get_session)) -> ExtensionAccess:
     token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
     try:
-        return verify_extension_session(db, token)
+        return verify_extension_access(db, token)
     except AuthenticationError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required") from exc
 
 
 current_api_user = current_extension_user
+
+
+def require_course_access(user: ExtensionAccess, course_id) -> None:
+    if user.course_id is not None and user.course_id != course_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
 
 
 def current_dashboard_user(request: Request, db: DbSession = Depends(get_session)) -> User:

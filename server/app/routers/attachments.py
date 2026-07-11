@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session as DbSession
 
 from app.config import Settings, get_settings
 from app.db import get_session
-from app.dependencies import current_api_user
+from app.dependencies import current_api_user, require_course_access
 from app.models import Attachment, User, UserRole
 from app.services.attachments import AttachmentTooLargeError, UnsupportedAttachmentError, attachment_path, store_attachment, visible_attachment_comment_for
 from app.services.comments import visible_comment_for
@@ -31,6 +31,7 @@ def upload_attachment(comment_id: uuid.UUID, file: UploadFile = File(...), user:
     comment = visible_comment_for(db, user, comment_id)
     if comment is None:
         raise HTTPException(status_code=404, detail="Comment not found")
+    require_course_access(user, comment.course_id)
     if user.id != comment.author_user_id and user.role is not UserRole.LD_DCD:
         raise HTTPException(status_code=403, detail="Only the comment author or an LD/DCD can attach a screenshot")
     try:
@@ -45,8 +46,10 @@ def upload_attachment(comment_id: uuid.UUID, file: UploadFile = File(...), user:
 @router.get("/api/attachments/{attachment_id}", response_class=FileResponse)
 def download_attachment(attachment_id: uuid.UUID, user: User = Depends(current_api_user), db: DbSession = Depends(get_session), settings: Settings = Depends(get_settings)) -> FileResponse:
     attachment = db.get(Attachment, attachment_id)
-    if attachment is None or visible_attachment_comment_for(db, user, attachment.comment_id) is None:
+    comment = None if attachment is None else visible_attachment_comment_for(db, user, attachment.comment_id)
+    if attachment is None or comment is None:
         raise HTTPException(status_code=404, detail="Attachment not found")
+    require_course_access(user, comment.course_id)
     path = attachment_path(attachment, settings.attachment_storage_dir)
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Attachment not found")

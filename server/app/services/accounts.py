@@ -1,10 +1,12 @@
+import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DbSession
 
-from app.models import AuditEvent, ExtensionLoginCode, Session, User, UserRole
+from app.models import AuditEvent, CourseMembership, ExtensionLoginCode, MembershipState, Session, User, UserRole
 from app.security import generate_token, hash_password, token_hash, utc_now, verify_password
 
 
@@ -22,6 +24,16 @@ class AuthorizationError(Exception):
 
 class AccountAlreadyExistsError(Exception):
     pass
+
+
+@dataclass(frozen=True)
+class ExtensionAccess:
+    id: uuid.UUID
+    email: str
+    display_name: str
+    role: UserRole
+    course_id: uuid.UUID | None
+    membership_id: uuid.UUID | None
 
 
 def register_account(db: DbSession, *, email: str, password: str, display_name: str | None = None) -> User:
@@ -133,6 +145,23 @@ def verify_dashboard_session(db: DbSession, token: str, *, now=None) -> User:
 
 def verify_extension_session(db: DbSession, token: str, *, now=None) -> User:
     return _verify_session(db, token, "extension", now)
+
+
+def verify_extension_access(db: DbSession, token: str, *, now=None) -> ExtensionAccess:
+    row = db.scalar(select(Session).where(Session.token_hash == token_hash(token), Session.kind == "extension"))
+    instant = _now(now)
+    if row is None or row.revoked_at is not None or _is_expired(row.expires_at, instant):
+        raise AuthenticationError("Invalid or expired session")
+    user = db.get(User, row.user_id)
+    if user is None:
+        raise AuthenticationError("Unknown session user")
+    _approved(user)
+    if row.membership_id is None:
+        return ExtensionAccess(user.id, user.email, user.display_name, user.role, None, None)
+    membership = db.get(CourseMembership, row.membership_id)
+    if membership is None or membership.user_id != user.id or membership.state is not MembershipState.APPROVED:
+        raise AuthenticationError("Course membership approval is required")
+    return ExtensionAccess(user.id, user.email, user.display_name, membership.role, membership.course_id, membership.id)
 
 
 def revoke_session(db: DbSession, token: str, *, now=None) -> None:

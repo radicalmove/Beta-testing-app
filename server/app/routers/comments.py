@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session as DbSession
 
 from app.db import get_session
-from app.dependencies import current_api_user
-from app.models import Comment, CommentReply, CommentStatusEvent, Course, User, UserRole
+from app.dependencies import current_api_user, require_course_access
+from app.models import Comment, CommentReply, CommentStatusEvent, Course, CourseMembership, MembershipState, User, UserRole
 from app.schemas import CommentCreateRequest, CommentReplyRequest, CommentShareRequest, CommentStatusRequest
 from app.services.comments import AuthorizationError, PageComment, create_comment, create_reply, share_comment_with_user, update_comment_status, visible_comment_for, visible_comments_for, visible_page_comments_for
 
@@ -51,6 +51,7 @@ def _comment_json(comment: Comment, db: DbSession | None = None, viewer: User | 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create(payload: CommentCreateRequest, user: User = Depends(current_api_user), db: DbSession = Depends(get_session)) -> dict[str, str]:
+    require_course_access(user, payload.course_id)
     if db.get(Course, payload.course_id) is None:
         raise HTTPException(status_code=404, detail="Course not found")
     try:
@@ -64,6 +65,7 @@ def set_status(comment_id: uuid.UUID, payload: CommentStatusRequest, user: User 
     comment = visible_comment_for(db, user, comment_id)
     if comment is None:
         raise HTTPException(status_code=404, detail="Comment not found")
+    require_course_access(user, comment.course_id)
     try:
         return _comment_json(update_comment_status(db, user, comment, payload.status))
     except AuthorizationError as exc:
@@ -74,6 +76,7 @@ def set_status(comment_id: uuid.UUID, payload: CommentStatusRequest, user: User 
 
 @router.get("")
 def list_comments(course_id: uuid.UUID, page_url: str | None = Query(default=None, min_length=1, max_length=4096), user: User = Depends(current_api_user), db: DbSession = Depends(get_session)) -> list[dict]:
+    require_course_access(user, course_id)
     if db.get(Course, course_id) is None:
         raise HTTPException(status_code=404, detail="Course not found")
     if page_url is None:
@@ -89,6 +92,7 @@ def get_comment(comment_id: uuid.UUID, user: User = Depends(current_api_user), d
     comment = visible_comment_for(db, user, comment_id)
     if comment is None:
         raise HTTPException(status_code=404, detail="Comment not found")
+    require_course_access(user, comment.course_id)
     return _comment_json(comment, db, user)
 
 
@@ -97,6 +101,7 @@ def reply(comment_id: uuid.UUID, payload: CommentReplyRequest, user: User = Depe
     comment = visible_comment_for(db, user, comment_id)
     if comment is None:
         raise HTTPException(status_code=404, detail="Comment not found")
+    require_course_access(user, comment.course_id)
     try:
         return _reply_json(create_reply(db, user, comment, payload.body))
     except (AuthorizationError, ValueError) as exc:
@@ -108,9 +113,18 @@ def share(comment_id: uuid.UUID, payload: CommentShareRequest, user: User = Depe
     comment = visible_comment_for(db, user, comment_id)
     if comment is None:
         raise HTTPException(status_code=404, detail="Comment not found")
+    require_course_access(user, comment.course_id)
     recipient = db.get(User, payload.user_id)
     if recipient is None:
         raise HTTPException(status_code=404, detail="User not found")
+    recipient_membership = db.query(CourseMembership).filter_by(
+        user_id=recipient.id,
+        course_id=comment.course_id,
+        role=UserRole.SME,
+        state=MembershipState.APPROVED,
+    ).one_or_none()
+    if getattr(user, "course_id", None) is not None and recipient_membership is None:
+        raise HTTPException(status_code=422, detail="Threads can be shared only with an approved SME in this course")
     try:
         share_record = share_comment_with_user(db, user, comment, recipient)
         return {"id": str(share_record.id), "comment_id": str(share_record.comment_id), "shared_with_user_id": str(share_record.shared_with_user_id)}
