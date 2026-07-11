@@ -3,6 +3,14 @@ import argparse, hashlib, json, os, shutil, stat, subprocess, tempfile, zipfile
 from pathlib import Path
 FILES = ("background.js", "content.js", "manifest.json")
 
+def canonical_delivery(root: Path, git_common: Path, candidate: Path) -> Path:
+    resolved = candidate.expanduser().resolve()
+    forbidden = (root.resolve(), git_common.resolve(), git_common.resolve().parent)
+    for boundary in forbidden:
+        if resolved == boundary or boundary in resolved.parents:
+            raise RuntimeError(f"delivery destination must be external to repository: {resolved}")
+    return resolved
+
 def git_identity(root: Path) -> str:
     dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=all"], cwd=root, text=True, capture_output=True, check=True).stdout
     if dirty: raise RuntimeError(f"refusing release from dirty source tree:\n{dirty}")

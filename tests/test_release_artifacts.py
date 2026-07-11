@@ -1,8 +1,15 @@
 import json, os, subprocess, tempfile, unittest
 from pathlib import Path
-from deploy.scripts.release_artifacts import git_identity, publish
+from deploy.scripts.release_artifacts import canonical_delivery, git_identity, publish
 ROOT=Path(__file__).resolve().parents[1]
 class ReleaseArtifactTests(unittest.TestCase):
+ def test_delivery_destination_is_canonical_and_external(self):
+  with tempfile.TemporaryDirectory() as x:
+   base=Path(x); repo=base/"repo"; common=repo/".git"; nested=repo/"nested"; common.mkdir(parents=True); nested.mkdir(); outside=base/"outside"; alias=base/"alias"; alias.symlink_to(nested,target_is_directory=True)
+   for candidate in (Path("."), nested, nested/"..", alias):
+    with self.subTest(candidate=candidate), self.assertRaises(RuntimeError):
+     canonical_delivery(repo,common,candidate if candidate.is_absolute() else repo/candidate)
+   self.assertEqual(canonical_delivery(repo,common,outside/"../external"),(base/"external").resolve())
  def make_repo(self,r):
   subprocess.run(["git","init","-q"],cwd=r,check=True); subprocess.run(["git","config","user.email","x@y"],cwd=r,check=True); subprocess.run(["git","config","user.name","T"],cwd=r,check=True); (r/"x").write_text("x"); subprocess.run(["git","add","x"],cwd=r,check=True); subprocess.run(["git","commit","-qm","x"],cwd=r,check=True)
  def dist(self,r,tag="new"):

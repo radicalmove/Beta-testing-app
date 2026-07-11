@@ -7,13 +7,10 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 COMMON_GIT_DIR=$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir)
 PROJECT_ROOT=$(dirname "$COMMON_GIT_DIR")
-DELIVERY_ROOT=${DELIVERY_ROOT:-"$PROJECT_ROOT/pilot-builds"}
+DELIVERY_ROOT=${DELIVERY_ROOT:-"$PROJECT_ROOT-pilot-builds"}
+DELIVERY_ROOT=$(cd "$ROOT" && python3 -c 'import sys; from pathlib import Path; from deploy.scripts.release_artifacts import canonical_delivery; print(canonical_delivery(Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])))' "$ROOT" "$COMMON_GIT_DIR" "$DELIVERY_ROOT")
 DELIVERY_DIR="$DELIVERY_ROOT/moodle-review-extension"
 DELIVERY_ZIP="$DELIVERY_ROOT/moodle-review-extension-chrome-edge.zip"
-
-case "$DELIVERY_ROOT" in
-  /|"$ROOT"|"$ROOT"/extension|"$ROOT"/extension/dist) echo "unsafe DELIVERY_ROOT: $DELIVERY_ROOT" >&2; exit 1 ;;
-esac
 
 (cd "$ROOT" && python3 -c 'from pathlib import Path; from deploy.scripts.release_artifacts import git_identity; print(git_identity(Path(".")))') >/dev/null
 [[ ${RELEASE_PREFLIGHT_ONLY:-0} == 1 ]] && exit 0
