@@ -212,18 +212,20 @@ test("authentication maps cancellation, failure, pending, offline, and session e
   const cases = [
     [{ ok: false, status: "cancelled", error: "Authentication was cancelled" }, "Sign-in cancelled"],
     [{ ok: false, status: "failed", error: "Token exchange failed (500)" }, "Sign-in failed—try again"],
+    [{ ok: false, status: "pending", error: "Account pending approval" }, "Account awaiting approval"],
+    [{ ok: false, status: "offline", error: "Network down" }, "Service unavailable—retry"],
   ] as const;
   for (const [authResponse, expected] of cases) {
     const window = new Window({ url: "https://moodle.example.invalid/course/view.php?id=1" }); window.document.body.innerHTML = "<h1>Law</h1>";
     const runtime = { sendMessage: (message: any, callback: (response: any) => void) => callback(message.type === "AUTHENTICATE" ? authResponse : { ok: false, status: "signed-out", error: "Signed out" }) };
     const cleanup = startCourseReview(window as any, window.document as any, runtime); await new Promise((resolve) => setTimeout(resolve, 0));
     const shadow = window.document.querySelector("#moodle-course-review-overlay")!.shadowRoot!; (shadow.querySelector('[data-action="authenticate"]') as unknown as HTMLElement).click(); await new Promise((resolve) => setTimeout(resolve, 0));
-    assert.match(shadow.textContent!, new RegExp(expected)); cleanup();
+    assert.equal(shadow.querySelector("[data-status-message]")?.textContent, expected); cleanup();
   }
-  for (const [response, expected] of [[{ ok: false, status: "pending", error: "Account pending approval" }, "Account pending"], [{ ok: false, status: "offline", error: "Network down" }, "Offline"], [{ ok: false, status: "signed-out", error: "Signed out: session expired" }, "Session expired—sign in again"]] as const) {
+  for (const [response, expected] of [[{ ok: false, status: "pending", error: "Account pending approval" }, "Account awaiting approval"], [{ ok: false, status: "offline", error: "Network down" }, "Service unavailable—retry"], [{ ok: false, status: "signed-out", error: "Signed out: session expired" }, "Session expired—sign in again"]] as const) {
     const window = new Window({ url: "https://moodle.example.invalid/course/view.php?id=1" }); window.document.body.innerHTML = "<h1>Law</h1>";
     const cleanup = startCourseReview(window as any, window.document as any, { sendMessage: (_message: any, callback: any) => callback(response) }); await new Promise((resolve) => setTimeout(resolve, 0));
-    assert.match(window.document.querySelector("#moodle-course-review-overlay")!.shadowRoot!.textContent!, new RegExp(expected)); cleanup();
+    assert.equal(window.document.querySelector("#moodle-course-review-overlay")!.shadowRoot!.querySelector("[data-status-message]")?.textContent, expected); cleanup();
   }
 });
 

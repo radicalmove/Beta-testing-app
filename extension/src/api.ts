@@ -88,7 +88,7 @@ export async function authenticate(options: {
     throw new Error("Authentication response used an unexpected redirect URL");
   }
   const code = callbackUrl.searchParams.get("code");
-  if (!code) throw new Error("Authentication response did not include a code");
+  if (!code) throw new Error("Authentication was cancelled");
   const response = await (options.fetch ?? fetch)(`${origin}/extension/token`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

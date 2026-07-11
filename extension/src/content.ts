@@ -165,6 +165,8 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
     runtime.sendMessage({ type: "AUTHENTICATE" }, (response) => {
       if (!response?.ok) {
         if ((response?.status as string | undefined) === "cancelled") resolve({ status: "signed-out", message: "Sign-in cancelled" });
+        else if (response?.status === "pending") resolve({ status: "pending", message: "Account awaiting approval" });
+        else if (response?.status === "offline") resolve({ status: "offline", message: "Service unavailable—retry" });
         else resolve({ status: "signed-out", message: "Sign-in failed—try again" });
         return;
       }

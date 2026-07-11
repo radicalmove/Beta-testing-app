@@ -16,7 +16,7 @@ test("overlay markup is a compact accessible toolbar with course and connection 
   assert.match(markup, />Course:<\/span>/);
   assert.match(markup, />Page:<\/span>/);
   assert.match(markup, />Connection:<\/span>/);
-  assert.match(createOverlayMarkup({ courseTitle: "Law", pageTitle: "Week 2", status: "pending" }), /Account pending/);
+  assert.match(createOverlayMarkup({ courseTitle: "Law", pageTitle: "Week 2", status: "pending" }), /Account awaiting approval/);
 });
 
 const context = { course_url: "https://learn.example/course/view.php?id=1", page_url: "https://learn.example/mod/page/view.php?id=2", title: "Law", pageTitle: "Week 2", moodle_course_id: 1, identityConfidence: "confirmed" as const };

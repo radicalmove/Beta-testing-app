@@ -10,14 +10,14 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 test("signed-out, pending, and offline states expose deterministic accessible controls", () => {
   for (const [status, label, action] of [
     ["signed-out", "Signed out", "Sign in"],
-    ["pending", "Account pending", "Retry"],
-    ["offline", "Offline", "Retry"],
+    ["pending", "Account awaiting approval", "Retry"],
+    ["offline", "Service unavailable—retry", "Retry"],
   ] as const) {
     const window = new Window();
     const document = window.document as unknown as Document;
     mountReviewOverlay(document, context, status);
     const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
-    assert.match(shadow.querySelector<HTMLElement>("[data-auth-status]")!.textContent!, new RegExp(label));
+    assert.equal(shadow.querySelector<HTMLElement>("[data-status-message]")!.textContent, label);
     assert.equal(shadow.querySelectorAll('[data-action="authenticate"]').length, action ? 1 : 0);
     if (action) assert.equal(shadow.querySelector('[data-action="authenticate"]')!.textContent, action);
     assert.equal(shadow.querySelector('[data-action="highlight"]'), null);
@@ -34,7 +34,7 @@ test("authentication status is textual and announced through one live region", (
   assert.match(liveRegion.textContent!, /Signed out/);
   overlay.update(context, "offline");
   assert.equal(shadow.querySelector('[aria-live="polite"]'), liveRegion);
-  assert.match(liveRegion.textContent!, /Offline/);
+  assert.equal(liveRegion.querySelector("[data-status-message]")?.textContent, "Service unavailable—retry");
 });
 
 test("sign-in activation has one disabled busy action and ignores duplicate activation", async () => {
@@ -79,7 +79,7 @@ test("an authentication completion cannot overwrite a newer external state updat
   shadow.querySelector<HTMLElement>('[data-action="authenticate"]')!.click();
   overlay.update(context, "offline");
   finish({ status: "connected" }); await tick();
-  assert.match(shadow.querySelector('[data-auth-status]')!.textContent!, /Offline/);
+  assert.equal(shadow.querySelector('[data-status-message]')!.textContent, "Service unavailable—retry");
   assert.equal(shadow.querySelector('[data-action="authenticate"]')!.textContent, "Retry");
   assert.equal(shadow.querySelector('[data-action="highlight"]'), null);
 });

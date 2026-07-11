@@ -99,6 +99,18 @@ test("authentication rejects callbacks outside the exact identity redirect", asy
   }), /redirect/i);
 });
 
+test("authentication rejects an exact callback that is missing or denied a code", async () => {
+  for (const callback of [
+    "https://abcdefghijklmnop.chromiumapp.org/callback",
+    "https://abcdefghijklmnop.chromiumapp.org/callback?error=access_denied",
+  ]) await assert.rejects(authenticate({
+    serviceOrigin: "https://review.example.org",
+    getRedirectUrl: () => "https://abcdefghijklmnop.chromiumapp.org/callback",
+    launchWebAuthFlow: async () => callback,
+    setSession: async () => undefined,
+  }), /cancelled/i);
+});
+
 test("authentication rejects malformed token payloads", async () => {
   for (const payload of [
     { access_token: "", expires_in: 900 },
