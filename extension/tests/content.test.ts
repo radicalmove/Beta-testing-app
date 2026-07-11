@@ -91,6 +91,19 @@ test("bootstrap wired to the real start entry tears down the old overlay instanc
   assert.equal(messages, 2);
 });
 
+test("content passes version diagnostics into the mounted overlay", () => {
+  const window = new Window({ url: "https://learn.example/course/view.php?id=1" });
+  window.document.title = "Law";
+  const runtime = { sendMessage(message: any, callback: any) {
+    callback(message.type === "RESOLVE_COURSE" ? { ok: true, data: { id: "123e4567-e89b-12d3-a456-426614174000" } } : { ok: true, data: [] });
+  } };
+  const cleanup = startCourseReview(window as any, window.document as any, runtime, { version: "0.2.0", buildCommit: "abc1234def567890abc1234def567890abc1234d" });
+  const shadow = window.document.querySelector("#moodle-course-review-overlay")!.shadowRoot!;
+  assert.equal(shadow.querySelector("[data-pilot-version]")?.getAttribute("aria-label"), "Pilot version 0.2.0");
+  assert.equal(shadow.querySelector("[data-build-diagnostic]")?.textContent, "Version 0.2.0 · build abc1234");
+  cleanup();
+});
+
 test("real content-script startup does not require chrome.permissions", async () => {
   const originalWindow = globalThis.window;
   const originalDocument = globalThis.document;

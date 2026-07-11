@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Window } from "happy-dom";
 
-import { mountReviewOverlay, OVERLAY_HOST_ID, overlayStyles } from "../src/overlay/root.ts";
+import { createOverlayMarkup, mountReviewOverlay, OVERLAY_HOST_ID, overlayStyles } from "../src/overlay/root.ts";
 
 const context = { course_url: "https://learn.example/course/view.php?id=1", page_url: "https://learn.example/mod/page/view.php?id=2", title: "Law", pageTitle: "Week 2", moodle_course_id: 1, identityConfidence: "confirmed" as const };
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -47,14 +47,31 @@ function auditOverlayContrast(styles: string): void {
   requireContrast("primary action", property(primary, "color"), property(primary, "background"), 4.5);
   const panel = declarations(".panel,[data-unresolved],[data-frame-fallback]");
   requireContrast("panel text", property(host, "color"), property(panel, "background"), 4.5);
+  const diagnostic = declarations(".build-diagnostic");
+  requireContrast("build diagnostic", property(diagnostic, "color"), property(diagnostic, "background"), 4.5);
   const control = declarations("button");
   requireContrast("secondary control", property(control, "color"), property(control, "background"), 4.5);
-  const focus = declarations("button:focus-visible,textarea:focus-visible,select:focus-visible,input:focus-visible");
+  const focus = declarations("button:focus-visible,textarea:focus-visible,select:focus-visible,input:focus-visible,[data-build-diagnostic]:focus-visible");
   const focusColor = property(focus, "outline").split(" ").at(-1)!;
   const surroundColor = property(focus, "box-shadow").split(" ").at(-1)!;
   requireContrast("focus indicator on header", focusColor, property(toolbar, "background"), 3);
   requireContrast("focus indicator on panel", surroundColor, property(panel, "background"), 3);
 }
+
+test("overlay displays accessible pilot version diagnostics", () => {
+  const markup = createOverlayMarkup({ courseTitle: "Law", pageTitle: "Week 2", status: "connected", version: "0.2.0", buildCommit: "abc1234def567890abc1234def567890abc1234d" });
+  assert.match(markup, />Pilot v0\.2\.0</);
+
+  const window = new Window(); const document = window.document as unknown as Document;
+  mountReviewOverlay(document, context, "connected", {}, { version: "0.2.0", buildCommit: "abc1234def567890abc1234def567890abc1234d" });
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const version = shadow.querySelector<HTMLElement>("[data-pilot-version]")!;
+  assert.equal(version.getAttribute("aria-label"), "Pilot version 0.2.0");
+  shadow.querySelector<HTMLElement>('[data-action="panel"]')!.click();
+  const diagnostic = shadow.querySelector<HTMLElement>("[data-build-diagnostic]")!;
+  assert.equal(diagnostic.textContent, "Version 0.2.0 · build abc1234");
+  assert.equal(diagnostic.tabIndex, 0);
+});
 
 function auditShellBoundary(styles: string): void {
   const rule = styles.match(/\.shell\{([^}]*)\}/)?.[1];

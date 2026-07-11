@@ -6,7 +6,7 @@ import { captureDisplayScreenshot } from "../screenshot-capture.ts";
 import type { PageComment } from "../background-bridge.ts";
 
 export const OVERLAY_HOST_ID = "moodle-course-review-overlay";
-export const overlayStyles = `:host{--review-red:#d73b3d;--review-navy:#000;--review-pale:#f2f2f2;--review-line:#d8d8d8;all:initial;position:fixed!important;inset:auto!important;z-index:2147483647!important;isolation:isolate;display:block!important;color:#000;font:14px/1.4 Poppins,Arial,sans-serif}.shell{box-sizing:border-box;position:fixed;right:16px;bottom:16px;z-index:2147483647;max-width:min(560px,calc(100vw - 32px));background:#fff;border:3px solid var(--review-red);border-radius:8px;box-shadow:0 8px 24px #00000038;overflow:hidden}.toolbar{display:flex;align-items:center;gap:8px;padding:7px 8px;background:#000;color:#fff}.identity{min-width:9rem;padding:0 5px;flex:1}.course,.page{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.course{font-weight:700}.page{font-size:12px;color:#fff}button,select,textarea{box-sizing:border-box;font:inherit}button{appearance:none;min-height:36px;border:1px solid #b9b9b9;border-radius:5px;background:#f2f2f2;color:#000;font-weight:650;padding:7px 9px;cursor:pointer}button:hover{background:#fff}.toolbar button{border-color:var(--review-red);background:var(--review-red);color:#fff}.toolbar button:hover,.primary:hover{background:#b52d30;border-color:#b52d30}button:focus-visible,textarea:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid #ffd54f;outline-offset:2px;box-shadow:0 0 0 5px #000}.icon{padding:7px 10px}.status{display:flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap}.dot{width:8px;height:8px;flex:0 0 8px;border:1px solid #fff;border-radius:50%;background:#ffd54f}.connected .dot{background:#16833b}.signed-out .dot,.offline .dot{background:var(--review-red)}.panel,[data-unresolved],[data-frame-fallback]{padding:10px;background:#fff;border-top:1px solid var(--review-line)}.panel[hidden],[data-unresolved][hidden]{display:none}[data-unresolved] h2{margin:0;font-size:14px}[data-unresolved] ul{display:grid;gap:6px;margin:6px 0 0;padding:0;list-style:none}[data-unresolved] li{display:flex;align-items:center;justify-content:space-between;gap:8px}.backdrop{position:fixed;inset:0;background:#0009;display:grid;place-items:center;z-index:2147483647}.dialog{box-sizing:border-box;width:min(420px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto;background:#fff;border:1px solid var(--review-line);border-radius:8px;padding:18px;box-shadow:0 8px 28px #0005}.dialog h2{margin:0 0 10px;color:#000;font-size:18px;border-left:4px solid var(--review-red);padding-left:8px}.dialog textarea{width:100%;min-height:110px;border:1px solid #777;border-radius:5px;padding:8px}.field{display:grid;gap:4px;margin-top:9px}.preview{padding:8px;border:1px solid var(--review-line);border-radius:5px;background:var(--review-pale);font-size:12px}.error{color:#a51d24}.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}.primary{background:var(--review-red);color:#fff;border-color:var(--review-red)}@media(max-width:420px){.shell{right:8px;bottom:8px;width:calc(100vw - 16px);max-width:none}.toolbar{align-items:flex-start;flex-wrap:wrap}.identity{flex-basis:100%}.status{margin-right:auto}.dialog{width:calc(100vw - 16px);max-height:calc(100vh - 16px);padding:12px}.actions{flex-wrap:wrap}.actions button{flex:1 1 auto}}`;
+export const overlayStyles = `:host{--review-red:#d73b3d;--review-navy:#000;--review-pale:#f2f2f2;--review-line:#d8d8d8;all:initial;position:fixed!important;inset:auto!important;z-index:2147483647!important;isolation:isolate;display:block!important;color:#000;font:14px/1.4 Poppins,Arial,sans-serif}.shell{box-sizing:border-box;position:fixed;right:16px;bottom:16px;z-index:2147483647;max-width:min(560px,calc(100vw - 32px));background:#fff;border:3px solid var(--review-red);border-radius:8px;box-shadow:0 8px 24px #00000038;overflow:hidden}.toolbar{display:flex;align-items:center;gap:8px;padding:7px 8px;background:#000;color:#fff}.identity{min-width:9rem;padding:0 5px;flex:1}.course,.page{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.course{font-weight:700}.page{font-size:12px;color:#fff}.pilot-version{font-size:12px;font-weight:700;white-space:nowrap}button,select,textarea{box-sizing:border-box;font:inherit}button{appearance:none;min-height:36px;border:1px solid #b9b9b9;border-radius:5px;background:#f2f2f2;color:#000;font-weight:650;padding:7px 9px;cursor:pointer}button:hover{background:#fff}.toolbar button{border-color:var(--review-red);background:var(--review-red);color:#fff}.toolbar button:hover,.primary:hover{background:#b52d30;border-color:#b52d30}button:focus-visible,textarea:focus-visible,select:focus-visible,input:focus-visible,[data-build-diagnostic]:focus-visible{outline:3px solid #ffd54f;outline-offset:2px;box-shadow:0 0 0 5px #000}.icon{padding:7px 10px}.status{display:flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap}.dot{width:8px;height:8px;flex:0 0 8px;border:1px solid #fff;border-radius:50%;background:#ffd54f}.connected .dot{background:#16833b}.signed-out .dot,.offline .dot{background:var(--review-red)}.panel,[data-unresolved],[data-frame-fallback]{padding:10px;background:#fff;border-top:1px solid var(--review-line)}.build-diagnostic{margin:0 0 8px;padding:6px;background:#fff;color:#000;border:1px solid var(--review-line);font-size:12px}.panel[hidden],[data-unresolved][hidden]{display:none}[data-unresolved] h2{margin:0;font-size:14px}[data-unresolved] ul{display:grid;gap:6px;margin:6px 0 0;padding:0;list-style:none}[data-unresolved] li{display:flex;align-items:center;justify-content:space-between;gap:8px}.backdrop{position:fixed;inset:0;background:#0009;display:grid;place-items:center;z-index:2147483647}.dialog{box-sizing:border-box;width:min(420px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto;background:#fff;border:1px solid var(--review-line);border-radius:8px;padding:18px;box-shadow:0 8px 28px #0005}.dialog h2{margin:0 0 10px;color:#000;font-size:18px;border-left:4px solid var(--review-red);padding-left:8px}.dialog textarea{width:100%;min-height:110px;border:1px solid #777;border-radius:5px;padding:8px}.field{display:grid;gap:4px;margin-top:9px}.preview{padding:8px;border:1px solid var(--review-line);border-radius:5px;background:var(--review-pale);font-size:12px}.error{color:#a51d24}.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}.primary{background:var(--review-red);color:#fff;border-color:var(--review-red)}@media(max-width:420px){.shell{right:8px;bottom:8px;width:calc(100vw - 16px);max-width:none}.toolbar{align-items:flex-start;flex-wrap:wrap}.identity{flex-basis:100%}.status{margin-right:auto}.dialog{width:calc(100vw - 16px);max-height:calc(100vh - 16px);padding:12px}.actions{flex-wrap:wrap}.actions button{flex:1 1 auto}}`;
 
 export type ConnectionStatus = "connecting" | "connected" | "pending" | "signed-out" | "offline";
 const statusLabels: Record<ConnectionStatus, string> = { connecting: "Connecting", connected: "Connected", pending: "Account awaiting approval", "signed-out": "Signed out", offline: "Service unavailable—retry" };
@@ -19,8 +19,12 @@ function createStateActions(status: ConnectionStatus): string {
   return `<span data-auth-action>${action ? `<button type="button" data-action="authenticate">${action}</button>` : ""}</span><span data-review-controls>${reviewControls}</span>`;
 }
 
-export function createOverlayMarkup(input: { courseTitle: string; pageTitle: string; status: ConnectionStatus }): string {
-  return `<section class="shell"><div class="toolbar" role="toolbar" aria-label="Course review tools"><div class="identity"><span class="course"><span class="label">Course:</span> ${escapeHtml(input.courseTitle)}</span><span class="page"><span class="label">Page:</span> ${escapeHtml(input.pageTitle)}</span></div><span class="status ${input.status}" data-auth-status aria-live="polite" aria-atomic="true"><span class="label">Connection:</span> <span class="dot" aria-hidden="true"></span><span data-status-message>${statusLabels[input.status]}</span></span>${createStateActions(input.status)}</div><div class="panel" hidden>No comments on this page yet.</div></section>`;
+export type BuildDiagnostics = { version: string; buildCommit: string };
+const defaultBuildDiagnostics: BuildDiagnostics = { version: "0.0.0", buildCommit: "0000000000000000000000000000000000000000" };
+
+export function createOverlayMarkup(input: { courseTitle: string; pageTitle: string; status: ConnectionStatus } & Partial<BuildDiagnostics>): string {
+  const { version, buildCommit } = { ...defaultBuildDiagnostics, ...input };
+  return `<section class="shell"><div class="toolbar" role="toolbar" aria-label="Course review tools"><div class="identity"><span class="course"><span class="label">Course:</span> ${escapeHtml(input.courseTitle)}</span><span class="page"><span class="label">Page:</span> ${escapeHtml(input.pageTitle)}</span></div><span class="pilot-version" data-pilot-version aria-label="Pilot version ${escapeHtml(version)}">Pilot v${escapeHtml(version)}</span><span class="status ${input.status}" data-auth-status aria-live="polite" aria-atomic="true"><span class="label">Connection:</span> <span class="dot" aria-hidden="true"></span><span data-status-message>${statusLabels[input.status]}</span></span>${createStateActions(input.status)}</div><div class="panel" hidden><p class="build-diagnostic" data-build-diagnostic tabindex="0">Version ${escapeHtml(version)} · build ${escapeHtml(buildCommit.slice(0, 7))}</p><div data-panel-content>No comments on this page yet.</div></div></section>`;
 }
 
 export function handleDialogKey(input: { key: string; shiftKey: boolean; activeIndex: number; focusableCount: number }): { focusIndex: number; close: boolean } {
@@ -36,9 +40,9 @@ export type AuthenticationOutcome = { status: ConnectionStatus; message?: string
 export type ReviewOverlayOptions = { onAuthenticate?: () => Promise<AuthenticationOutcome>; submit?: (input: { body: string; category: string; anchor: CommentAnchor; screenshot: boolean; embeddedFrameUnavailable: boolean; contextSnapshot: CourseContext }) => Promise<{ id?: string; screenshot_available?: boolean } | void>; uploadScreenshot?: (commentId: string, dataUrl: string) => Promise<void>; cancelScreenshot?: (commentId: string) => Promise<void>; captureScreenshot?: () => Promise<string>; onFrameFallback?: () => void; onTakeToContext?: (id: string) => void };
 export type ReviewOverlay = { update(context: CourseContext, status: ConnectionStatus): void; setPageComments(comments: PageComment[]): void; takeToContext(id: string): boolean; showFrameFallback(): void; hideFrameFallback(): void; setUnresolvedAnchors(anchors: UnresolvedAnchor[]): void; destroy(): void };
 
-export function mountReviewOverlay(document: Document, context: CourseContext, status: ConnectionStatus = "connecting", options: ReviewOverlayOptions = {}): ReviewOverlay {
+export function mountReviewOverlay(document: Document, context: CourseContext, status: ConnectionStatus = "connecting", options: ReviewOverlayOptions = {}, buildDiagnostics: BuildDiagnostics = defaultBuildDiagnostics): ReviewOverlay {
   const existing = document.getElementById(OVERLAY_HOST_ID) as HTMLElement | null;
-  if (existing?.shadowRoot) return createController(existing, existing.shadowRoot, context, status, options);
+  if (existing?.shadowRoot) return createController(existing, existing.shadowRoot, context, status, options, buildDiagnostics);
   const host = document.createElement("div");
   host.id = OVERLAY_HOST_ID;
   host.setAttribute("data-moodle-review-ui", "true");
@@ -48,10 +52,10 @@ export function mountReviewOverlay(document: Document, context: CourseContext, s
   const style = document.createElement("style");
   style.textContent = overlayStyles;
   shadow.append(style);
-  return createController(host, shadow, context, status, options);
+  return createController(host, shadow, context, status, options, buildDiagnostics);
 }
 
-function createController(host: HTMLElement, shadow: ShadowRoot, initial: CourseContext, initialStatus: ConnectionStatus, options: ReviewOverlayOptions): ReviewOverlay {
+function createController(host: HTMLElement, shadow: ShadowRoot, initial: CourseContext, initialStatus: ConnectionStatus, options: ReviewOverlayOptions, buildDiagnostics: BuildDiagnostics): ReviewOverlay {
   const ownerDocument = host.ownerDocument;
   let context = initial;
   let status = initialStatus;
@@ -79,7 +83,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     shadow.innerHTML = "";
     if (style) shadow.append(style);
     const wrapper = ownerDocument.createElement("div");
-    wrapper.innerHTML = createOverlayMarkup({ courseTitle: context.title, pageTitle: context.pageTitle, status });
+    wrapper.innerHTML = createOverlayMarkup({ courseTitle: context.title, pageTitle: context.pageTitle, status, ...buildDiagnostics });
     shadow.append(...Array.from(wrapper.childNodes));
     bind();
   };
@@ -184,7 +188,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     });
     shadow.querySelector<HTMLElement>('[data-action="pin"]')?.addEventListener("click", (event) => {
       if (pinListener) { ownerDocument.removeEventListener("pointerdown", pinListener, true); ownerDocument.removeEventListener("keydown", cancelPin, true); }
-      returnFocus = event.currentTarget as HTMLElement; shadow.querySelector<HTMLElement>(".panel")!.hidden = false; shadow.querySelector<HTMLElement>(".panel")!.textContent = "Select a point on the page. Press Escape to cancel.";
+      returnFocus = event.currentTarget as HTMLElement; shadow.querySelector<HTMLElement>(".panel")!.hidden = false; shadow.querySelector<HTMLElement>("[data-panel-content]")!.textContent = "Select a point on the page. Press Escape to cancel.";
       pinListener = (pointer) => { const element = ownerDocument.elementFromPoint(pointer.clientX, pointer.clientY) as HTMLElement | null; const anchor = element && capturePinAnchor(element, pointer.clientX, pointer.clientY); if (!anchor) return; pointer.preventDefault(); ownerDocument.removeEventListener("pointerdown", pinListener!, true); ownerDocument.removeEventListener("keydown", cancelPin, true); pinListener = undefined; previewCleanup = renderPin(ownerDocument, anchor); openDialog(returnFocus!, "Add a page pin", { anchor_type: "visual_pin", ...anchor }); };
       ownerDocument.addEventListener("pointerdown", pinListener, true);
       ownerDocument.addEventListener("keydown", cancelPin, true);
@@ -213,7 +217,8 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
       openThreads = new Map();
       const unresolved: UnresolvedAnchor[] = [];
       const panel = shadow.querySelector<HTMLElement>(".panel")!;
-      panel.replaceChildren();
+      const panelContent = panel.querySelector<HTMLElement>("[data-panel-content]")!;
+      panelContent.replaceChildren();
       for (const comment of comments) {
         const openThread = () => {
           panel.hidden = false;
@@ -222,7 +227,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
           const byline = ownerDocument.createElement("p"); byline.textContent = `${comment.author.display_name} (${comment.author.role.replaceAll("_", " ")})`;
           const body = ownerDocument.createElement("p"); body.textContent = comment.body; article.append(heading, byline, body);
           for (const reply of comment.replies) { const node = ownerDocument.createElement("p"); node.textContent = `${reply.author.display_name} (${reply.author.role.replaceAll("_", " ")}): ${reply.body}`; article.append(node); }
-          panel.replaceChildren(article);
+          panelContent.replaceChildren(article);
         };
         openThreads.set(comment.id, openThread);
         if (comment.anchor_type === "text_highlight" && comment.selected_quote) {
@@ -244,9 +249,9 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
             ownerDocument.documentElement.append(marker); trackReposition(place, marker);
           }
         }
-        const item = ownerDocument.createElement("button"); item.type = "button"; item.textContent = comment.body; item.addEventListener("click", openThread); panel.append(item);
+        const item = ownerDocument.createElement("button"); item.type = "button"; item.textContent = comment.body; item.addEventListener("click", openThread); panelContent.append(item);
       }
-      if (!comments.length) panel.replaceChildren("No comments on this page yet.");
+      if (!comments.length) panelContent.replaceChildren("No comments on this page yet.");
       this.setUnresolvedAnchors(unresolved);
     },
     takeToContext(id) {

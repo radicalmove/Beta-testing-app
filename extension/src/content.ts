@@ -5,10 +5,14 @@ declare const __BUILD_COMMIT__: string;
 declare const chrome: any;
 
 import { canonicalCourseUrlFromDocument, courseTitleFromDocument, detectCourseContext, explicitActivityIdFromDocument, explicitCourseIdFromDocument, type CourseContext } from "./course-context.ts";
-import { mountReviewOverlay, type ConnectionStatus, type ReviewOverlay } from "./overlay/root.ts";
+import { mountReviewOverlay, type BuildDiagnostics, type ConnectionStatus, type ReviewOverlay } from "./overlay/root.ts";
 import type { PageComment } from "./background-bridge.ts";
 
 const MARKER = "data-moodle-review-extension";
+const BUILD_DIAGNOSTICS = {
+  version: typeof __EXTENSION_VERSION__ === "string" ? __EXTENSION_VERSION__ : "0.0.0",
+  buildCommit: typeof __BUILD_COMMIT__ === "string" ? __BUILD_COMMIT__ : "0000000000000000000000000000000000000000",
+};
 const OWNER = Symbol.for("moodle-course-review.content-owner");
 type MarkerRoot = {
   hasAttribute(name: string): boolean;
@@ -155,7 +159,7 @@ export function createLifecycleController(targetWindow: Window & typeof globalTh
   } };
 }
 
-export function startCourseReview(targetWindow: Window & typeof globalThis = window, targetDocument: Document = document, runtime: { sendMessage(message: unknown, callback: (response: { ok?: boolean; status?: ConnectionStatus; error?: string; data?: unknown } | undefined) => void): void } = chrome.runtime): () => void {
+export function startCourseReview(targetWindow: Window & typeof globalThis = window, targetDocument: Document = document, runtime: { sendMessage(message: unknown, callback: (response: { ok?: boolean; status?: ConnectionStatus; error?: string; data?: unknown } | undefined) => void): void } = chrome.runtime, buildDiagnostics: BuildDiagnostics = BUILD_DIAGNOSTICS): () => void {
   let context = currentContext(targetWindow, targetDocument);
   let courseId: string | undefined;
   const courseIds = new Map<string, string>();
@@ -184,7 +188,7 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
     const saved = await send<{ id?: string; screenshot_available?: boolean }>({ type: "CREATE_COMMENT", payload: { course_id: snapshotCourseId, page_url: contextSnapshot.page_url, page_title: pageTitle, body, category, ...anchor }, screenshot_requested: screenshot });
     if (context.page_url === contextSnapshot.page_url) void loadPageComments(context.page_url);
     return saved;
-  }, uploadScreenshot: (commentId, dataUrl) => send({ type: "UPLOAD_SCREENSHOT", comment_id: commentId, data_url: dataUrl }), cancelScreenshot: (commentId) => send({ type: "CANCEL_SCREENSHOT", comment_id: commentId }) });
+  }, uploadScreenshot: (commentId, dataUrl) => send({ type: "UPLOAD_SCREENSHOT", comment_id: commentId, data_url: dataUrl }), cancelScreenshot: (commentId) => send({ type: "CANCEL_SCREENSHOT", comment_id: commentId }) }, buildDiagnostics);
   let lastSignature = "";
   let requestSequence = 0;
 
@@ -267,7 +271,7 @@ export function startEmbeddedReview(targetWindow: Window & typeof globalThis, ta
       const saved = await send<{ id?: string; screenshot_available?: boolean }>({ type: "CREATE_COMMENT", payload: { course_id: courseId, page_url: contextSnapshot.page_url, page_title: contextSnapshot.pageTitle, body, category, ...anchor }, screenshot_requested: screenshot });
       if (context.page_url === contextSnapshot.page_url) void loadPageComments();
       return saved;
-    }, uploadScreenshot: (commentId, dataUrl) => send({ type: "UPLOAD_SCREENSHOT", comment_id: commentId, data_url: dataUrl }), cancelScreenshot: (commentId) => send({ type: "CANCEL_SCREENSHOT", comment_id: commentId }) });
+    }, uploadScreenshot: (commentId, dataUrl) => send({ type: "UPLOAD_SCREENSHOT", comment_id: commentId, data_url: dataUrl }), cancelScreenshot: (commentId) => send({ type: "CANCEL_SCREENSHOT", comment_id: commentId }) }, BUILD_DIAGNOSTICS);
     const refresh = () => { const next = frameContext(); if (context.page_url !== next.page_url) { commentSequence += 1; overlay?.setPageComments([]); } context = next; overlay?.update(context, "connected"); void loadPageComments(); };
     lifecycle = createLifecycleController(targetWindow, targetDocument, refresh);
     const clearNavigatedPage = () => { const next = frameContext(); if (context.page_url !== next.page_url) { commentSequence += 1; overlay?.setPageComments([]); } };
