@@ -5,13 +5,14 @@ Revises: 20260710_08
 """
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision = "20260712_09"
 down_revision = "20260710_08"
 branch_labels = None
 depends_on = None
 
-user_role = sa.Enum("beta_tester", "sme", "ld_dcd", "admin", name="userrole")
+user_role = postgresql.ENUM("beta_tester", "sme", "ld_dcd", "admin", name="userrole", create_type=False)
 membership_state = sa.Enum("pending", "approved", "rejected", "revoked", name="membershipstate")
 
 
