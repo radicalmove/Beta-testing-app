@@ -72,6 +72,28 @@ class ReleaseArtifactTests(unittest.TestCase):
    malformed=delivery/"releases"/"malformed"; malformed.mkdir(); (malformed/"RELEASE.json").write_text("not-json")
    with self.assertRaises(RuntimeError): publish(self.dist(r,"new"),delivery,"2"*40,VERSION)
    self.assertEqual(os.readlink(delivery/"current"),current); self.assertEqual(set((delivery/"releases").iterdir()),history|{malformed})
+ def test_external_delivery_migrates_past_exact_validated_legacy_metadata(self):
+  with tempfile.TemporaryDirectory() as x:
+   r=Path(x); delivery=r/"external-delivery"; releases=delivery/"releases"; releases.mkdir(parents=True)
+   commit="9"*40; digest="a"*12; legacy=releases/f"{commit[:12]}-{digest}"; legacy.mkdir(); (legacy/"RELEASE.json").write_text(json.dumps({"commit":commit,"artifact_digest":digest}))
+   publish(self.dist(r),delivery,"b"*40,VERSION)
+   self.assertEqual(self.visible(delivery),"b"*40)
+   self.assertTrue(legacy.is_dir())
+ def test_legacy_metadata_exception_still_fails_closed_on_invalid_or_ambiguous_entries(self):
+  cases=(
+   ("short-commit",{"commit":"9"*39,"artifact_digest":"a"*12}),
+   ("short-digest",{"commit":"9"*40,"artifact_digest":"a"*11}),
+   ("non-hex",{"commit":"z"*40,"artifact_digest":"a"*12}),
+   ("extra-field",{"commit":"9"*40,"artifact_digest":"a"*12,"extra":"x"}),
+   ("wrong-name",{"commit":"9"*40,"artifact_digest":"a"*12}),
+  )
+  for name,metadata in cases:
+   with self.subTest(case=name), tempfile.TemporaryDirectory() as x:
+    r=Path(x); releases=r/"delivery/releases"; releases.mkdir(parents=True)
+    entry_name=(f"{metadata['commit'][:12]}-{metadata['artifact_digest']}" if name != "wrong-name" else "unmatched")
+    entry=releases/entry_name; entry.mkdir(); (entry/"RELEASE.json").write_text(json.dumps(metadata))
+    with self.assertRaisesRegex(RuntimeError,"malformed immutable release metadata"):
+     publish(self.dist(r),r/"delivery","b"*40,VERSION)
  def test_same_version_different_commit_or_digest_is_rejected_but_identical_repeat_allowed(self):
   with tempfile.TemporaryDirectory() as x:
    r=Path(x); delivery=r/"delivery"; dist=self.dist(r,"same"); publish(dist,delivery,"3"*40,VERSION); publish(dist,delivery,"3"*40,VERSION)

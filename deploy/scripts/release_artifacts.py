@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import argparse, fcntl, hashlib, json, os, shutil, stat, subprocess, tempfile, zipfile
+import argparse, fcntl, hashlib, json, os, re, shutil, stat, subprocess, tempfile, zipfile
 from pathlib import Path
 FILES = ("background.js", "content.js", "manifest.json")
 
@@ -45,6 +45,11 @@ def _scan_version(releases: Path, version: str, identity: tuple[str, str]) -> No
         metadata_path=entry/"RELEASE.json"
         try:
             metadata=json.loads(metadata_path.read_text())
+            if set(metadata)=={"commit","artifact_digest"}:
+                commit=metadata["commit"]; digest=metadata["artifact_digest"]
+                if not isinstance(commit,str) or not isinstance(digest,str) or not re.fullmatch(r"[0-9a-f]{40}",commit) or not re.fullmatch(r"[0-9a-f]{12}",digest) or entry.name != f"{commit[:12]}-{digest}":
+                    raise ValueError("invalid legacy release metadata")
+                continue
             if set(metadata)!={"version","commit","artifact_digest"} or not all(isinstance(value,str) for value in metadata.values()):
                 raise ValueError("unexpected release metadata")
         except (OSError, json.JSONDecodeError, ValueError) as error:
