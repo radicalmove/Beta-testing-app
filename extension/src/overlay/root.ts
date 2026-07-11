@@ -93,7 +93,8 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   const renderStateControls = (message = statusLabels[status]) => {
     const toolbar = shadow.querySelector<HTMLElement>(".toolbar");
     if (!toolbar) return;
-    const panelOpen = shadow.querySelector<HTMLElement>(".panel")?.hidden === false;
+    const panel = shadow.querySelector<HTMLElement>(".panel");
+    const panelOpen = panel?.hidden === false;
     const statusNode = toolbar.querySelector<HTMLElement>("[data-auth-status]");
     if (statusNode) { statusNode.className = `status ${status}`; const messageNode = statusNode.querySelector<HTMLElement>("[data-status-message]"); if (messageNode) messageNode.textContent = message; }
     toolbar.querySelector("[data-auth-action]")?.remove(); toolbar.querySelector("[data-review-controls]")?.remove();
@@ -101,6 +102,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     bind();
     const panelToggle = toolbar.querySelector<HTMLElement>('[data-action="panel"]');
     if (panelToggle) { panelToggle.setAttribute("aria-expanded", String(panelOpen)); panelToggle.setAttribute("aria-label", panelOpen ? "Close review panel" : "Open review panel"); }
+    else if (panel) panel.hidden = true;
   };
   const bindStateControls = () => {
     shadow.querySelector<HTMLButtonElement>('[data-action="authenticate"]')?.addEventListener("click", async (event) => {

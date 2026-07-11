@@ -96,3 +96,15 @@ test("identity and status updates preserve an open review panel toggle state", (
   assert.equal(toggle.getAttribute("aria-expanded"), "true");
   assert.equal(toggle.getAttribute("aria-label"), "Close review panel");
 });
+
+test("a disconnected state closes an open review panel when its toggle is removed", () => {
+  for (const status of ["signed-out", "pending", "offline"] as const) {
+    const window = new Window(); const document = window.document as unknown as Document;
+    const overlay = mountReviewOverlay(document, context, "connected");
+    const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+    shadow.querySelector<HTMLElement>('[data-action="panel"]')!.click();
+    overlay.update(context, status);
+    assert.equal(shadow.querySelector<HTMLElement>(".panel")!.hidden, true);
+    assert.equal(shadow.querySelector('[data-action="panel"]'), null);
+  }
+});
