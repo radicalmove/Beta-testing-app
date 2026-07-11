@@ -35,8 +35,7 @@ chrome.permissions.onAdded.addListener(refreshOptionalContentScript);
 chrome.permissions.onRemoved.addListener(refreshOptionalContentScript);
 
 async function serviceOrigin(): Promise<string> {
-  const settings = await chrome.storage.local.get("serviceOrigin");
-  return settings.serviceOrigin ?? DEFAULT_SERVICE_ORIGIN;
+  return DEFAULT_SERVICE_ORIGIN;
 }
 
 async function activeToken(): Promise<string | undefined> {

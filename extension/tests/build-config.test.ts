@@ -113,4 +113,5 @@ test("production background bundle uses the configured service origin", async ()
   const background = await readFile(new URL("../dist/background.js", import.meta.url), "utf8");
   assert.match(background, /fld-mini\.tail4ccaba\.ts\.net/);
   assert.doesNotMatch(background, /review\.example\.invalid/);
+  assert.doesNotMatch(background, /storage\.local\.get\(["']serviceOrigin["']/);
 });
