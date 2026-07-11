@@ -25,7 +25,7 @@ test("version remains accessible without overlapping review controls at 320 CSS 
   expect(intersects(boxes[0], boxes[1])).toBe(false);
   expect(intersects(boxes[0], boxes[2])).toBe(false);
   expect(intersects(boxes[1], boxes[2])).toBe(false);
-  await expect(host.getByLabel("Pilot version 0.2.0")).toBeVisible();
+  await expect(host.getByRole("note", { name: "Pilot version 0.2.0" })).toBeVisible();
 
   await host.locator('[data-action="panel"]').click();
   await host.locator('[data-action="panel"]').focus();

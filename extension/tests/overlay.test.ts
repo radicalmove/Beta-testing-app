@@ -66,6 +66,7 @@ test("overlay displays accessible pilot version diagnostics", () => {
   mountReviewOverlay(document, context, "connected", {}, { version: "0.2.0", buildCommit: "abc1234def567890abc1234def567890abc1234d" });
   const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   const version = shadow.querySelector<HTMLElement>("[data-pilot-version]")!;
+  assert.equal(version.getAttribute("role"), "note");
   assert.equal(version.getAttribute("aria-label"), "Pilot version 0.2.0");
   shadow.querySelector<HTMLElement>('[data-action="panel"]')!.click();
   const diagnostic = shadow.querySelector<HTMLElement>("[data-build-diagnostic]")!;
