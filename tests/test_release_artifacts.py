@@ -6,7 +6,7 @@ class ReleaseArtifactTests(unittest.TestCase):
  def test_delivery_destination_is_canonical_and_external(self):
   with tempfile.TemporaryDirectory() as x:
    base=Path(x); repo=base/"repo"; common=repo/".git"; nested=repo/"nested"; common.mkdir(parents=True); nested.mkdir(); outside=base/"outside"; alias=base/"alias"; alias.symlink_to(nested,target_is_directory=True)
-   for candidate in (Path("."), nested, nested/"..", alias):
+   for candidate in (Path("/"), Path("."), nested, nested/"..", alias):
     with self.subTest(candidate=candidate), self.assertRaises(RuntimeError):
      canonical_delivery(repo,common,candidate if candidate.is_absolute() else repo/candidate)
    self.assertEqual(canonical_delivery(repo,common,outside/"../external"),(base/"external").resolve())

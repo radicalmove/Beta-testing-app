@@ -5,6 +5,8 @@ FILES = ("background.js", "content.js", "manifest.json")
 
 def canonical_delivery(root: Path, git_common: Path, candidate: Path) -> Path:
     resolved = candidate.expanduser().resolve()
+    if resolved == Path(resolved.anchor):
+        raise RuntimeError(f"delivery destination must not be filesystem root: {resolved}")
     forbidden = (root.resolve(), git_common.resolve(), git_common.resolve().parent)
     for boundary in forbidden:
         if resolved == boundary or boundary in resolved.parents:
