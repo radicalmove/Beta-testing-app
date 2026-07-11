@@ -1,8 +1,38 @@
 from pathlib import Path
+import json
+import re
+import subprocess
+import tempfile
 import unittest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def assert_classic_self_contained_script(source: str) -> None:
+    forbidden = {
+        "top-level ESM import": r"(?m)^\s*import(?:\s|\{|\*)",
+        "top-level ESM export": r"(?m)^\s*export(?:\s|\{|\*)",
+        "dynamic import": r"\bimport\s*\(",
+        "runtime chunk reference": r"(?:^|[\"'])\.?\.?/chunks/[^\"']+\.js",
+        "external script loader": r"\bimportScripts\s*\(",
+        "external CommonJS dependency": r"\brequire\s*\(",
+    }
+    for label, pattern in forbidden.items():
+        if re.search(pattern, source):
+            raise AssertionError(f"content.js contains {label}")
+
+
+def assert_production_manifest(manifest: dict) -> None:
+    moodle = "https://my.uconline.ac.nz/*"
+    service = "https://fld-mini.tail4ccaba.ts.net/*"
+    if manifest.get("host_permissions") != [moodle, service]:
+        raise AssertionError("production host_permissions must contain only the real UC Online and Tailscale hosts")
+    scripts = manifest.get("content_scripts")
+    if not isinstance(scripts, list) or len(scripts) != 1:
+        raise AssertionError("production manifest must define exactly one content script")
+    if scripts[0].get("matches") != [moodle] or scripts[0].get("js") != ["content.js"]:
+        raise AssertionError("content.js must match only the real UC Online host")
 
 class DeploymentPackageTests(unittest.TestCase):
     def test_compose_is_private_persistent_and_health_checked(self):
@@ -102,7 +132,61 @@ class DeploymentPackageTests(unittest.TestCase):
 
     def test_built_content_script_is_classic_and_self_contained(self):
         content_script = (ROOT / "extension/dist/content.js").read_text()
-        self.assertNotRegex(content_script, r"(?m)^\s*import(?:\s|\{)")
+        assert_classic_self_contained_script(content_script)
+
+    def test_classic_script_validator_rejects_esm_chunks_and_external_dependencies(self):
+        invalid_sources = (
+            'import { mount } from "./chunks/runtime.js";',
+            'export { bootstrap };',
+            'import("./chunks/runtime.js");',
+            'importScripts("https://cdn.example.invalid/runtime.js");',
+            'require("external-package");',
+        )
+        for source in invalid_sources:
+            with self.subTest(source=source):
+                with self.assertRaises(AssertionError):
+                    assert_classic_self_contained_script(source)
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = Path(directory) / "content.js"
+            artifact.write_text('(() => { document.documentElement.setAttribute("data-test", "active"); })();')
+            assert_classic_self_contained_script(artifact.read_text())
+
+    def test_production_manifest_uses_only_real_pilot_hosts(self):
+        manifest = json.loads((ROOT / "extension/dist/manifest.json").read_text())
+        assert_production_manifest(manifest)
+
+    def test_manifest_validator_rejects_placeholder_or_additional_hosts(self):
+        valid = {
+            "host_permissions": ["https://my.uconline.ac.nz/*", "https://fld-mini.tail4ccaba.ts.net/*"],
+            "content_scripts": [{"matches": ["https://my.uconline.ac.nz/*"], "js": ["content.js"]}],
+        }
+        assert_production_manifest(valid)
+        for permissions in (
+            ["https://moodle.example.invalid/*", "https://fld-mini.tail4ccaba.ts.net/*"],
+            ["https://my.uconline.ac.nz/*", "https://fld-mini.tail4ccaba.ts.net/*", "https://extra.example/*"],
+        ):
+            with self.subTest(permissions=permissions):
+                with self.assertRaises(AssertionError):
+                    assert_production_manifest({**valid, "host_permissions": permissions})
+
+    def test_just_built_content_script_executes_as_classic_and_marks_active(self):
+        harness = r'''
+import { readFileSync } from "node:fs";
+import vm from "node:vm";
+import { Window } from "happy-dom";
+const window = new Window({ url: "https://my.uconline.ac.nz/course/view.php?id=896" });
+window.document.body.innerHTML = "<h1>CRJU150</h1>";
+const chrome = { runtime: { sendMessage(_message, callback) { callback({ ok: false, status: "signed-out", error: "Signed out" }); } } };
+const context = { window, document: window.document, chrome, CustomEvent: window.CustomEvent, URL, Symbol, Promise, Error, console, setTimeout, clearTimeout };
+vm.runInNewContext(readFileSync("dist/content.js", "utf8"), context, { filename: "content.js" });
+await new Promise((resolve) => setTimeout(resolve, 0));
+if (window.document.documentElement.getAttribute("data-moodle-review-extension") !== "active") throw new Error("content marker was not activated");
+'''
+        result = subprocess.run(
+            ["node", "--input-type=module", "--eval", harness],
+            cwd=ROOT / "extension", text=True, capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 if __name__ == "__main__":
     unittest.main()
