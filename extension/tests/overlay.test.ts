@@ -10,7 +10,7 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 test("signed-out, pending, and offline states expose deterministic accessible controls", () => {
   for (const [status, label, action] of [
     ["signed-out", "Signed out", "Sign in"],
-    ["pending", "Account pending", null],
+    ["pending", "Account pending", "Retry"],
     ["offline", "Offline", "Retry"],
   ] as const) {
     const window = new Window();
@@ -30,9 +30,11 @@ test("authentication status is textual and announced through one live region", (
   const overlay = mountReviewOverlay(document, context, "signed-out");
   const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   assert.equal(shadow.querySelectorAll('[aria-live="polite"]').length, 1);
-  assert.match(shadow.querySelector('[aria-live="polite"]')!.textContent!, /Signed out/);
+  const liveRegion = shadow.querySelector('[aria-live="polite"]')!;
+  assert.match(liveRegion.textContent!, /Signed out/);
   overlay.update(context, "offline");
-  assert.match(shadow.querySelector('[aria-live="polite"]')!.textContent!, /Offline/);
+  assert.equal(shadow.querySelector('[aria-live="polite"]'), liveRegion);
+  assert.match(liveRegion.textContent!, /Offline/);
 });
 
 test("sign-in activation has one disabled busy action and ignores duplicate activation", async () => {

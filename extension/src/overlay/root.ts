@@ -11,16 +11,16 @@ export const overlayStyles = `:host{--review-navy:#16324f;--review-teal:#087f78;
 export type ConnectionStatus = "connecting" | "connected" | "pending" | "signed-out" | "offline";
 const statusLabels: Record<ConnectionStatus, string> = { connecting: "Connecting", connected: "Connected", pending: "Account pending", "signed-out": "Signed out", offline: "Offline" };
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
-const authActionLabels: Partial<Record<ConnectionStatus, string>> = { "signed-out": "Sign in", offline: "Retry" };
+const authActionLabels: Partial<Record<ConnectionStatus, string>> = { "signed-out": "Sign in", pending: "Retry", offline: "Retry" };
 
-function createStateControls(status: ConnectionStatus, message = statusLabels[status]): string {
+function createStateActions(status: ConnectionStatus): string {
   const action = authActionLabels[status];
   const reviewControls = status === "connected" || status === "connecting" ? `<button type="button" data-action="highlight">Highlight text</button><button type="button" data-action="pin">Add pin</button><button class="icon" type="button" data-action="panel" aria-expanded="false" aria-label="Open review panel">☰</button>` : "";
-  return `<span class="status ${status}" data-auth-status aria-live="polite" aria-atomic="true"><span class="label">Connection:</span> <span class="dot" aria-hidden="true"></span><span data-status-message>${escapeHtml(message)}</span></span><span data-auth-action>${action ? `<button type="button" data-action="authenticate">${action}</button>` : ""}</span><span data-review-controls>${reviewControls}</span>`;
+  return `<span data-auth-action>${action ? `<button type="button" data-action="authenticate">${action}</button>` : ""}</span><span data-review-controls>${reviewControls}</span>`;
 }
 
 export function createOverlayMarkup(input: { courseTitle: string; pageTitle: string; status: ConnectionStatus }): string {
-  return `<section class="shell"><div class="toolbar" role="toolbar" aria-label="Course review tools"><div class="identity"><span class="course"><span class="label">Course:</span> ${escapeHtml(input.courseTitle)}</span><span class="page"><span class="label">Page:</span> ${escapeHtml(input.pageTitle)}</span></div>${createStateControls(input.status)}</div><div class="panel" hidden>No comments on this page yet.</div></section>`;
+  return `<section class="shell"><div class="toolbar" role="toolbar" aria-label="Course review tools"><div class="identity"><span class="course"><span class="label">Course:</span> ${escapeHtml(input.courseTitle)}</span><span class="page"><span class="label">Page:</span> ${escapeHtml(input.pageTitle)}</span></div><span class="status ${input.status}" data-auth-status aria-live="polite" aria-atomic="true"><span class="label">Connection:</span> <span class="dot" aria-hidden="true"></span><span data-status-message>${statusLabels[input.status]}</span></span>${createStateActions(input.status)}</div><div class="panel" hidden>No comments on this page yet.</div></section>`;
 }
 
 export function handleDialogKey(input: { key: string; shiftKey: boolean; activeIndex: number; focusableCount: number }): { focusIndex: number; close: boolean } {
@@ -92,8 +92,10 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   const renderStateControls = (message = statusLabels[status]) => {
     const toolbar = shadow.querySelector<HTMLElement>(".toolbar");
     if (!toolbar) return;
-    toolbar.querySelector("[data-auth-status]")?.remove(); toolbar.querySelector("[data-auth-action]")?.remove(); toolbar.querySelector("[data-review-controls]")?.remove();
-    const wrapper = ownerDocument.createElement("div"); wrapper.innerHTML = createStateControls(status, message); toolbar.append(...Array.from(wrapper.childNodes));
+    const statusNode = toolbar.querySelector<HTMLElement>("[data-auth-status]");
+    if (statusNode) { statusNode.className = `status ${status}`; const messageNode = statusNode.querySelector<HTMLElement>("[data-status-message]"); if (messageNode) messageNode.textContent = message; }
+    toolbar.querySelector("[data-auth-action]")?.remove(); toolbar.querySelector("[data-review-controls]")?.remove();
+    const wrapper = ownerDocument.createElement("div"); wrapper.innerHTML = createStateActions(status); toolbar.append(...Array.from(wrapper.childNodes));
     bind();
   };
   const bindStateControls = () => {
