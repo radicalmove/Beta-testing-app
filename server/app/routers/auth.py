@@ -32,6 +32,24 @@ def extension_redirect_uris() -> set[str]:
     return {uri.strip() for uri in get_settings().extension_redirect_uris.split(",") if uri.strip()}
 
 
+def _validated_login_continuation(value: str | None) -> str | None:
+    if not value:
+        return None
+    parts = urlsplit(value)
+    query = parse_qsl(parts.query, keep_blank_values=True)
+    if (
+        parts.scheme
+        or parts.netloc
+        or parts.path != "/extension/authorize"
+        or parts.fragment
+        or len(query) != 1
+        or query[0][0] != "redirect_uri"
+        or query[0][1] not in extension_redirect_uris()
+    ):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid login continuation")
+    return f"/extension/authorize?{urlencode(query)}"
+
+
 def _csrf_response(request: Request, name: str, context: dict | None = None) -> HTMLResponse:
     token = request.cookies.get("csrf_token") or generate_token()
     response = templates.TemplateResponse(request, name, {"csrf_token": token, **(context or {})})
@@ -80,8 +98,8 @@ def register_json(payload: RegistrationRequest, db: DbSession = Depends(get_sess
 
 
 @router.get("/login", response_class=HTMLResponse)
-def login_page(request: Request) -> HTMLResponse:
-    return _csrf_response(request, "auth/login.html")
+def login_page(request: Request, next: str | None = None) -> HTMLResponse:
+    return _csrf_response(request, "auth/login.html", {"next": _validated_login_continuation(next)})
 
 
 def _login(db: DbSession, email: str, password: str) -> str:
@@ -101,8 +119,9 @@ def _login_response(token: str, response: Response) -> Response:
 @router.post("/login")
 async def login_form(request: Request, db: DbSession = Depends(get_session)) -> RedirectResponse:
     data = await _form_with_csrf(request)
+    continuation = _validated_login_continuation(data.get("next"))
     token = _login(db, data.get("email", ""), data.get("password", ""))
-    return _login_response(token, RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER))
+    return _login_response(token, RedirectResponse(continuation or "/", status_code=status.HTTP_303_SEE_OTHER))
 
 
 @router.post("/auth/login")
@@ -143,8 +162,9 @@ def extension_authorize(
         from app.services.accounts import verify_dashboard_session
 
         user = verify_dashboard_session(db, request.cookies.get("dashboard_session", ""))
-    except AuthenticationError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required") from exc
+    except AuthenticationError:
+        continuation = f"/extension/authorize?{urlencode({'redirect_uri': redirect_uri})}"
+        return RedirectResponse(f"/login?{urlencode({'next': continuation})}", status_code=status.HTTP_303_SEE_OTHER)
     code = create_extension_login_code(db, user, redirect_uri)
     parts = urlsplit(redirect_uri)
     query = urlencode([*parse_qsl(parts.query, keep_blank_values=True), ("code", code)])

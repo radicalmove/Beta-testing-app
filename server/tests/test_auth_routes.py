@@ -1,4 +1,6 @@
 from datetime import UTC, datetime
+from html import unescape
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 import pytest
 from fastapi.testclient import TestClient
@@ -167,3 +169,100 @@ def test_extension_authorization_requires_an_allowlisted_redirect_and_exchanges_
     assert token.status_code == 200
     assert token.json()["access_token"]
     assert client.post("/extension/token", json={"code": code, "redirect_uri": "https://abcdefghijklmnop.chromiumapp.org/"}).status_code == 401
+
+
+def test_extension_authorization_without_a_dashboard_cookie_redirects_to_login(client, monkeypatch):
+    import app.routers.auth as auth
+
+    callback = "https://abcdefghijklmnop.chromiumapp.org/"
+    monkeypatch.setattr(auth, "extension_redirect_uris", lambda: {callback})
+
+    response = client.get("/extension/authorize", params={"redirect_uri": callback}, follow_redirects=False)
+
+    assert response.status_code == 303
+    login = urlsplit(response.headers["location"])
+    assert login.path == "/login"
+    expected = f"/extension/authorize?{urlencode({'redirect_uri': callback})}"
+    assert parse_qs(login.query) == {"next": [expected]}
+
+
+def test_login_form_preserves_a_valid_extension_continuation(client, monkeypatch):
+    import app.routers.auth as auth
+
+    callback = "https://abcdefghijklmnop.chromiumapp.org/"
+    monkeypatch.setattr(auth, "extension_redirect_uris", lambda: {callback})
+    continuation = f"/extension/authorize?{urlencode({'redirect_uri': callback})}"
+
+    page = client.get("/login", params={"next": continuation})
+
+    assert page.status_code == 200
+    assert f'name="next" value="{unescape(continuation)}"' in unescape(page.text)
+
+
+def test_successful_login_resumes_extension_authorization(client, monkeypatch):
+    import app.routers.auth as auth
+
+    callback = "https://abcdefghijklmnop.chromiumapp.org/"
+    monkeypatch.setattr(auth, "extension_redirect_uris", lambda: {callback})
+    session = client.db_factory()
+    user = register_account(session, email="approved@example.test", password="long enough password")
+    user.approved_at = datetime.now(UTC)
+    session.commit()
+    session.close()
+    continuation = f"/extension/authorize?{urlencode({'redirect_uri': callback})}"
+    client.get("/login", params={"next": continuation})
+
+    login = client.post(
+        "/login",
+        data={
+            "email": "approved@example.test",
+            "password": "long enough password",
+            "csrf_token": client.cookies["csrf_token"],
+            "next": continuation,
+        },
+        follow_redirects=False,
+    )
+
+    assert login.status_code == 303
+    assert login.headers["location"] == continuation
+    authorized = client.get(login.headers["location"], follow_redirects=False)
+    assert authorized.status_code == 303
+    callback_url = urlsplit(authorized.headers["location"])
+    assert callback_url.scheme == "https"
+    assert callback_url.netloc == "abcdefghijklmnop.chromiumapp.org"
+    assert callback_url.path == "/"
+    assert set(parse_qs(callback_url.query)) == {"code"}
+
+
+@pytest.mark.parametrize("continuation", [
+    "https://evil.example/steal",
+    "//evil.example/steal",
+    "/extension/authorize?redirect_uri=https://evil.example/",
+    "/extension/authorize?redirect_uri=https://abcdefghijklmnop.chromiumapp.org/&extra=1",
+])
+def test_login_rejects_malicious_or_unapproved_continuations(client, monkeypatch, continuation):
+    import app.routers.auth as auth
+
+    monkeypatch.setattr(auth, "extension_redirect_uris", lambda: {"https://abcdefghijklmnop.chromiumapp.org/"})
+
+    assert client.get("/login", params={"next": continuation}).status_code == 400
+
+
+def test_login_post_revalidates_a_tampered_continuation(client, monkeypatch):
+    import app.routers.auth as auth
+
+    monkeypatch.setattr(auth, "extension_redirect_uris", lambda: {"https://abcdefghijklmnop.chromiumapp.org/"})
+    client.get("/login")
+
+    response = client.post(
+        "/login",
+        data={
+            "email": "any@example.test",
+            "password": "long enough password",
+            "csrf_token": client.cookies["csrf_token"],
+            "next": "https://evil.example/steal",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
