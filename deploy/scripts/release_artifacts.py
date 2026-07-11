@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import argparse, hashlib, json, os, shutil, stat, subprocess, tempfile, zipfile
+import argparse, fcntl, hashlib, json, os, shutil, stat, subprocess, tempfile, zipfile
 from pathlib import Path
 FILES = ("background.js", "content.js", "manifest.json")
 
@@ -24,8 +24,9 @@ def deterministic_zip(source: Path, target: Path) -> None:
             info=zipfile.ZipInfo(f"moodle-review-extension/{name}",(1980,1,1,0,0,0)); info.create_system=3; info.external_attr=(stat.S_IFREG|0o644)<<16
             archive.writestr(info,(source/name).read_bytes(),compress_type=zipfile.ZIP_DEFLATED,compresslevel=9)
 
-def _compatibility_links(delivery: Path) -> None:
-    links={"moodle-review-extension":"current/moodle-review-extension","moodle-review-extension-chrome-edge.zip":"current/moodle-review-extension-chrome-edge.zip","SHA256SUMS":"current/SHA256SUMS","RELEASE.json":"current/RELEASE.json"}
+def _compatibility_links(delivery: Path, version: str) -> None:
+    versioned_zip=f"moodle-review-extension-v{version}-chrome-edge.zip"
+    links={"moodle-review-extension":"current/moodle-review-extension","moodle-review-extension-chrome-edge.zip":"current/moodle-review-extension-chrome-edge.zip",versioned_zip:f"current/{versioned_zip}","SHA256SUMS":"current/SHA256SUMS","RELEASE.json":"current/RELEASE.json"}
     for name,target in links.items():
         path=delivery/name
         if path.is_symlink() and os.readlink(path)==target: continue
@@ -36,27 +37,48 @@ def _compatibility_links(delivery: Path) -> None:
             os.replace(path,legacy)
         path.symlink_to(target, target_is_directory=name=="moodle-review-extension")
 
-def publish(dist: Path, delivery: Path, commit: str, fail_phase: str|None=None) -> dict[str,str]:
+def _scan_version(releases: Path, version: str, identity: tuple[str, str]) -> None:
+    matches=[]
+    for entry in releases.iterdir():
+        if not entry.is_dir():
+            raise RuntimeError(f"malformed immutable release entry: {entry}")
+        metadata_path=entry/"RELEASE.json"
+        try:
+            metadata=json.loads(metadata_path.read_text())
+            if set(metadata)!={"version","commit","artifact_digest"} or not all(isinstance(value,str) for value in metadata.values()):
+                raise ValueError("unexpected release metadata")
+        except (OSError, json.JSONDecodeError, ValueError) as error:
+            raise RuntimeError(f"malformed immutable release metadata: {metadata_path}") from error
+        if metadata["version"]==version:
+            matches.append((metadata["commit"],metadata["artifact_digest"]))
+    if any(match != identity for match in matches):
+        raise RuntimeError(f"version collision for {version}")
+
+def publish(dist: Path, delivery: Path, commit: str, version: str, fail_phase: str|None=None) -> dict[str,str]:
     delivery.mkdir(parents=True,exist_ok=True); releases=delivery/"releases"; releases.mkdir(exist_ok=True)
-    digest=hashlib.sha256(b"".join((dist/n).read_bytes() for n in FILES)).hexdigest()[:12]; name=f"{commit[:12]}-{digest}"; version=releases/name
-    with tempfile.TemporaryDirectory(prefix=".release-",dir=releases) as temp:
+    digest=hashlib.sha256(b"".join((dist/n).read_bytes() for n in FILES)).hexdigest()[:12]; name=f"v{version}-{commit[:12]}-{digest}"; release=releases/name
+    with (delivery/".publish.lock").open("a+") as lock:
+      fcntl.flock(lock,fcntl.LOCK_EX)
+      _scan_version(releases,version,(commit,digest))
+      with tempfile.TemporaryDirectory(prefix=".release-",dir=delivery) as temp:
         stage=Path(temp)/name; unpacked=stage/"moodle-review-extension"; unpacked.mkdir(parents=True)
         for n in FILES: shutil.copyfile(dist/n,unpacked/n)
-        metadata={"commit":commit,"artifact_digest":digest}; release_json=json.dumps(metadata,sort_keys=True,separators=(",",":"))+"\n"; (unpacked/"RELEASE.json").write_text(release_json); (stage/"RELEASE.json").write_text(release_json)
-        deterministic_zip(unpacked,stage/"moodle-review-extension-chrome-edge.zip")
-        hashes={f"moodle-review-extension/{n}":hashlib.sha256((unpacked/n).read_bytes()).hexdigest() for n in FILES}; hashes["moodle-review-extension-chrome-edge.zip"]=hashlib.sha256((stage/"moodle-review-extension-chrome-edge.zip").read_bytes()).hexdigest()
-        (stage/"SHA256SUMS").write_text("".join(f"{v}  {k}\n" for k,v in hashes.items()))
+        metadata={"version":version,"commit":commit,"artifact_digest":digest}; release_json=json.dumps(metadata,sort_keys=True,separators=(",",":"))+"\n"; (unpacked/"RELEASE.json").write_text(release_json); (stage/"RELEASE.json").write_text(release_json)
+        versioned_zip=f"moodle-review-extension-v{version}-chrome-edge.zip"; deterministic_zip(unpacked,stage/versioned_zip); shutil.copyfile(stage/versioned_zip,stage/"moodle-review-extension-chrome-edge.zip")
+        paths=[*(f"moodle-review-extension/{n}" for n in FILES),"moodle-review-extension/RELEASE.json","RELEASE.json",versioned_zip,"moodle-review-extension-chrome-edge.zip"]
+        hashes={path:hashlib.sha256((stage/path).read_bytes()).hexdigest() for path in paths}
+        (stage/"SHA256SUMS").write_text("".join(f"{hashes[path]}  {path}\n" for path in paths))
         if fail_phase=="staged": raise RuntimeError("injected staged failure")
-        if not version.exists(): os.replace(stage,version)
+        if not release.exists(): os.replace(stage,release)
         if fail_phase=="versioned": raise RuntimeError("injected versioned failure")
         current=delivery/"current"
         if not current.exists() and (delivery/"moodle-review-extension").is_symlink():
             old=os.readlink(delivery/"moodle-review-extension"); current.symlink_to(old,target_is_directory=True)
-        _compatibility_links(delivery)
+        _compatibility_links(delivery,version)
         pointer=delivery/f".current-{os.getpid()}"; pointer.symlink_to(f"releases/{name}",target_is_directory=True); os.replace(pointer,current)
         if fail_phase=="switched": raise RuntimeError("injected switched failure")
         return hashes
 
 def main():
-    p=argparse.ArgumentParser(); p.add_argument("--root",type=Path,required=True); p.add_argument("--dist",type=Path,required=True); p.add_argument("--delivery",type=Path,required=True); a=p.parse_args(); commit=git_identity(a.root); publish(a.dist,a.delivery,commit); print(commit)
+    p=argparse.ArgumentParser(); p.add_argument("--root",type=Path,required=True); p.add_argument("--dist",type=Path,required=True); p.add_argument("--delivery",type=Path,required=True); p.add_argument("--version",required=True); a=p.parse_args(); commit=git_identity(a.root); publish(a.dist,a.delivery,commit,a.version); print(commit)
 if __name__=="__main__": main()

@@ -147,6 +147,7 @@ class DeploymentPackageTests(unittest.TestCase):
             "git-common-dir", "rm -rf", "-f", "manifest.json", "content.js",
             "assert_classic_self_contained_script", "assert_production_manifest",
             "shasum -a 256", "extension/dist", "moodle-review-extension-chrome-edge.zip",
+            "moodle-review-extension-v", "--version", "BUILD_COMMIT",
         ):
             self.assertIn(token, script)
         self.assertNotIn("pilot-extension.pem", script)

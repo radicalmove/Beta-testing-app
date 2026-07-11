@@ -15,6 +15,8 @@ DELIVERY_ZIP="$DELIVERY_ROOT/moodle-review-extension-chrome-edge.zip"
 (cd "$ROOT" && python3 -c 'from pathlib import Path; from deploy.scripts.release_artifacts import git_identity; print(git_identity(Path(".")))') >/dev/null
 [[ ${RELEASE_PREFLIGHT_ONLY:-0} == 1 ]] && exit 0
 BUILD_COMMIT=$(git -C "$ROOT" rev-parse HEAD)
+RELEASE_VERSION=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$ROOT/extension/package.json")
+VERSIONED_ZIP="$DELIVERY_ROOT/moodle-review-extension-v$RELEASE_VERSION-chrome-edge.zip"
 
 (cd "$ROOT/extension" && npm test && npm run typecheck)
 (cd "$ROOT/server" && python3 -m pytest -q)
@@ -42,7 +44,8 @@ print("Fresh production manifest hosts and classic content.js verified")
 PY
 )
 
-python3 "$ROOT/deploy/scripts/release_artifacts.py" --root "$ROOT" --dist "$ROOT/extension/dist" --delivery "$DELIVERY_ROOT"
+python3 "$ROOT/deploy/scripts/release_artifacts.py" --root "$ROOT" --dist "$ROOT/extension/dist" --delivery "$DELIVERY_ROOT" --version "$RELEASE_VERSION"
 for artifact in background.js content.js manifest.json; do cmp "$ROOT/extension/dist/$artifact" "$DELIVERY_DIR/$artifact"; done
+cmp "$VERSIONED_ZIP" "$DELIVERY_ZIP"
 (cd "$DELIVERY_ROOT" && shasum -a 256 -c SHA256SUMS)
 echo "Released verified pilot extension to $DELIVERY_ROOT"

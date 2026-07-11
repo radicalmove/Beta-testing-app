@@ -1,7 +1,16 @@
-import json, os, subprocess, tempfile, unittest
+import hashlib, json, multiprocessing, os, subprocess, tempfile, unittest
 from pathlib import Path
 from deploy.scripts.release_artifacts import canonical_delivery, git_identity, publish
 ROOT=Path(__file__).resolve().parents[1]
+VERSION="0.2.0"
+
+def race_publish(dist, delivery, commit, queue):
+ try:
+  publish(Path(dist),Path(delivery),commit,VERSION)
+  queue.put("ok")
+ except Exception as error:
+  queue.put(f"{type(error).__name__}:{error}")
+
 class ReleaseArtifactTests(unittest.TestCase):
  def test_delivery_destination_is_canonical_and_external(self):
   with tempfile.TemporaryDirectory() as x:
@@ -27,19 +36,58 @@ class ReleaseArtifactTests(unittest.TestCase):
    r=Path(x); self.make_repo(r); self.assertTrue(git_identity(r)); (r/"u").write_text("x"); self.assertRaises(RuntimeError,git_identity,r)
  def test_every_pre_switch_failure_keeps_old_coherent_release_and_switch_exposes_new_set(self):
   with tempfile.TemporaryDirectory() as x:
-   r=Path(x); delivery=r/"delivery"; publish(self.dist(r,"old"),delivery,"a"*40)
+   r=Path(x); delivery=r/"delivery"; publish(self.dist(r,"old"),delivery,"a"*40,"0.1.0"); new=self.dist(r,"new")
    for phase in ("staged","versioned"):
-    with self.assertRaises(RuntimeError): publish(self.dist(r,phase),delivery,"b"*40,phase)
+    with self.assertRaises(RuntimeError): publish(new,delivery,"b"*40,VERSION,phase)
     self.assertEqual(self.visible(delivery),"a"*40)
-   with self.assertRaises(RuntimeError): publish(self.dist(r,"switch"),delivery,"b"*40,"switched")
+   with self.assertRaises(RuntimeError): publish(new,delivery,"b"*40,VERSION,"switched")
    self.assertEqual(self.visible(delivery),"b"*40)
    current=(delivery/"current").resolve(); self.assertTrue((current/"moodle-review-extension").is_dir()); self.assertTrue((current/"moodle-review-extension-chrome-edge.zip").is_file()); self.assertTrue((current/"SHA256SUMS").is_file()); self.assertTrue((current/"RELEASE.json").is_file())
    self.assertEqual(os.readlink(delivery/"moodle-review-extension"),"current/moodle-review-extension")
  def test_repeated_release_is_deterministic(self):
   with tempfile.TemporaryDirectory() as x:
-   r=Path(x); d=self.dist(r); delivery=r/"delivery"; publish(d,delivery,"c"*40); z=(delivery/"moodle-review-extension-chrome-edge.zip").read_bytes(); s=(delivery/"SHA256SUMS").read_bytes(); publish(d,delivery,"c"*40); self.assertEqual(z,(delivery/"moodle-review-extension-chrome-edge.zip").read_bytes()); self.assertEqual(s,(delivery/"SHA256SUMS").read_bytes())
+   r=Path(x); d=self.dist(r); delivery=r/"delivery"; publish(d,delivery,"c"*40,VERSION); z=(delivery/"moodle-review-extension-chrome-edge.zip").read_bytes(); s=(delivery/"SHA256SUMS").read_bytes(); publish(d,delivery,"c"*40,VERSION); self.assertEqual(z,(delivery/"moodle-review-extension-chrome-edge.zip").read_bytes()); self.assertEqual(s,(delivery/"SHA256SUMS").read_bytes())
  def test_migration_removes_an_existing_legacy_directory(self):
   with tempfile.TemporaryDirectory() as x:
    r=Path(x); delivery=r/"delivery"; delivery.mkdir(); old=delivery/"old"; old.mkdir(); (old/"RELEASE.json").write_text('{"commit":"old"}'); (delivery/"moodle-review-extension").symlink_to("old"); (delivery/".legacy-moodle-review-extension").mkdir()
-   publish(self.dist(r),delivery,"d"*40); self.assertEqual(self.visible(delivery),"d"*40)
+   publish(self.dist(r),delivery,"d"*40,VERSION); self.assertEqual(self.visible(delivery),"d"*40)
+ def test_versioned_release_metadata_zip_aliases_and_exact_checksums(self):
+  with tempfile.TemporaryDirectory() as x:
+   r=Path(x); dist=self.dist(r); delivery=r/"delivery"; commit="e"*40
+   publish(dist,delivery,commit,VERSION)
+   digest=hashlib.sha256(b"".join((dist/n).read_bytes() for n in ("background.js","content.js","manifest.json"))).hexdigest()[:12]
+   release=delivery/"releases"/f"v{VERSION}-{commit[:12]}-{digest}"
+   metadata={"version":VERSION,"commit":commit,"artifact_digest":digest}
+   self.assertEqual(json.loads((release/"RELEASE.json").read_text()),metadata)
+   self.assertEqual(json.loads((release/"moodle-review-extension/RELEASE.json").read_text()),metadata)
+   versioned=f"moodle-review-extension-v{VERSION}-chrome-edge.zip"
+   expected={"moodle-review-extension/background.js","moodle-review-extension/content.js","moodle-review-extension/manifest.json","moodle-review-extension/RELEASE.json","RELEASE.json",versioned,"moodle-review-extension-chrome-edge.zip"}
+   lines=(release/"SHA256SUMS").read_text().splitlines(); self.assertEqual({line.split("  ",1)[1] for line in lines},expected)
+   self.assertEqual((release/versioned).read_bytes(),(release/"moodle-review-extension-chrome-edge.zip").read_bytes())
+   self.assertEqual(os.readlink(delivery/versioned),f"current/{versioned}")
+ def test_collision_scan_fails_closed_before_staging_or_switch(self):
+  with tempfile.TemporaryDirectory() as x:
+   r=Path(x); delivery=r/"delivery"; original=self.dist(r,"original"); publish(original,delivery,"1"*40,VERSION)
+   current=os.readlink(delivery/"current"); history=set((delivery/"releases").iterdir())
+   malformed=delivery/"releases"/"malformed"; malformed.mkdir(); (malformed/"RELEASE.json").write_text("not-json")
+   with self.assertRaises(RuntimeError): publish(self.dist(r,"new"),delivery,"2"*40,VERSION)
+   self.assertEqual(os.readlink(delivery/"current"),current); self.assertEqual(set((delivery/"releases").iterdir()),history|{malformed})
+ def test_same_version_different_commit_or_digest_is_rejected_but_identical_repeat_allowed(self):
+  with tempfile.TemporaryDirectory() as x:
+   r=Path(x); delivery=r/"delivery"; dist=self.dist(r,"same"); publish(dist,delivery,"3"*40,VERSION); publish(dist,delivery,"3"*40,VERSION)
+   with self.assertRaises(RuntimeError): publish(dist,delivery,"4"*40,VERSION)
+   with self.assertRaises(RuntimeError): publish(self.dist(r,"different"),delivery,"3"*40,VERSION)
+ def test_duplicate_version_metadata_with_different_identity_fails_closed(self):
+  with tempfile.TemporaryDirectory() as x:
+   r=Path(x); delivery=r/"delivery"; publish(self.dist(r),delivery,"5"*40,VERSION)
+   duplicate=delivery/"releases"/"duplicate"; duplicate.mkdir(); (duplicate/"RELEASE.json").write_text(json.dumps({"version":VERSION,"commit":"6"*40,"artifact_digest":"f"*12}))
+   with self.assertRaises(RuntimeError): publish(self.dist(r,"retry"),delivery,"5"*40,VERSION)
+ def test_concurrent_publishers_allow_exactly_one_version_identity(self):
+  with tempfile.TemporaryDirectory() as x:
+   r=Path(x); delivery=r/"delivery"; queue=multiprocessing.Queue()
+   processes=[multiprocessing.Process(target=race_publish,args=(str(self.dist(r,tag)),str(delivery),commit,queue)) for tag,commit in (("one","7"*40),("two","8"*40))]
+   for process in processes: process.start()
+   for process in processes: process.join(10); self.assertEqual(process.exitcode,0)
+   results=[queue.get(timeout=2) for _ in processes]; self.assertEqual(results.count("ok"),1); self.assertTrue(any("collision" in result for result in results))
+   releases=list((delivery/"releases").iterdir()); self.assertEqual(len(releases),1); self.assertEqual((delivery/"current").resolve(),releases[0].resolve())
 if __name__=='__main__': unittest.main()
