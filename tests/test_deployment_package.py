@@ -135,7 +135,7 @@ class DeploymentPackageTests(unittest.TestCase):
         ordered = (
             "npm test", "npm run typecheck", "python3 -m pytest -q",
             "build-pilot-extension.sh", "python3 -m unittest tests/test_deployment_package.py",
-            "cmp", "zip -q -r", "SHA256SUMS",
+            "release_artifacts.py", "cmp", "SHA256SUMS",
         )
         positions = [script.index(token) for token in ordered]
         self.assertEqual(positions, sorted(positions))

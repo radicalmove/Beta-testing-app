@@ -15,6 +15,9 @@ case "$DELIVERY_ROOT" in
   /|"$ROOT"|"$ROOT"/extension|"$ROOT"/extension/dist) echo "unsafe DELIVERY_ROOT: $DELIVERY_ROOT" >&2; exit 1 ;;
 esac
 
+python3 -c 'from pathlib import Path; from deploy.scripts.release_artifacts import git_identity; print(git_identity(Path(".")))' \
+  >/dev/null
+
 (cd "$ROOT/extension" && npm test && npm run typecheck)
 (cd "$ROOT/server" && python3 -m pytest -q)
 
@@ -43,28 +46,7 @@ print("Fresh production manifest hosts and classic content.js verified")
 PY
 )
 
-mkdir -p "$DELIVERY_ROOT"
-stage=$(mktemp -d "$DELIVERY_ROOT/.moodle-review-extension.XXXXXX")
-trap 'rm -f "$build_started"; rm -rf "$stage"' EXIT
-cp "$ROOT/extension/dist/background.js" "$ROOT/extension/dist/content.js" "$ROOT/extension/dist/manifest.json" "$stage/"
-for artifact in background.js content.js manifest.json; do
-  cmp "$ROOT/extension/dist/$artifact" "$stage/$artifact"
-done
-rm -rf "$DELIVERY_DIR"
-mv "$stage" "$DELIVERY_DIR"
-
-zip_stage=$(mktemp "$DELIVERY_ROOT/.moodle-review-extension.XXXXXX.zip")
-rm -f "$zip_stage"
-(cd "$DELIVERY_ROOT" && zip -q -r "$zip_stage" moodle-review-extension)
-mv "$zip_stage" "$DELIVERY_ZIP"
-
-for artifact in background.js content.js manifest.json; do
-  cmp "$ROOT/extension/dist/$artifact" "$DELIVERY_DIR/$artifact"
-done
-(cd "$DELIVERY_ROOT" && shasum -a 256 \
-  moodle-review-extension/background.js \
-  moodle-review-extension/content.js \
-  moodle-review-extension/manifest.json \
-  moodle-review-extension-chrome-edge.zip > SHA256SUMS)
+python3 "$ROOT/deploy/scripts/release_artifacts.py" --root "$ROOT" --dist "$ROOT/extension/dist" --delivery "$DELIVERY_ROOT"
+for artifact in background.js content.js manifest.json; do cmp "$ROOT/extension/dist/$artifact" "$DELIVERY_DIR/$artifact"; done
 (cd "$DELIVERY_ROOT" && shasum -a 256 -c SHA256SUMS)
 echo "Released verified pilot extension to $DELIVERY_ROOT"
