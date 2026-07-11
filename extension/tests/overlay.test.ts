@@ -17,15 +17,50 @@ const contrastRatio = (foreground: string, background: string): number => {
   return (lighter! + 0.05) / (darker! + 0.05);
 };
 
-test("UCO visual tokens provide deterministic WCAG AA contrast", () => {
-  assert.match(overlayStyles, /--review-red:#d73b3d/);
-  assert.match(overlayStyles, /font:14px\/1\.4 Poppins,Arial,sans-serif/);
-  assert.ok(contrastRatio("#ffffff", "#000000") >= 4.5, "header text must meet AA");
-  assert.ok(contrastRatio("#ffffff", "#d73b3d") >= 4.5, "primary action text must meet AA");
-  assert.ok(contrastRatio("#000000", "#ffffff") >= 4.5, "panel text must meet AA");
-  assert.ok(contrastRatio("#000000", "#f2f2f2") >= 4.5, "secondary control text must meet AA");
-  assert.ok(contrastRatio("#000000", "#ffd54f") >= 3, "focus indicator must contrast with adjacent black");
-  assert.ok(contrastRatio("#000000", "#ffffff") >= 3, "focus surround must contrast with adjacent white");
+const expandHex = (color: string) => color.length === 4
+  ? `#${color[1]}${color[1]}${color[2]}${color[2]}${color[3]}${color[3]}`
+  : color;
+
+function auditOverlayContrast(styles: string): void {
+  const declarations = (selector: string) => {
+    const match = styles.match(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\{([^}]*)\\}`));
+    assert.ok(match, `missing ${selector} rule`);
+    return match[1]!;
+  };
+  const property = (rule: string, name: string) => {
+    const match = rule.match(new RegExp(`(?:^|;)${name}:([^;}]*)`));
+    assert.ok(match, `missing ${name} declaration`);
+    return match[1]!;
+  };
+  const host = declarations(":host");
+  const resolve = (value: string) => {
+    const variable = value.match(/^var\((--[^)]+)\)$/)?.[1];
+    return expandHex(variable ? property(host, variable) : value);
+  };
+  const requireContrast = (label: string, foreground: string, background: string, minimum: number) =>
+    assert.ok(contrastRatio(resolve(foreground), resolve(background)) >= minimum, `${label} contrast is below ${minimum}:1`);
+
+  const toolbar = declarations(".toolbar");
+  requireContrast("toolbar text", property(toolbar, "color"), property(toolbar, "background"), 4.5);
+  requireContrast("status text", property(toolbar, "color"), property(toolbar, "background"), 4.5);
+  const primary = declarations(".toolbar button");
+  requireContrast("primary action", property(primary, "color"), property(primary, "background"), 4.5);
+  const panel = declarations(".panel,[data-unresolved],[data-frame-fallback]");
+  requireContrast("panel text", property(host, "color"), property(panel, "background"), 4.5);
+  const control = declarations("button");
+  requireContrast("secondary control", property(control, "color"), property(control, "background"), 4.5);
+  const focus = declarations("button:focus-visible,textarea:focus-visible,select:focus-visible,input:focus-visible");
+  const focusColor = property(focus, "outline").split(" ").at(-1)!;
+  const surroundColor = property(focus, "box-shadow").split(" ").at(-1)!;
+  requireContrast("focus indicator on header", focusColor, property(toolbar, "background"), 3);
+  requireContrast("focus indicator on panel", surroundColor, property(panel, "background"), 3);
+}
+
+test("contrast audit reads colors from the overlay stylesheet", () => {
+  assert.doesNotThrow(() => auditOverlayContrast(overlayStyles));
+  assert.throws(() => auditOverlayContrast(overlayStyles.replace("background:#000;color:#fff", "background:#777;color:#fff")), /toolbar text/);
+  assert.throws(() => auditOverlayContrast(overlayStyles.replace("background:var(--review-red);color:#fff", "background:#fff;color:#fff")), /primary action/);
+  assert.throws(() => auditOverlayContrast(overlayStyles.replace("outline:3px solid #ffd54f", "outline:3px solid #fff").replace("box-shadow:0 0 0 5px #000", "box-shadow:0 0 0 5px #fff")), /focus indicator/);
 });
 
 test("overlay styles remain isolated, keyboard-visible, and usable at 320 CSS pixels", () => {
