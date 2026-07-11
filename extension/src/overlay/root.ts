@@ -11,9 +11,16 @@ export const overlayStyles = `:host{--review-navy:#16324f;--review-teal:#087f78;
 export type ConnectionStatus = "connecting" | "connected" | "pending" | "signed-out" | "offline";
 const statusLabels: Record<ConnectionStatus, string> = { connecting: "Connecting", connected: "Connected", pending: "Account pending", "signed-out": "Signed out", offline: "Offline" };
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
+const authActionLabels: Partial<Record<ConnectionStatus, string>> = { "signed-out": "Sign in", offline: "Retry" };
+
+function createStateControls(status: ConnectionStatus, message = statusLabels[status]): string {
+  const action = authActionLabels[status];
+  const reviewControls = status === "connected" || status === "connecting" ? `<button type="button" data-action="highlight">Highlight text</button><button type="button" data-action="pin">Add pin</button><button class="icon" type="button" data-action="panel" aria-expanded="false" aria-label="Open review panel">☰</button>` : "";
+  return `<span class="status ${status}" data-auth-status aria-live="polite" aria-atomic="true"><span class="label">Connection:</span> <span class="dot" aria-hidden="true"></span><span data-status-message>${escapeHtml(message)}</span></span><span data-auth-action>${action ? `<button type="button" data-action="authenticate">${action}</button>` : ""}</span><span data-review-controls>${reviewControls}</span>`;
+}
 
 export function createOverlayMarkup(input: { courseTitle: string; pageTitle: string; status: ConnectionStatus }): string {
-  return `<section class="shell"><div class="toolbar" role="toolbar" aria-label="Course review tools"><div class="identity"><span class="course"><span class="label">Course:</span> ${escapeHtml(input.courseTitle)}</span><span class="page"><span class="label">Page:</span> ${escapeHtml(input.pageTitle)}</span></div><span class="status ${input.status}" role="status"><span class="label">Connection:</span> <span class="dot" aria-hidden="true"></span>${statusLabels[input.status]}</span><button type="button" data-action="highlight">Highlight text</button><button type="button" data-action="pin">Add pin</button><button class="icon" type="button" data-action="panel" aria-expanded="false" aria-label="Open review panel">☰</button></div><div class="panel" hidden>No comments on this page yet.</div></section>`;
+  return `<section class="shell"><div class="toolbar" role="toolbar" aria-label="Course review tools"><div class="identity"><span class="course"><span class="label">Course:</span> ${escapeHtml(input.courseTitle)}</span><span class="page"><span class="label">Page:</span> ${escapeHtml(input.pageTitle)}</span></div>${createStateControls(input.status)}</div><div class="panel" hidden>No comments on this page yet.</div></section>`;
 }
 
 export function handleDialogKey(input: { key: string; shiftKey: boolean; activeIndex: number; focusableCount: number }): { focusIndex: number; close: boolean } {
@@ -25,7 +32,8 @@ export function handleDialogKey(input: { key: string; shiftKey: boolean; activeI
 
 export type CommentAnchor = ({ anchor_type: "text_highlight" } & TextAnchor) | ({ anchor_type: "visual_pin" } & PinAnchor);
 export type UnresolvedAnchor = { id: string; label: string; quote?: string };
-export type ReviewOverlayOptions = { submit?: (input: { body: string; category: string; anchor: CommentAnchor; screenshot: boolean; embeddedFrameUnavailable: boolean; contextSnapshot: CourseContext }) => Promise<{ id?: string; screenshot_available?: boolean } | void>; uploadScreenshot?: (commentId: string, dataUrl: string) => Promise<void>; cancelScreenshot?: (commentId: string) => Promise<void>; captureScreenshot?: () => Promise<string>; onFrameFallback?: () => void; onTakeToContext?: (id: string) => void };
+export type AuthenticationOutcome = { status: ConnectionStatus; message?: string };
+export type ReviewOverlayOptions = { onAuthenticate?: () => Promise<AuthenticationOutcome>; submit?: (input: { body: string; category: string; anchor: CommentAnchor; screenshot: boolean; embeddedFrameUnavailable: boolean; contextSnapshot: CourseContext }) => Promise<{ id?: string; screenshot_available?: boolean } | void>; uploadScreenshot?: (commentId: string, dataUrl: string) => Promise<void>; cancelScreenshot?: (commentId: string) => Promise<void>; captureScreenshot?: () => Promise<string>; onFrameFallback?: () => void; onTakeToContext?: (id: string) => void };
 export type ReviewOverlay = { update(context: CourseContext, status: ConnectionStatus): void; setPageComments(comments: PageComment[]): void; takeToContext(id: string): boolean; showFrameFallback(): void; hideFrameFallback(): void; setUnresolvedAnchors(anchors: UnresolvedAnchor[]): void; destroy(): void };
 
 export function mountReviewOverlay(document: Document, context: CourseContext, status: ConnectionStatus = "connecting", options: ReviewOverlayOptions = {}): ReviewOverlay {
@@ -47,6 +55,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   const ownerDocument = host.ownerDocument;
   let context = initial;
   let status = initialStatus;
+  let authenticating = false;
   let returnFocus: HTMLElement | null = null;
   let previewCleanup: (() => void) | undefined;
   let pinListener: ((event: PointerEvent) => void) | undefined;
@@ -76,16 +85,31 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   const updateLabels = () => {
     const course = shadow.querySelector<HTMLElement>(".course");
     const page = shadow.querySelector<HTMLElement>(".page");
-    const statusNode = shadow.querySelector<HTMLElement>(".status");
     if (course) course.textContent = `Course: ${context.title}${context.identityConfidence === "unconfirmed" ? " (unconfirmed course)" : ""}`;
     if (page) page.textContent = `Page: ${context.pageTitle}`;
-    if (statusNode) {
-      statusNode.className = `status ${status}`;
-      const dot = ownerDocument.createElement("span");
-      dot.className = "dot";
-      dot.setAttribute("aria-hidden", "true");
-      statusNode.replaceChildren("Connection: ", dot, statusLabels[status]);
-    }
+    renderStateControls();
+  };
+  const renderStateControls = (message = statusLabels[status]) => {
+    const toolbar = shadow.querySelector<HTMLElement>(".toolbar");
+    if (!toolbar) return;
+    toolbar.querySelector("[data-auth-status]")?.remove(); toolbar.querySelector("[data-auth-action]")?.remove(); toolbar.querySelector("[data-review-controls]")?.remove();
+    const wrapper = ownerDocument.createElement("div"); wrapper.innerHTML = createStateControls(status, message); toolbar.append(...Array.from(wrapper.childNodes));
+    bind();
+  };
+  const bindStateControls = () => {
+    shadow.querySelector<HTMLButtonElement>('[data-action="authenticate"]')?.addEventListener("click", async (event) => {
+      if (authenticating) return;
+      authenticating = true;
+      const button = event.currentTarget as HTMLButtonElement; button.disabled = true; button.textContent = "Signing in…"; button.setAttribute("aria-busy", "true");
+      try {
+        const outcome = await options.onAuthenticate?.();
+        status = outcome?.status ?? "signed-out"; authenticating = false; renderStateControls(outcome?.message);
+        if (status === "connected") shadow.querySelector<HTMLElement>('[data-action="highlight"]')?.focus();
+        else shadow.querySelector<HTMLElement>('[data-action="authenticate"]')?.focus();
+      } catch {
+        status = "signed-out"; authenticating = false; renderStateControls("Sign-in failed—try again"); shadow.querySelector<HTMLElement>('[data-action="authenticate"]')?.focus();
+      }
+    });
   };
   const cleanupPreview = () => { previewCleanup?.(); previewCleanup = undefined; };
   const closeDialog = () => { if (pendingScreenshotId) void options.cancelScreenshot?.(pendingScreenshotId).catch(() => undefined); pendingScreenshotId = undefined; shadow.querySelector(".backdrop")?.remove(); composerContext = undefined; cleanupPreview(); fallbackPin = false; returnFocus?.focus(); };
@@ -139,6 +163,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     backdrop.querySelector<HTMLElement>("[data-initial-focus]")?.focus();
   };
   const bind = () => {
+    bindStateControls();
     shadow.querySelector<HTMLElement>('[data-action="highlight"]')?.addEventListener("click", (event) => {
       const selection = ownerDocument.defaultView?.getSelection();
       if (!selection?.rangeCount) { openDialog(event.currentTarget as HTMLElement, "Comment on highlighted text", { anchor_type: "text_highlight", selected_quote: "", prefix: "", suffix: "" }); return; }
