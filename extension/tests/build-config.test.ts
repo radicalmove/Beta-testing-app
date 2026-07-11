@@ -30,7 +30,7 @@ test("validates canonical Chromium extension versions", () => {
   const lock = (version: string) => ({ version, packages: { "": { version } } });
   assert.equal(loadExtensionVersion({ version: "0.2.0" }, lock("0.2.0")).version, "0.2.0");
   assert.equal(loadExtensionVersion({ version: "65535.0.65535" }, lock("65535.0.65535")).version, "65535.0.65535");
-  for (const version of ["00.2.0", "0.02.0", "0.2.00", "0.2", "0.2.0.1", "+0.2.0", "0.-2.0", "0.two.0", "65536.0.0", "0.65536.0", "0.0.65536"]) {
+  for (const version of ["0.0.0", "00.2.0", "0.02.0", "0.2.00", "0.2", "0.2.0.1", "+0.2.0", "0.-2.0", "0.two.0", "65536.0.0", "0.65536.0", "0.0.65536"]) {
     assert.throws(() => loadExtensionVersion({ version }, lock(version)), /version/i, version);
   }
 });

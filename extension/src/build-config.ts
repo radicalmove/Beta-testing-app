@@ -11,7 +11,7 @@ export function loadExtensionVersion(packageJson: VersionDocument, lockJson: Ver
   const version = packageJson.version;
   const lockVersion = lockJson.version;
   const rootLockVersion = lockJson.packages?.[""]?.version;
-  if (typeof version !== "string" || !/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(version)) {
+  if (typeof version !== "string" || version === "0.0.0" || !/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(version)) {
     throw new Error("Extension version must contain three canonical numeric Chromium components");
   }
   if (version.split(".").some((component) => Number(component) > 65535)) {
