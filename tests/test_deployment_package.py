@@ -144,7 +144,7 @@ class DeploymentPackageTests(unittest.TestCase):
         script = (ROOT / "deploy/scripts/release-pilot-extension.sh").read_text()
         for token in (
             "PRIVATE_KEY_PATH:?", "REVIEW_SERVICE_ORIGIN:?", "DELIVERY_ROOT",
-            "git-common-dir", "mktemp", "-nt", "manifest.json", "content.js",
+            "git-common-dir", "rm -rf", "-f", "manifest.json", "content.js",
             "assert_classic_self_contained_script", "assert_production_manifest",
             "shasum -a 256", "extension/dist", "moodle-review-extension-chrome-edge.zip",
         ):

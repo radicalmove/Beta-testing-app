@@ -21,14 +21,12 @@ python3 -c 'from pathlib import Path; from deploy.scripts.release_artifacts impo
 (cd "$ROOT/extension" && npm test && npm run typecheck)
 (cd "$ROOT/server" && python3 -m pytest -q)
 
-build_started=$(mktemp)
-trap 'rm -f "$build_started"' EXIT
-touch "$build_started"
+rm -rf "$ROOT/extension/dist"
 PRIVATE_KEY_PATH="$PRIVATE_KEY_PATH" REVIEW_SERVICE_ORIGIN="$REVIEW_SERVICE_ORIGIN" \
   "$ROOT/deploy/scripts/build-pilot-extension.sh"
 
 for artifact in manifest.json content.js background.js; do
-  [[ "$ROOT/extension/dist/$artifact" -nt "$build_started" ]] || {
+  [[ -f "$ROOT/extension/dist/$artifact" ]] || {
     echo "build did not freshly produce extension/dist/$artifact" >&2
     exit 1
   }
