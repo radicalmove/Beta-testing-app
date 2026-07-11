@@ -44,6 +44,12 @@ print("Fresh production manifest hosts and classic content.js verified")
 PY
 )
 
+(cd "$ROOT" && python3 -c 'from pathlib import Path; from deploy.scripts.release_artifacts import git_identity; print(git_identity(Path(".")))') >/dev/null
+CURRENT_COMMIT=$(git -C "$ROOT" rev-parse HEAD)
+[[ "$CURRENT_COMMIT" == "$BUILD_COMMIT" ]] || {
+  echo "refusing release because HEAD changed during verification" >&2
+  exit 1
+}
 python3 "$ROOT/deploy/scripts/release_artifacts.py" --root "$ROOT" --dist "$ROOT/extension/dist" --delivery "$DELIVERY_ROOT" --version "$RELEASE_VERSION"
 for artifact in background.js content.js manifest.json; do cmp "$ROOT/extension/dist/$artifact" "$DELIVERY_DIR/$artifact"; done
 cmp "$VERSIONED_ZIP" "$DELIVERY_ZIP"

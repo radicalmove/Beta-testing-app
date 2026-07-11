@@ -152,6 +152,17 @@ class DeploymentPackageTests(unittest.TestCase):
             self.assertIn(token, script)
         self.assertNotIn("pilot-extension.pem", script)
 
+    def test_release_script_rechecks_clean_tree_and_unchanged_head_before_publish(self):
+        script = (ROOT / "deploy/scripts/release-pilot-extension.sh").read_text()
+        publish = script.index('python3 "$ROOT/deploy/scripts/release_artifacts.py"')
+        second_clean = script.rindex("git_identity", 0, publish)
+        head_check = script.rindex('[[ "$CURRENT_COMMIT" == "$BUILD_COMMIT" ]]', 0, publish)
+        build = script.index('build-pilot-extension.sh')
+        self.assertGreaterEqual(script.count("git_identity"), 2)
+        self.assertLess(build, second_clean)
+        self.assertLess(second_clean, head_check)
+        self.assertLess(head_check, publish)
+
     def test_built_content_script_is_classic_and_self_contained(self):
         content_script = (ROOT / "extension/dist/content.js").read_text()
         assert_classic_self_contained_script(content_script)
