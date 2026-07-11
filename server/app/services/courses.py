@@ -23,6 +23,8 @@ def normalize_title(value: str) -> tuple[str, str]:
 
 def resolve_course(db: DbSession, *, course_url: str, title: str, moodle_course_id: int | str | None = None) -> Course:
     url = normalize_url(course_url)
+    parsed_url = urlsplit(url)
+    origin = f"{parsed_url.scheme}://{parsed_url.netloc}"
     clean_title, identity_title = normalize_title(title)
     stable_id = str(moodle_course_id).strip() if moodle_course_id is not None else None
     if stable_id:
@@ -33,10 +35,11 @@ def resolve_course(db: DbSession, *, course_url: str, title: str, moodle_course_
             course = db.scalar(select(Course).where(Course.normalized_url == url, Course.identity_title == identity_title))
             if course is not None:
                 course.moodle_course_id = stable_id
+                course.moodle_origin = origin
                 course.is_confirmed = True
                 course.confirmed_at = utc_now()
             else:
-                course = Course(moodle_course_id=stable_id, normalized_url=url, title=clean_title, identity_title=identity_title, is_confirmed=True, created_at=utc_now(), confirmed_at=utc_now())
+                course = Course(moodle_course_id=stable_id, normalized_url=url, moodle_origin=origin, title=clean_title, identity_title=identity_title, is_confirmed=True, created_at=utc_now(), confirmed_at=utc_now())
                 db.add(course)
             db.commit()
             db.refresh(course)

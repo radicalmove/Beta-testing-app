@@ -44,6 +44,42 @@ class RoleChangeRequest(BaseModel):
     role: str
 
 
+class CourseLookupRequest(BaseModel):
+    moodle_origin: str = Field(min_length=1, max_length=255)
+    moodle_course_id: int = Field(ge=1)
+
+    @field_validator("moodle_origin")
+    @classmethod
+    def origin_is_http_origin(cls, value: str) -> str:
+        parsed = urlsplit(value.strip())
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.path not in {"", "/"}:
+            raise ValueError("moodle_origin must be an http or https origin")
+        return f"{parsed.scheme}://{parsed.netloc}".lower()
+
+
+class InvitationCreateRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    role: str
+
+
+class InvitationRedeemRequest(BaseModel):
+    course_handle: uuid.UUID
+    display_name: str = Field(min_length=1, max_length=100)
+    email: str = Field(min_length=3, max_length=320)
+    role: str
+    invitation_code: str = Field(min_length=20, max_length=32)
+
+
+class MembershipResumeRequest(BaseModel):
+    course_handle: uuid.UUID
+    email: str = Field(min_length=3, max_length=320)
+    reconnect_code: str = Field(min_length=20, max_length=32)
+
+
+class MembershipStateRequest(BaseModel):
+    state: str
+
+
 class CourseResolveRequest(BaseModel):
     course_url: str = Field(min_length=1, max_length=4096)
     title: str = Field(min_length=1, max_length=512)
