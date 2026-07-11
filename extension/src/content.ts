@@ -161,7 +161,18 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
   let commentSequence = 0;
   let overlay: ReviewOverlay;
   const loadPageComments = async (pageUrl: string) => { const sequence = ++commentSequence; overlay.setPageComments([]); try { const comments = await send<PageComment[]>({ type: "LIST_PAGE_COMMENTS", page_url: pageUrl }); if (sequence === commentSequence && context.page_url === pageUrl) overlay.setPageComments(comments); } catch { if (sequence === commentSequence) overlay.setPageComments([]); } };
-  overlay = mountReviewOverlay(targetDocument, context, "connecting", { onTakeToContext: (id) => { overlay.takeToContext(id); }, submit: async ({ body, category, anchor, screenshot, embeddedFrameUnavailable, contextSnapshot }) => {
+  overlay = mountReviewOverlay(targetDocument, context, "connecting", { onAuthenticate: () => new Promise((resolve) => {
+    runtime.sendMessage({ type: "AUTHENTICATE" }, (response) => {
+      if (!response?.ok) {
+        if ((response?.status as string | undefined) === "cancelled") resolve({ status: "signed-out", message: "Sign-in cancelled" });
+        else resolve({ status: "signed-out", message: "Sign-in failed—try again" });
+        return;
+      }
+      lastSignature = "";
+      refresh();
+      resolve({ status: "connected" });
+    });
+  }), onTakeToContext: (id) => { overlay.takeToContext(id); }, submit: async ({ body, category, anchor, screenshot, embeddedFrameUnavailable, contextSnapshot }) => {
     const snapshotCourseId = courseIds.get(contextSnapshot.course_url);
     if (!snapshotCourseId) throw new Error("The original course is no longer connected. Cancel and reopen the comment.");
     const fallbackSuffix = " — embedded content—frame access unavailable";
@@ -192,6 +203,10 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
       if (courseId) courseIds.set(requestedCourseUrl, courseId);
       const status: ConnectionStatus = response?.ok ? "connected" : response?.status === "signed-out" ? "signed-out" : response?.status === "pending" ? "pending" : "offline";
       overlay.update(context, status);
+      if (!response?.ok && response?.status === "signed-out" && response.error?.includes("session expired")) {
+        const message = targetDocument.getElementById("moodle-course-review-overlay")?.shadowRoot?.querySelector<HTMLElement>("[data-status-message]");
+        if (message) message.textContent = "Session expired—sign in again";
+      }
       if (courseId) void loadPageComments(context.page_url); else overlay.setPageComments([]);
     });
   };

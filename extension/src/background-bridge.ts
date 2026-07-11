@@ -14,6 +14,13 @@ export function normalizeErrorMessage(error: unknown): string {
 
 const own = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
 
+export function validateAuthenticateMessage(message: unknown): Record<string, never> {
+  if (!message || typeof message !== "object" || Array.isArray(message)) throw new Error("Invalid AUTHENTICATE message");
+  const record = message as Record<string, unknown>;
+  if (Object.keys(record).length !== 1 || record.type !== "AUTHENTICATE") throw new Error("Invalid AUTHENTICATE message");
+  return {};
+}
+
 function exactHttpUrl(value: unknown, max = 4096): value is string {
   if (typeof value !== "string" || value.length < 1 || value.length > max) return false;
   try { const url = new URL(value); return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password && url.href === value; } catch { return false; }
@@ -168,6 +175,11 @@ export async function authorizeResolveSender(sender: { id?: string; url?: string
     for (const pattern of options.optionalPatterns) if (matches(sender.url, pattern) && await options.hasPermission(pattern)) return true;
   } catch { return false; }
   return false;
+}
+
+export async function authorizeAuthenticateSender(sender: { id?: string; url?: string; frameId?: number }, options: { extensionId: string; moodlePatterns: string[]; hasPermission(pattern: string): Promise<boolean> }): Promise<boolean> {
+  if (sender.frameId !== 0) return false;
+  return authorizeResolveSender(sender, { ...options, optionalPatterns: [] });
 }
 
 export async function handleResolveCourseBridge(

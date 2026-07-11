@@ -1,7 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { authorizeResolveSender, handleCreateCommentBridge, handleListPageCommentsBridge, handleResolveCourseBridge, normalizeErrorMessage, validateCancelScreenshotMessage, validateCreateCommentMessage, validateListPageCommentsMessage, validatePageCommentsResponse, validateResolveCourseMessage, validateUploadScreenshotMessage } from "../src/background-bridge.ts";
+import { authorizeAuthenticateSender, authorizeResolveSender, handleCreateCommentBridge, handleListPageCommentsBridge, handleResolveCourseBridge, normalizeErrorMessage, validateAuthenticateMessage, validateCancelScreenshotMessage, validateCreateCommentMessage, validateListPageCommentsMessage, validatePageCommentsResponse, validateResolveCourseMessage, validateUploadScreenshotMessage } from "../src/background-bridge.ts";
+
+test("authenticate accepts only an exact empty envelope", () => {
+  assert.deepEqual(validateAuthenticateMessage({ type: "AUTHENTICATE" }), {});
+  for (const message of [{ type: "AUTHENTICATE", extra: true }, { type: "AUTHENTICATE", payload: {} }, { type: "AUTHENTICATE", token: "secret" }, null]) {
+    assert.throws(() => validateAuthenticateMessage(message), /Invalid AUTHENTICATE/);
+  }
+});
+
+test("authenticate sender must be this extension's trusted configured top frame", async () => {
+  const options = { extensionId: "ours", moodlePatterns: ["https://moodle.example.invalid/*"], hasPermission: async () => false };
+  assert.equal(await authorizeAuthenticateSender({ id: "ours", url: "https://moodle.example.invalid/course/view.php?id=1", frameId: 0 }, options), true);
+  assert.equal(await authorizeAuthenticateSender({ id: "ours", url: "https://moodle.example.invalid/course/view.php?id=1", frameId: 2 }, options), false);
+  assert.equal(await authorizeAuthenticateSender({ id: "external", url: "https://moodle.example.invalid/course/view.php?id=1", frameId: 0 }, options), false);
+  assert.equal(await authorizeAuthenticateSender({ id: "ours", url: "https://evil.example/course", frameId: 0 }, options), false);
+});
 
 test("resolve schema accepts only bounded normalized course fields", () => {
   assert.deepEqual(validateResolveCourseMessage({ type: "RESOLVE_COURSE", payload: { course_url: "https://learn.example/course/view.php?id=7", title: "Law", moodle_course_id: 7 } }), { course_url: "https://learn.example/course/view.php?id=7", title: "Law", moodle_course_id: 7 });

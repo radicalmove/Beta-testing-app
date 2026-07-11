@@ -1,5 +1,5 @@
 import { ApiClient, authenticate, getActiveToken, type SessionToken } from "./api";
-import { authorizeResolveSender, handleCreateCommentBridge, handleListPageCommentsBridge, handleResolveCourseBridge, normalizeErrorMessage, validateCancelScreenshotMessage, validateUploadScreenshotMessage, type CreateCommentPayload, type ResolveCoursePayload } from "./background-bridge.ts";
+import { authorizeAuthenticateSender, authorizeResolveSender, handleCreateCommentBridge, handleListPageCommentsBridge, handleResolveCourseBridge, normalizeErrorMessage, validateAuthenticateMessage, validateCancelScreenshotMessage, validateUploadScreenshotMessage, type CreateCommentPayload, type ResolveCoursePayload } from "./background-bridge.ts";
 import { validateScreenshotDataUrl } from "./screenshot-validation.ts";
 import { reconcileOptionalContentScript } from "./optional-content-scripts";
 import { ReviewContextCache, validateContextMessage, type ReviewSender } from "./review-context.ts";
@@ -92,12 +92,16 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
   void screenshotCapabilities.cleanup().catch(() => undefined);
   let operation: Promise<unknown> | undefined;
   if (message && typeof message === "object" && (message as { type?: unknown }).type === "AUTHENTICATE") {
-    operation = serviceOrigin().then((origin) => authenticate({
-      serviceOrigin: origin,
-      getRedirectUrl: () => chrome.identity.getRedirectURL(),
-      launchWebAuthFlow: (details) => chrome.identity.launchWebAuthFlow(details),
-      setSession: (session: SessionToken) => chrome.storage.session.set(session),
-    }));
+    operation = (async () => {
+      validateAuthenticateMessage(message);
+      if (!await authorizeAuthenticateSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, hasPermission: async () => false })) throw new Error("Unauthorized AUTHENTICATE sender");
+      return authenticate({
+        serviceOrigin: await serviceOrigin(),
+        getRedirectUrl: () => chrome.identity.getRedirectURL(),
+        launchWebAuthFlow: (details) => chrome.identity.launchWebAuthFlow(details),
+        setSession: (session: SessionToken) => chrome.storage.session.set(session),
+      });
+    })();
   } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "RESOLVE_COURSE") {
     operation = handleResolveCourseBridge(message, sender, {
       authorize: (candidate) => authorizeResolveSender(candidate, {
@@ -181,7 +185,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
   if (!operation) return false;
   void operation.then((data) => sendResponse({ ok: true, data }), (error: unknown) => {
     const message = normalizeErrorMessage(error);
-    const status = message.startsWith("Signed out") ? "signed-out" : message.startsWith("Account pending") ? "pending" : "offline";
+    const status = message.startsWith("Signed out") ? "signed-out" : message.startsWith("Account pending") ? "pending" : message.includes("cancelled") || message.includes("unexpected redirect") ? "cancelled" : (message.includes("Token exchange") || message.includes("Authentication response")) ? "failed" : "offline";
     sendResponse({ ok: false, status, error: message });
   });
   return true;

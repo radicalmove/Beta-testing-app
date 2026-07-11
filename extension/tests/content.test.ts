@@ -182,6 +182,51 @@ test("top navigation immediately removes stored markers before delayed responses
   cleanup();
 });
 
+test("sign in sends one authenticate per activation and refreshes course and comments without reload", async () => {
+  const window = new Window({ url: "https://moodle.example.invalid/course/view.php?id=1" });
+  window.document.body.innerHTML = "<h1>Law</h1>";
+  const messages: any[] = [];
+  let signedIn = false;
+  const runtime = { sendMessage: (message: any, callback: (response: any) => void) => {
+    messages.push(message);
+    if (message.type === "RESOLVE_COURSE") callback(signedIn ? { ok: true, data: { id: "123e4567-e89b-12d3-a456-426614174000" } } : { ok: false, status: "signed-out", error: "Signed out" });
+    else if (message.type === "AUTHENTICATE") { signedIn = true; callback({ ok: true, data: {} }); }
+    else if (message.type === "LIST_PAGE_COMMENTS") callback({ ok: true, data: [] });
+    else callback({ ok: true, data: {} });
+  } };
+  const cleanup = startCourseReview(window as unknown as globalThis.Window & typeof globalThis, window.document as unknown as Document, runtime);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const shadow = window.document.querySelector("#moodle-course-review-overlay")!.shadowRoot!;
+  const signIn = shadow.querySelector('[data-action="authenticate"]') as unknown as HTMLElement;
+  signIn.click();
+  signIn.click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(messages.filter((message) => message.type === "AUTHENTICATE").length, 1);
+  assert.equal(messages.filter((message) => message.type === "RESOLVE_COURSE").length, 2);
+  assert.equal(messages.filter((message) => message.type === "LIST_PAGE_COMMENTS").length, 1);
+  assert.match(shadow.textContent!, /Connected/);
+  cleanup();
+});
+
+test("authentication maps cancellation, failure, pending, offline, and session expiry exactly", async () => {
+  const cases = [
+    [{ ok: false, status: "cancelled", error: "Authentication was cancelled" }, "Sign-in cancelled"],
+    [{ ok: false, status: "failed", error: "Token exchange failed (500)" }, "Sign-in failed—try again"],
+  ] as const;
+  for (const [authResponse, expected] of cases) {
+    const window = new Window({ url: "https://moodle.example.invalid/course/view.php?id=1" }); window.document.body.innerHTML = "<h1>Law</h1>";
+    const runtime = { sendMessage: (message: any, callback: (response: any) => void) => callback(message.type === "AUTHENTICATE" ? authResponse : { ok: false, status: "signed-out", error: "Signed out" }) };
+    const cleanup = startCourseReview(window as any, window.document as any, runtime); await new Promise((resolve) => setTimeout(resolve, 0));
+    const shadow = window.document.querySelector("#moodle-course-review-overlay")!.shadowRoot!; (shadow.querySelector('[data-action="authenticate"]') as unknown as HTMLElement).click(); await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.match(shadow.textContent!, new RegExp(expected)); cleanup();
+  }
+  for (const [response, expected] of [[{ ok: false, status: "pending", error: "Account pending approval" }, "Account pending"], [{ ok: false, status: "offline", error: "Network down" }, "Offline"], [{ ok: false, status: "signed-out", error: "Signed out: session expired" }, "Session expired—sign in again"]] as const) {
+    const window = new Window({ url: "https://moodle.example.invalid/course/view.php?id=1" }); window.document.body.innerHTML = "<h1>Law</h1>";
+    const cleanup = startCourseReview(window as any, window.document as any, { sendMessage: (_message: any, callback: any) => callback(response) }); await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.match(window.document.querySelector("#moodle-course-review-overlay")!.shadowRoot!.textContent!, new RegExp(expected)); cleanup();
+  }
+});
+
 test("counts only inaccessible iframe DOMs", () => {
   const window = new Window();
   window.document.body.innerHTML = "<iframe id=accessible></iframe><iframe id=blocked></iframe>";
