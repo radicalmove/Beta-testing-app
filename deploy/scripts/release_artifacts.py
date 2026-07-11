@@ -20,7 +20,10 @@ def _compatibility_links(delivery: Path) -> None:
         path=delivery/name
         if path.is_symlink() and os.readlink(path)==target: continue
         if path.exists() or path.is_symlink():
-            legacy=delivery/f".legacy-{name}"; shutil.rmtree(legacy,ignore_errors=True) if path.is_dir() and not path.is_symlink() else legacy.unlink(missing_ok=True); os.replace(path,legacy)
+            legacy=delivery/f".legacy-{name}"
+            if legacy.is_dir() and not legacy.is_symlink(): shutil.rmtree(legacy)
+            else: legacy.unlink(missing_ok=True)
+            os.replace(path,legacy)
         path.symlink_to(target, target_is_directory=name=="moodle-review-extension")
 
 def publish(dist: Path, delivery: Path, commit: str, fail_phase: str|None=None) -> dict[str,str]:
