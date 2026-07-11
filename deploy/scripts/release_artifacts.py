@@ -49,6 +49,7 @@ def _scan_version(releases: Path, version: str, identity: tuple[str, str]) -> No
                 commit=metadata["commit"]; digest=metadata["artifact_digest"]
                 if not isinstance(commit,str) or not isinstance(digest,str) or not re.fullmatch(r"[0-9a-f]{40}",commit) or not re.fullmatch(r"[0-9a-f]{12}",digest) or entry.name != f"{commit[:12]}-{digest}":
                     raise ValueError("invalid legacy release metadata")
+                _validate_legacy_release(entry,metadata)
                 continue
             if set(metadata)!={"version","commit","artifact_digest"} or not all(isinstance(value,str) for value in metadata.values()):
                 raise ValueError("unexpected release metadata")
@@ -58,6 +59,27 @@ def _scan_version(releases: Path, version: str, identity: tuple[str, str]) -> No
             matches.append((metadata["commit"],metadata["artifact_digest"]))
     if any(match != identity for match in matches):
         raise RuntimeError(f"version collision for {version}")
+
+def _validate_legacy_release(entry: Path, metadata: dict[str,str]) -> None:
+    unpacked=entry/"moodle-review-extension"; archive=entry/"moodle-review-extension-chrome-edge.zip"; sums=entry/"SHA256SUMS"
+    expected={Path("RELEASE.json"),Path("SHA256SUMS"),Path("moodle-review-extension-chrome-edge.zip"),Path("moodle-review-extension"),*(Path("moodle-review-extension")/name for name in (*FILES,"RELEASE.json"))}
+    actual={path.relative_to(entry) for path in entry.rglob("*")}
+    if actual != expected or any((entry/path).is_symlink() for path in actual):
+        raise ValueError("invalid legacy release tree")
+    release_bytes=(entry/"RELEASE.json").read_bytes()
+    if (unpacked/"RELEASE.json").read_bytes() != release_bytes or json.loads(release_bytes) != metadata:
+        raise ValueError("legacy metadata copies differ")
+    digest=hashlib.sha256(b"".join((unpacked/name).read_bytes() for name in FILES)).hexdigest()[:12]
+    if digest != metadata["artifact_digest"]:
+        raise ValueError("legacy artifact digest differs")
+    checksum_paths=[*(f"moodle-review-extension/{name}" for name in FILES),"moodle-review-extension-chrome-edge.zip"]
+    expected_sums="".join(f"{hashlib.sha256((entry/path).read_bytes()).hexdigest()}  {path}\n" for path in checksum_paths)
+    if sums.read_text() != expected_sums:
+        raise ValueError("legacy checksums differ")
+    with tempfile.TemporaryDirectory() as temp:
+        expected_zip=Path(temp)/"expected.zip"; deterministic_zip(unpacked,expected_zip)
+        if archive.read_bytes() != expected_zip.read_bytes():
+            raise ValueError("legacy ZIP differs")
 
 def _validate_immutable_release(expected: Path, installed: Path) -> None:
     if installed.is_symlink() or not installed.is_dir():

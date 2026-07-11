@@ -1,6 +1,6 @@
 import hashlib, json, multiprocessing, os, shutil, subprocess, tempfile, unittest
 from pathlib import Path
-from deploy.scripts.release_artifacts import canonical_delivery, git_identity, publish
+from deploy.scripts.release_artifacts import canonical_delivery, deterministic_zip, git_identity, publish
 ROOT=Path(__file__).resolve().parents[1]
 VERSION="0.2.0"
 
@@ -25,6 +25,15 @@ class ReleaseArtifactTests(unittest.TestCase):
   d=r/f"dist-{tag}"; d.mkdir(); [(d/n).write_text(tag+n) for n in ("background.js","content.js","manifest.json")]; return d
  def visible(self,d):
   return json.loads((d/"RELEASE.json").read_text())["commit"]
+ def legacy_release(self,releases,commit="9"*40,tag="legacy"):
+  source=self.dist(releases.parent.parent,tag); digest=hashlib.sha256(b"".join((source/n).read_bytes() for n in ("background.js","content.js","manifest.json"))).hexdigest()[:12]
+  legacy=releases/f"{commit[:12]}-{digest}"; unpacked=legacy/"moodle-review-extension"; unpacked.mkdir(parents=True)
+  for name in ("background.js","content.js","manifest.json"): shutil.copyfile(source/name,unpacked/name)
+  metadata=json.dumps({"commit":commit,"artifact_digest":digest},sort_keys=True,separators=(",",":"))+"\n"; (legacy/"RELEASE.json").write_text(metadata); (unpacked/"RELEASE.json").write_text(metadata)
+  deterministic_zip(unpacked,legacy/"moodle-review-extension-chrome-edge.zip")
+  paths=[*(f"moodle-review-extension/{name}" for name in ("background.js","content.js","manifest.json")),"moodle-review-extension-chrome-edge.zip"]
+  (legacy/"SHA256SUMS").write_text("".join(f"{hashlib.sha256((legacy/path).read_bytes()).hexdigest()}  {path}\n" for path in paths))
+  return legacy
  def test_absolute_preflight_is_cwd_independent(self):
   with tempfile.TemporaryDirectory() as outside:
    env={**os.environ,"PRIVATE_KEY_PATH":"/tmp/not-read-in-preflight.pem","REVIEW_SERVICE_ORIGIN":"https://x.ts.net","RELEASE_PREFLIGHT_ONLY":"1"}
@@ -75,10 +84,20 @@ class ReleaseArtifactTests(unittest.TestCase):
  def test_external_delivery_migrates_past_exact_validated_legacy_metadata(self):
   with tempfile.TemporaryDirectory() as x:
    r=Path(x); delivery=r/"external-delivery"; releases=delivery/"releases"; releases.mkdir(parents=True)
-   commit="9"*40; digest="a"*12; legacy=releases/f"{commit[:12]}-{digest}"; legacy.mkdir(); (legacy/"RELEASE.json").write_text(json.dumps({"commit":commit,"artifact_digest":digest}))
+   legacy=self.legacy_release(releases)
    publish(self.dist(r),delivery,"b"*40,VERSION)
    self.assertEqual(self.visible(delivery),"b"*40)
    self.assertTrue(legacy.is_dir())
+ def test_legacy_release_missing_tampered_or_symlinked_artifacts_fail_closed(self):
+  cases=(("missing","SHA256SUMS"),("tampered","moodle-review-extension/content.js"),("tampered","moodle-review-extension-chrome-edge.zip"),("symlink","moodle-review-extension/manifest.json"))
+  for action,relative in cases:
+   with self.subTest(action=action,path=relative), tempfile.TemporaryDirectory() as x:
+    r=Path(x); releases=r/"delivery/releases"; releases.mkdir(parents=True); legacy=self.legacy_release(releases); target=legacy/relative
+    if action=="missing": target.unlink()
+    elif action=="tampered": target.write_bytes(b"tampered")
+    else: target.unlink(); target.symlink_to(legacy/"RELEASE.json")
+    with self.assertRaisesRegex(RuntimeError,"malformed immutable release metadata"):
+     publish(self.dist(r,"new"),r/"delivery","b"*40,VERSION)
  def test_legacy_metadata_exception_still_fails_closed_on_invalid_or_ambiguous_entries(self):
   cases=(
    ("short-commit",{"commit":"9"*39,"artifact_digest":"a"*12}),
