@@ -43,6 +43,10 @@ def resolve_course(db: DbSession, *, course_url: str, title: str, moodle_course_
                 db.add(course)
             db.commit()
             db.refresh(course)
+        elif course.moodle_origin != origin:
+            course.moodle_origin = origin
+            db.commit()
+            db.refresh(course)
         return course
     course = db.scalar(select(Course).where(Course.normalized_url == url, Course.identity_title == identity_title))
     if course is None:
