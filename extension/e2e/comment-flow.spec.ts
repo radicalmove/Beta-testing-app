@@ -79,7 +79,7 @@ test("SME creates a real geometric pin and LD/DCD sees its recovered thread afte
   const backend = new StatefulCommentBackend(); backend.setViewer(viewers.sme);
   await serve(page); await installRuntime(page, backend); await load(page);
   await compose(page, "pin", "SME geometric pin");
-  expect(backend.list("https://moodle.example.invalid/page/one")[0]?.author_role).toBe("sme");
+  expect(backend.list("https://moodle.example.invalid/page/one")[0]?.author.role).toBe("sme");
 
   backend.setViewer(viewers.ld); await page.reload(); await page.addScriptTag({ path: contentScript });
   await expect(page.locator("[data-moodle-review-stored-pin]")).toHaveAttribute("aria-label", /SME geometric pin/);
