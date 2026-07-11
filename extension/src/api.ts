@@ -80,7 +80,14 @@ export async function authenticate(options: {
   const redirectUri = options.getRedirectUrl();
   const authorizeUrl = new URL("/extension/authorize", origin);
   authorizeUrl.searchParams.set("redirect_uri", redirectUri);
-  const callback = await options.launchWebAuthFlow({ url: authorizeUrl.href, interactive: true });
+  let callback: string | undefined;
+  try {
+    callback = await options.launchWebAuthFlow({ url: authorizeUrl.href, interactive: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+    if (/\buser\b.*(?:did not approve|cancelled|canceled)|access (?:was )?denied/i.test(message)) throw new Error("Authentication was cancelled");
+    throw error;
+  }
   if (!callback) throw new Error("Authentication was cancelled");
   const callbackUrl = new URL(callback);
   const expectedCallback = new URL(redirectUri);

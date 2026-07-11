@@ -111,6 +111,23 @@ test("authentication rejects an exact callback that is missing or denied a code"
   }), /cancelled/i);
 });
 
+test("authentication normalizes rejected identity-flow close or denial but preserves genuine failures", async () => {
+  for (const reason of [new Error("The user did not approve access."), new Error("User cancelled the flow")]) {
+    await assert.rejects(authenticate({
+      serviceOrigin: "https://review.example.org",
+      getRedirectUrl: () => "https://abcdefghijklmnop.chromiumapp.org/callback",
+      launchWebAuthFlow: async () => { throw reason; },
+      setSession: async () => undefined,
+    }), /Authentication was cancelled/);
+  }
+  await assert.rejects(authenticate({
+    serviceOrigin: "https://review.example.org",
+    getRedirectUrl: () => "https://abcdefghijklmnop.chromiumapp.org/callback",
+    launchWebAuthFlow: async () => { throw new Error("Network connection lost"); },
+    setSession: async () => undefined,
+  }), /Network connection lost/);
+});
+
 test("authentication rejects malformed token payloads", async () => {
   for (const payload of [
     { access_token: "", expires_in: 900 },
