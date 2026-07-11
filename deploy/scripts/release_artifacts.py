@@ -40,7 +40,7 @@ def _compatibility_links(delivery: Path, version: str) -> None:
 def _scan_version(releases: Path, version: str, identity: tuple[str, str]) -> None:
     matches=[]
     for entry in releases.iterdir():
-        if not entry.is_dir():
+        if entry.is_symlink() or not entry.is_dir():
             raise RuntimeError(f"malformed immutable release entry: {entry}")
         metadata_path=entry/"RELEASE.json"
         try:
@@ -53,6 +53,20 @@ def _scan_version(releases: Path, version: str, identity: tuple[str, str]) -> No
             matches.append((metadata["commit"],metadata["artifact_digest"]))
     if any(match != identity for match in matches):
         raise RuntimeError(f"version collision for {version}")
+
+def _validate_immutable_release(expected: Path, installed: Path) -> None:
+    if installed.is_symlink() or not installed.is_dir():
+        raise RuntimeError(f"invalid immutable release directory: {installed}")
+    expected_entries={path.relative_to(expected) for path in expected.rglob("*")}
+    installed_entries={path.relative_to(installed) for path in installed.rglob("*")}
+    if expected_entries != installed_entries:
+        raise RuntimeError(f"immutable release contents differ: {installed}")
+    for relative in expected_entries:
+        expected_path=expected/relative; installed_path=installed/relative
+        if installed_path.is_symlink() or expected_path.is_dir() != installed_path.is_dir():
+            raise RuntimeError(f"immutable release entry differs: {installed_path}")
+        if expected_path.is_file() and expected_path.read_bytes() != installed_path.read_bytes():
+            raise RuntimeError(f"immutable release file differs: {installed_path}")
 
 def publish(dist: Path, delivery: Path, commit: str, version: str, fail_phase: str|None=None) -> dict[str,str]:
     delivery.mkdir(parents=True,exist_ok=True); releases=delivery/"releases"; releases.mkdir(exist_ok=True)
@@ -70,6 +84,7 @@ def publish(dist: Path, delivery: Path, commit: str, version: str, fail_phase: s
         (stage/"SHA256SUMS").write_text("".join(f"{hashes[path]}  {path}\n" for path in paths))
         if fail_phase=="staged": raise RuntimeError("injected staged failure")
         if not release.exists(): os.replace(stage,release)
+        else: _validate_immutable_release(stage,release)
         if fail_phase=="versioned": raise RuntimeError("injected versioned failure")
         current=delivery/"current"
         if not current.exists() and (delivery/"moodle-review-extension").is_symlink():

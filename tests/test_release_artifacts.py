@@ -1,4 +1,4 @@
-import hashlib, json, multiprocessing, os, subprocess, tempfile, unittest
+import hashlib, json, multiprocessing, os, shutil, subprocess, tempfile, unittest
 from pathlib import Path
 from deploy.scripts.release_artifacts import canonical_delivery, git_identity, publish
 ROOT=Path(__file__).resolve().parents[1]
@@ -90,4 +90,22 @@ class ReleaseArtifactTests(unittest.TestCase):
    for process in processes: process.join(10); self.assertEqual(process.exitcode,0)
    results=[queue.get(timeout=2) for _ in processes]; self.assertEqual(results.count("ok"),1); self.assertTrue(any("collision" in result for result in results))
    releases=list((delivery/"releases").iterdir()); self.assertEqual(len(releases),1); self.assertEqual((delivery/"current").resolve(),releases[0].resolve())
+ def test_tampered_immutable_release_is_never_reused_or_switched_current(self):
+  tampered_paths=("RELEASE.json","moodle-review-extension/RELEASE.json","moodle-review-extension/content.js","moodle-review-extension-v0.2.0-chrome-edge.zip","moodle-review-extension-chrome-edge.zip","SHA256SUMS")
+  for tampered_path in tampered_paths:
+   with self.subTest(path=tampered_path), tempfile.TemporaryDirectory() as x:
+    r=Path(x); delivery=r/"delivery"; publish(self.dist(r,"old"),delivery,"a"*40,"0.1.0"); dist=self.dist(r,"candidate")
+    with self.assertRaises(RuntimeError): publish(dist,delivery,"b"*40,VERSION,"versioned")
+    candidate=next(path for path in (delivery/"releases").iterdir() if path.name.startswith("v0.2.0-")); (candidate/tampered_path).write_bytes(b"tampered")
+    with self.assertRaisesRegex(RuntimeError,"immutable release"):
+     publish(dist,delivery,"b"*40,VERSION)
+    self.assertEqual(self.visible(delivery),"a"*40)
+ def test_symlinked_derived_release_directory_is_never_reused(self):
+  with tempfile.TemporaryDirectory() as x:
+   r=Path(x); delivery=r/"delivery"; publish(self.dist(r,"old"),delivery,"c"*40,"0.1.0"); dist=self.dist(r,"candidate")
+   with self.assertRaises(RuntimeError): publish(dist,delivery,"d"*40,VERSION,"versioned")
+   candidate=next(path for path in (delivery/"releases").iterdir() if path.name.startswith("v0.2.0-")); replacement=r/"replacement"; shutil.copytree(candidate,replacement); shutil.rmtree(candidate); candidate.symlink_to(replacement,target_is_directory=True)
+   with self.assertRaisesRegex(RuntimeError,"immutable release"):
+    publish(dist,delivery,"d"*40,VERSION)
+   self.assertEqual(self.visible(delivery),"c"*40)
 if __name__=='__main__': unittest.main()
