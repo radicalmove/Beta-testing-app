@@ -130,6 +130,27 @@ class DeploymentPackageTests(unittest.TestCase):
             self.assertIn(token, script)
         self.assertIn('OPTIONAL_FRAME_PATTERNS="${OPTIONAL_FRAME_PATTERNS-}"', script)
 
+    def test_release_script_orders_verification_build_delivery_and_checksums(self):
+        script = (ROOT / "deploy/scripts/release-pilot-extension.sh").read_text()
+        ordered = (
+            "npm test", "npm run typecheck", "python3 -m pytest -q",
+            "build-pilot-extension.sh", "python3 -m unittest tests/test_deployment_package.py",
+            "cmp", "zip -q -r", "SHA256SUMS",
+        )
+        positions = [script.index(token) for token in ordered]
+        self.assertEqual(positions, sorted(positions))
+
+    def test_release_script_requires_inputs_and_proves_fresh_safe_delivery(self):
+        script = (ROOT / "deploy/scripts/release-pilot-extension.sh").read_text()
+        for token in (
+            "PRIVATE_KEY_PATH:?", "REVIEW_SERVICE_ORIGIN:?", "DELIVERY_ROOT",
+            "git-common-dir", "mktemp", "-nt", "manifest.json", "content.js",
+            "assert_classic_self_contained_script", "assert_production_manifest",
+            "shasum -a 256", "extension/dist", "moodle-review-extension-chrome-edge.zip",
+        ):
+            self.assertIn(token, script)
+        self.assertNotIn("pilot-extension.pem", script)
+
     def test_built_content_script_is_classic_and_self_contained(self):
         content_script = (ROOT / "extension/dist/content.js").read_text()
         assert_classic_self_contained_script(content_script)
