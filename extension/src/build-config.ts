@@ -5,6 +5,32 @@ export const EXAMPLE_PUBLIC_KEY = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4
 
 type Environment = Record<string, string | undefined>;
 
+type VersionDocument = { version?: unknown; packages?: Record<string, { version?: unknown }> };
+
+export function loadExtensionVersion(packageJson: VersionDocument, lockJson: VersionDocument): { version: string } {
+  const version = packageJson.version;
+  const lockVersion = lockJson.version;
+  const rootLockVersion = lockJson.packages?.[""]?.version;
+  if (typeof version !== "string" || !/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(version)) {
+    throw new Error("Extension version must contain three canonical numeric Chromium components");
+  }
+  if (version.split(".").some((component) => Number(component) > 65535)) {
+    throw new Error("Extension version components must be between 0 and 65535");
+  }
+  if (lockVersion !== version || rootLockVersion !== version) {
+    throw new Error("Extension package and lock version mismatch");
+  }
+  return { version };
+}
+
+export function loadBuildCommit(buildMode: "development" | "production", value: string | undefined): string {
+  if (buildMode === "development") return "0000000000000000000000000000000000000000";
+  if (!value || !/^[0-9a-f]{40}$/.test(value)) {
+    throw new Error("BUILD_COMMIT must be a full 40-character lowercase hexadecimal commit");
+  }
+  return value;
+}
+
 const split = (value: string | undefined, fallback: string[]) => value?.split(",").map((item) => item.trim()).filter(Boolean) ?? fallback;
 
 function validateProductionPublicKey(publicKey: string): void {
@@ -64,5 +90,6 @@ export function loadBuildConfig(env: Environment) {
     if (publicKey === EXAMPLE_PUBLIC_KEY) throw new Error("Production build contains the placeholder public key");
     validateProductionPublicKey(publicKey);
   }
-  return { buildMode, moodlePatterns, optionalPatterns, serviceOrigin, publicKey };
+  const buildCommit = loadBuildCommit(buildMode, env.BUILD_COMMIT);
+  return { buildMode, moodlePatterns, optionalPatterns, serviceOrigin, publicKey, buildCommit };
 }

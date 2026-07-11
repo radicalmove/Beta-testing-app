@@ -14,12 +14,13 @@ DELIVERY_ZIP="$DELIVERY_ROOT/moodle-review-extension-chrome-edge.zip"
 
 (cd "$ROOT" && python3 -c 'from pathlib import Path; from deploy.scripts.release_artifacts import git_identity; print(git_identity(Path(".")))') >/dev/null
 [[ ${RELEASE_PREFLIGHT_ONLY:-0} == 1 ]] && exit 0
+BUILD_COMMIT=$(git -C "$ROOT" rev-parse HEAD)
 
 (cd "$ROOT/extension" && npm test && npm run typecheck)
 (cd "$ROOT/server" && python3 -m pytest -q)
 
 rm -rf "$ROOT/extension/dist"
-PRIVATE_KEY_PATH="$PRIVATE_KEY_PATH" REVIEW_SERVICE_ORIGIN="$REVIEW_SERVICE_ORIGIN" \
+PRIVATE_KEY_PATH="$PRIVATE_KEY_PATH" REVIEW_SERVICE_ORIGIN="$REVIEW_SERVICE_ORIGIN" BUILD_COMMIT="$BUILD_COMMIT" \
   "$ROOT/deploy/scripts/build-pilot-extension.sh"
 
 for artifact in manifest.json content.js background.js; do

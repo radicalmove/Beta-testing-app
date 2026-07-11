@@ -5,7 +5,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import test from "node:test";
 
-import { loadBuildConfig } from "../src/build-config.ts";
+import { loadBuildCommit, loadBuildConfig, loadExtensionVersion } from "../src/build-config.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -21,9 +21,47 @@ function productionEnv(overrides: Record<string, string | undefined> = {}) {
     MOODLE_HOST_PATTERNS: "https://moodle.example.org/*",
     OPTIONAL_FRAME_PATTERNS: "https://*.content.example.org/*",
     EXTENSION_PUBLIC_KEY: publicKey.toString("base64"),
+    BUILD_COMMIT: "0123456789abcdef0123456789abcdef01234567",
     ...overrides,
   };
 }
+
+test("validates canonical Chromium extension versions", () => {
+  const lock = (version: string) => ({ version, packages: { "": { version } } });
+  assert.equal(loadExtensionVersion({ version: "0.2.0" }, lock("0.2.0")).version, "0.2.0");
+  assert.equal(loadExtensionVersion({ version: "65535.0.65535" }, lock("65535.0.65535")).version, "65535.0.65535");
+  for (const version of ["00.2.0", "0.02.0", "0.2.00", "0.2", "0.2.0.1", "+0.2.0", "0.-2.0", "0.two.0", "65536.0.0", "0.65536.0", "0.0.65536"]) {
+    assert.throws(() => loadExtensionVersion({ version }, lock(version)), /version/i, version);
+  }
+});
+
+test("canonical package and lock versions match while the manifest remains a placeholder", async () => {
+  const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+  const lockJson = JSON.parse(await readFile(new URL("../package-lock.json", import.meta.url), "utf8"));
+  const manifest = JSON.parse(await readFile(new URL("../public/manifest.json", import.meta.url), "utf8"));
+  assert.equal(packageJson.version, "0.2.0");
+  assert.equal(lockJson.version, packageJson.version);
+  assert.equal(lockJson.packages[""].version, packageJson.version);
+  assert.equal(manifest.version, "0.0.0");
+  assert.equal(loadExtensionVersion(packageJson, lockJson).version, packageJson.version);
+  assert.throws(() => loadExtensionVersion(packageJson, { ...lockJson, version: "0.2.1" }), /mismatch/i);
+});
+
+test("generated manifest version equals the canonical package version", async () => {
+  await rm(new URL("../dist", import.meta.url), { recursive: true, force: true });
+  await execFileAsync("npm", ["run", "build"], { cwd: new URL("..", import.meta.url) });
+  const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+  const manifest = JSON.parse(await readFile(new URL("../dist/manifest.json", import.meta.url), "utf8"));
+  assert.equal(manifest.version, packageJson.version);
+});
+
+test("production validates a full build commit and development uses the zero commit", () => {
+  assert.equal(loadBuildCommit("development", undefined), "0000000000000000000000000000000000000000");
+  assert.equal(loadBuildCommit("production", "0123456789abcdef0123456789abcdef01234567"), "0123456789abcdef0123456789abcdef01234567");
+  for (const commit of [undefined, "", "abc1234", "g123456789abcdef0123456789abcdef01234567", "0123456789ABCDEF0123456789ABCDEF01234567", "0123456789abcdef0123456789abcdef012345678"]) {
+    assert.throws(() => loadBuildCommit("production", commit), /build_commit/i);
+  }
+});
 
 test("build config validates Chrome match patterns including wildcard root hosts", () => {
   const config = loadBuildConfig({

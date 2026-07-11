@@ -1,5 +1,7 @@
 declare const __MOODLE_PATTERNS__: string[];
 declare const __OPTIONAL_FRAME_PATTERNS__: string[];
+declare const __EXTENSION_VERSION__: string;
+declare const __BUILD_COMMIT__: string;
 declare const chrome: any;
 
 import { canonicalCourseUrlFromDocument, courseTitleFromDocument, detectCourseContext, explicitActivityIdFromDocument, explicitCourseIdFromDocument, type CourseContext } from "./course-context.ts";
