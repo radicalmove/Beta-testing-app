@@ -8,8 +8,9 @@ import { ScreenshotCapabilities } from "./screenshot-capabilities.ts";
 declare const chrome: any;
 declare const __MOODLE_PATTERNS__: string[];
 declare const __OPTIONAL_FRAME_PATTERNS__: string[];
+declare const __REVIEW_SERVICE_ORIGIN__: string;
 
-const DEFAULT_SERVICE_ORIGIN = "https://review.example.invalid";
+const DEFAULT_SERVICE_ORIGIN = __REVIEW_SERVICE_ORIGIN__;
 
 let optionalRegistration = Promise.resolve();
 const reviewContexts = new ReviewContextCache();

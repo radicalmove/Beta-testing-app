@@ -24,6 +24,7 @@ export default defineConfig({
   define: {
     __MOODLE_PATTERNS__: JSON.stringify(moodlePatterns),
     __OPTIONAL_FRAME_PATTERNS__: JSON.stringify(optionalPatterns),
+    __REVIEW_SERVICE_ORIGIN__: JSON.stringify(serviceOrigin),
   },
   build: {
     target: "chrome120",

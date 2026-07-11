@@ -74,6 +74,16 @@ test("overlay styles remain isolated, keyboard-visible, and usable at 320 CSS pi
   assert.doesNotMatch(overlayStyles, /(?:^|})\s*(?:body|html|\.moodle)/);
 });
 
+test("overlay host inline reset preserves the review typography inheritance", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  mountReviewOverlay(document, context, "connected");
+  const host = document.getElementById(OVERLAY_HOST_ID)!;
+  assert.equal(host.style.fontFamily, "Poppins, Arial, sans-serif");
+  assert.equal(host.style.fontSize, "14px");
+  assert.equal(host.style.lineHeight, "1.4");
+  assert.equal(host.style.color, "#000");
+});
+
 test("connected status stays textual with a decorative green indicator", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   mountReviewOverlay(document, context, "connected");
