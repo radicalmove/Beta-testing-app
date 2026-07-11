@@ -1,4 +1,4 @@
-import { ApiClient, authenticate, getActiveToken, type SessionToken } from "./api";
+import { ApiClient, authenticate, getActiveToken, lookupReviewCourse, redeemReviewerInvitation, renewReviewerDevice, resumeReviewerMembership, type SessionToken } from "./api";
 import { authorizeAuthenticateSender, authorizeResolveSender, handleCreateCommentBridge, handleListPageCommentsBridge, handleResolveCourseBridge, normalizeErrorMessage, validateAuthenticateMessage, validateCancelScreenshotMessage, validateUploadScreenshotMessage, type CreateCommentPayload, type ResolveCoursePayload } from "./background-bridge.ts";
 import { validateScreenshotDataUrl } from "./screenshot-validation.ts";
 import { reconcileOptionalContentScript } from "./optional-content-scripts";
@@ -15,6 +15,8 @@ const DEFAULT_SERVICE_ORIGIN = __REVIEW_SERVICE_ORIGIN__;
 let optionalRegistration = Promise.resolve();
 const reviewContexts = new ReviewContextCache();
 const screenshotCapabilities = new ScreenshotCapabilities(chrome.storage.session);
+let renewalPromise: Promise<string | undefined> | undefined;
+void chrome.storage.local.setAccessLevel?.({ accessLevel: "TRUSTED_CONTEXTS" }).catch(() => undefined);
 void screenshotCapabilities.cleanup().catch((error: Error) => console.error("Unable to clean screenshot capabilities", error));
 
 function refreshOptionalContentScript(): void {
@@ -41,10 +43,28 @@ async function serviceOrigin(): Promise<string> {
 async function activeToken(): Promise<string | undefined> {
   const stored = await chrome.storage.session.get(["apiToken", "expiresAt"]) as Partial<SessionToken>;
   const session = typeof stored.apiToken === "string" && typeof stored.expiresAt === "number" ? stored as SessionToken : undefined;
-  return getActiveToken(session, {
+  const active = await getActiveToken(session, {
     clearToken: () => chrome.storage.session.remove(["apiToken", "expiresAt"]),
     onSignedOut: () => undefined,
   });
+  if (active) return active;
+  if (renewalPromise) return renewalPromise;
+  renewalPromise = renewStoredDevice();
+  try { return await renewalPromise; } finally { renewalPromise = undefined; }
+}
+
+async function renewStoredDevice(): Promise<string | undefined> {
+  const local = await chrome.storage.local.get(["deviceCredential", "deviceCourseHandle"]);
+  if (typeof local.deviceCredential !== "string" || typeof local.deviceCourseHandle !== "string") return undefined;
+  try {
+    const renewed = await renewReviewerDevice({ serviceOrigin: await serviceOrigin(), courseHandle: local.deviceCourseHandle, deviceCredential: local.deviceCredential });
+    await chrome.storage.session.set(renewed.session);
+    await chrome.storage.local.set({ deviceCredential: renewed.deviceCredential });
+    return renewed.session.apiToken;
+  } catch {
+    await chrome.storage.local.remove(["deviceCredential", "deviceCourseHandle", "reviewerEmail"]);
+    return undefined;
+  }
 }
 
 async function resolveCourse(payload: ResolveCoursePayload): Promise<unknown> {
@@ -91,7 +111,34 @@ chrome.webNavigation?.onCommitted?.addListener((details: { tabId: number; frameI
 chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & { tab?: { id?: number; windowId?: number } }, sendResponse: (value: unknown) => void) => {
   void screenshotCapabilities.cleanup().catch(() => undefined);
   let operation: Promise<unknown> | undefined;
-  if (message && typeof message === "object" && (message as { type?: unknown }).type === "AUTHENTICATE") {
+  if (message && typeof message === "object" && (message as { type?: unknown }).type === "LOOKUP_REVIEW_COURSE") {
+    operation = (async () => {
+      if (!await authorizeResolveSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) })) throw new Error("Unauthorized course lookup sender");
+      const candidate = message as { moodle_origin?: unknown; moodle_course_id?: unknown };
+      if (typeof candidate.moodle_origin !== "string" || typeof candidate.moodle_course_id !== "number" || !Number.isInteger(candidate.moodle_course_id)) throw new Error("Invalid course lookup");
+      return lookupReviewCourse({ serviceOrigin: await serviceOrigin(), moodleOrigin: candidate.moodle_origin, moodleCourseId: candidate.moodle_course_id });
+    })();
+  } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "REDEEM_REVIEW_ACCESS") {
+    operation = (async () => {
+      if (!await authorizeResolveSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) })) throw new Error("Unauthorized access sender");
+      const value = message as { course_handle?: unknown; display_name?: unknown; email?: unknown; role?: unknown; invitation_code?: unknown };
+      if (![value.course_handle, value.display_name, value.email, value.role, value.invitation_code].every((item) => typeof item === "string")) throw new Error("Invalid reviewer access request");
+      const access = await redeemReviewerInvitation({ serviceOrigin: await serviceOrigin(), courseHandle: value.course_handle as string, displayName: value.display_name as string, email: value.email as string, role: value.role as string, invitationCode: value.invitation_code as string });
+      await chrome.storage.session.set(access.session);
+      await chrome.storage.local.set({ deviceCredential: access.deviceCredential, deviceCourseHandle: value.course_handle, reviewerEmail: value.email });
+      return { state: access.state, role: access.role, reconnect_code: access.reconnectCode };
+    })();
+  } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "RESUME_REVIEW_ACCESS") {
+    operation = (async () => {
+      if (!await authorizeResolveSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) })) throw new Error("Unauthorized access sender");
+      const value = message as { course_handle?: unknown; email?: unknown; reconnect_code?: unknown };
+      if (![value.course_handle, value.email, value.reconnect_code].every((item) => typeof item === "string")) throw new Error("Invalid reviewer access request");
+      const access = await resumeReviewerMembership({ serviceOrigin: await serviceOrigin(), courseHandle: value.course_handle as string, email: value.email as string, reconnectCode: value.reconnect_code as string });
+      await chrome.storage.session.set(access.session);
+      await chrome.storage.local.set({ deviceCredential: access.deviceCredential, deviceCourseHandle: value.course_handle, reviewerEmail: value.email });
+      return { state: access.state, role: access.role };
+    })();
+  } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "AUTHENTICATE") {
     operation = (async () => {
       validateAuthenticateMessage(message);
       if (!await authorizeAuthenticateSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, hasPermission: async () => false })) throw new Error("Unauthorized AUTHENTICATE sender");

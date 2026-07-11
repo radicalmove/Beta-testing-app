@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ApiClient, authenticate, getActiveToken, validateServiceOrigin } from "../src/api.ts";
+import { ApiClient, authenticate, getActiveToken, lookupReviewCourse, redeemReviewerInvitation, validateServiceOrigin } from "../src/api.ts";
 
 test("API calls use the configured private service origin and bearer token", async () => {
   const calls: Array<{ url: string; init?: RequestInit }> = [];
@@ -143,4 +143,21 @@ test("authentication rejects malformed token payloads", async () => {
       setSession: async () => undefined,
     }), /token|expir/i);
   }
+});
+
+test("course lookup and invitation redemption use public credential-free endpoints", async () => {
+  const requests: Array<{ url: string; init?: RequestInit }> = [];
+  const fetcher = async (url: string | URL | Request, init?: RequestInit) => {
+    requests.push({ url: String(url), init });
+    if (String(url).endsWith("/api/access/course")) return new Response(JSON.stringify({ course_handle: "course-1", title: "CRJU150" }), { status: 200 });
+    return new Response(JSON.stringify({ state: "approved", role: "beta_tester", session_token: "session", expires_in: 28800, device_credential: "device", reconnect_code: "AAAAA-BBBBB-CCCCC-DDDDD" }), { status: 200 });
+  };
+
+  const course = await lookupReviewCourse({ serviceOrigin: "https://review.example.org", moodleOrigin: "https://my.uconline.ac.nz", moodleCourseId: 896, fetch: fetcher });
+  const access = await redeemReviewerInvitation({ serviceOrigin: "https://review.example.org", courseHandle: course.course_handle, displayName: "Reviewer", email: "reviewer@example.org", role: "beta_tester", invitationCode: "11111-22222-33333-44444", fetch: fetcher });
+
+  assert.equal(access.session.apiToken, "session");
+  assert.equal(access.deviceCredential, "device");
+  assert.equal(requests.every((request) => new Headers(request.init?.headers).get("Authorization") === null), true);
+  assert.equal(requests.every((request) => request.init?.credentials === "omit"), true);
 });

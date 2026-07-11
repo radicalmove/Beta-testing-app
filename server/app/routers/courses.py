@@ -4,10 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session as DbSession
 
 from app.db import get_session
-from app.dependencies import current_extension_user
+from app.dependencies import current_extension_user, require_course_access
 from app.models import Course, User, UserRole
 from app.schemas import CourseConfirmRequest, CourseResolveRequest
 from app.services.courses import confirm_course, resolve_course
+from app.services.summary import SummaryAccessDenied, course_summary_for
 
 router = APIRouter(prefix="/api/courses", tags=["courses"])
 
@@ -36,3 +37,14 @@ def confirm(course_id: uuid.UUID, payload: CourseConfirmRequest, user: User = De
     except ValueError as exc:
         status_code = status.HTTP_409_CONFLICT if source.is_confirmed else status.HTTP_422_UNPROCESSABLE_ENTITY
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+
+
+@router.get("/{course_id}/summary")
+def summary(course_id: uuid.UUID, user=Depends(current_extension_user), db: DbSession = Depends(get_session)) -> dict:
+    require_course_access(user, course_id)
+    if db.get(Course, course_id) is None:
+        raise HTTPException(status_code=404, detail="Course not found")
+    try:
+        return course_summary_for(db, user, course_id)
+    except SummaryAccessDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc

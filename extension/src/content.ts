@@ -162,12 +162,19 @@ export function createLifecycleController(targetWindow: Window & typeof globalTh
 export function startCourseReview(targetWindow: Window & typeof globalThis = window, targetDocument: Document = document, runtime: { sendMessage(message: unknown, callback: (response: { ok?: boolean; status?: ConnectionStatus; error?: string; data?: unknown } | undefined) => void): void } = chrome.runtime, buildDiagnostics: BuildDiagnostics = BUILD_DIAGNOSTICS): () => void {
   let context = currentContext(targetWindow, targetDocument);
   let courseId: string | undefined;
+  let courseHandle: string | undefined;
   const courseIds = new Map<string, string>();
   const send = <T>(message: unknown) => new Promise<T>((resolve, reject) => runtime.sendMessage(message, (response) => response?.ok ? resolve(response.data as T) : reject(new Error(response?.error ?? "Review service unavailable"))));
   let commentSequence = 0;
   let overlay: ReviewOverlay;
   const loadPageComments = async (pageUrl: string) => { const sequence = ++commentSequence; overlay.setPageComments([]); try { const comments = await send<PageComment[]>({ type: "LIST_PAGE_COMMENTS", page_url: pageUrl }); if (sequence === commentSequence && context.page_url === pageUrl) overlay.setPageComments(comments); } catch { if (sequence === commentSequence) overlay.setPageComments([]); } };
-  overlay = mountReviewOverlay(targetDocument, context, "connecting", { onAuthenticate: () => new Promise((resolve) => {
+  overlay = mountReviewOverlay(targetDocument, context, "connecting", { useAccessForm: () => Boolean(courseHandle), onAccessSubmit: async (input) => {
+    if (!courseHandle) throw new Error("Course not enabled for review");
+    const response = await send<{ state: string; reconnect_code?: string }>(input.mode === "new" ? { type: "REDEEM_REVIEW_ACCESS", course_handle: courseHandle, display_name: input.displayName, email: input.email, role: input.role, invitation_code: input.code } : { type: "RESUME_REVIEW_ACCESS", course_handle: courseHandle, email: input.email, reconnect_code: input.code });
+    if (response.state === "pending") return { status: "pending", message: "Access awaiting approval", reconnectCode: response.reconnect_code };
+    lastSignature = ""; refresh();
+    return { status: "connected", reconnectCode: response.reconnect_code };
+  }, onAuthenticate: () => new Promise((resolve) => {
     runtime.sendMessage({ type: "AUTHENTICATE" }, (response) => {
       if (!response?.ok) {
         if ((response?.status as string | undefined) === "cancelled") resolve({ status: "signed-out", message: "Sign-in cancelled" });
@@ -216,6 +223,14 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
         if (message) message.textContent = "Session expired—sign in again";
       }
       if (courseId) void loadPageComments(context.page_url); else overlay.setPageComments([]);
+      if (!response?.ok && context.moodle_course_id) {
+        let moodleOrigin = ""; try { moodleOrigin = new URL(context.course_url).origin; } catch { /* invalid contexts are already rejected */ }
+        if (moodleOrigin) runtime.sendMessage({ type: "LOOKUP_REVIEW_COURSE", moodle_origin: moodleOrigin, moodle_course_id: context.moodle_course_id }, (lookup) => {
+          const found = lookup?.data as { course_handle?: unknown } | undefined;
+          courseHandle = lookup?.ok && typeof found?.course_handle === "string" ? found.course_handle : undefined;
+          if (!lookup?.ok && response?.status === "signed-out" && !response.error?.includes("session expired")) overlay.update(context, "offline");
+        });
+      }
     });
   };
   const lifecycle = createLifecycleController(targetWindow, targetDocument, refresh);

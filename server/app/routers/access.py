@@ -7,9 +7,9 @@ from sqlalchemy.orm import Session as DbSession
 from app.db import get_session
 from app.dependencies import current_dashboard_user, current_extension_user, require_course_access
 from app.models import AuditEvent, Course, CourseMembership, MembershipState, User, UserRole
-from app.schemas import CourseLookupRequest, InvitationCreateRequest, InvitationRedeemRequest, MembershipResumeRequest, MembershipStateRequest
+from app.schemas import CourseLookupRequest, DeviceRenewRequest, InvitationCreateRequest, InvitationRedeemRequest, MembershipResumeRequest, MembershipStateRequest
 from app.security import utc_now
-from app.services.access import AccessDenied, create_invitation, redeem_invitation, resume_membership
+from app.services.access import AccessDenied, create_invitation, redeem_invitation, renew_device, resume_membership
 
 router = APIRouter(tags=["course access"])
 
@@ -46,6 +46,14 @@ def redeem(payload: InvitationRedeemRequest, db: DbSession = Depends(get_session
 def resume(payload: MembershipResumeRequest, db: DbSession = Depends(get_session)) -> dict:
     try:
         return _access_json(resume_membership(db, course_id=payload.course_handle, email=payload.email, reconnect_code=payload.reconnect_code))
+    except AccessDenied as exc:
+        raise HTTPException(status_code=403, detail="Unable to verify reviewer access") from exc
+
+
+@router.post("/api/access/renew")
+def renew(payload: DeviceRenewRequest, db: DbSession = Depends(get_session)) -> dict:
+    try:
+        return _access_json(renew_device(db, course_id=payload.course_handle, device_credential=payload.device_credential))
     except AccessDenied as exc:
         raise HTTPException(status_code=403, detail="Unable to verify reviewer access") from exc
 

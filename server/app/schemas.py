@@ -76,6 +76,11 @@ class MembershipResumeRequest(BaseModel):
     reconnect_code: str = Field(min_length=20, max_length=32)
 
 
+class DeviceRenewRequest(BaseModel):
+    course_handle: uuid.UUID
+    device_credential: str = Field(min_length=32, max_length=256)
+
+
 class MembershipStateRequest(BaseModel):
     state: str
 

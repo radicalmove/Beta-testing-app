@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Window } from "happy-dom";
 
-import { createOverlayMarkup, mountReviewOverlay, OVERLAY_HOST_ID, overlayStyles } from "../src/overlay/root.ts";
+import { createOverlayMarkup, mountReviewOverlay, OVERLAY_HOST_ID, overlayStyles, tealOverlayOverrides } from "../src/overlay/root.ts";
 
 const context = { course_url: "https://learn.example/course/view.php?id=1", page_url: "https://learn.example/mod/page/view.php?id=2", title: "Law", pageTitle: "Week 2", moodle_course_id: 1, identityConfidence: "confirmed" as const };
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -124,6 +124,13 @@ test("overlay host inline reset preserves the review typography inheritance", ()
   assert.equal(host.style.color, "#000");
 });
 
+test("0.3 visual treatment clearly separates the tool with teal and UCO accents", () => {
+  assert.match(tealOverlayOverrides, /--review-teal:#0f4c5c/);
+  assert.match(tealOverlayOverrides, /--review-pale:#f3f7f8/);
+  assert.match(tealOverlayOverrides, /border:4px solid var\(--review-teal\)/);
+  assert.match(overlayStyles, /--review-red:#d73b3d/);
+});
+
 test("connected status stays textual with a decorative green indicator", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   mountReviewOverlay(document, context, "connected");
@@ -194,6 +201,26 @@ test("successful authentication moves focus to the first review control", async 
   shadow.querySelector<HTMLElement>('[data-action="authenticate"]')!.click(); await tick();
   assert.equal(shadow.activeElement, shadow.querySelector('[data-action="highlight"]'));
   assert.match(shadow.querySelector('[aria-live="polite"]')!.textContent!, /Connected/);
+});
+
+test("course access form supports new and existing reviewers without listing identities", async () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const submitted: any[] = [];
+  mountReviewOverlay(document, context, "signed-out", { onAccessSubmit: async (input) => { submitted.push(input); return { status: "connected", reconnectCode: "AAAAA-BBBBB-CCCCC-DDDDD" }; } });
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  shadow.querySelector<HTMLElement>('[data-action="authenticate"]')!.click();
+  const form = shadow.querySelector<HTMLFormElement>("[data-access-form]")!;
+  assert.ok(form);
+  assert.equal(form.textContent?.includes("New reviewer"), true);
+  assert.equal(form.textContent?.includes("Existing reviewer"), true);
+  assert.equal(shadow.querySelectorAll("[data-reviewer-name]").length, 0);
+  assert.ok(form.querySelector('[name="displayName"]'));
+  assert.ok(form.querySelector('[name="email"]'));
+  assert.ok(form.querySelector('[name="role"]'));
+  assert.ok(form.querySelector('[name="code"]'));
+  shadow.querySelector<HTMLElement>('[data-mode="existing"]')!.click();
+  assert.equal(shadow.querySelector<HTMLElement>("[data-code-label]")!.textContent, "Personal reconnect code");
+  assert.equal(submitted.length, 0);
 });
 
 test("an authentication completion cannot overwrite a newer external state update", async () => {

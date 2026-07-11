@@ -4,7 +4,7 @@ import pytest
 
 from app.models import Course, MembershipState, User, UserRole
 from app.security import utc_now
-from app.services.access import AccessDenied, create_invitation, redeem_invitation, resume_membership
+from app.services.access import AccessDenied, create_invitation, redeem_invitation, renew_device, resume_membership
 
 
 def user(db_session, email: str, role=UserRole.BETA_TESTER) -> User:
@@ -58,3 +58,17 @@ def test_sme_redeems_pending_and_cannot_resume_until_approved(db_session):
     assert result.session_token is None
     with pytest.raises(AccessDenied):
         resume_membership(db_session, course_id=target_course.id, email="sme@example.test", reconnect_code=result.reconnect_code)
+
+
+def test_device_credential_rotates_and_old_value_cannot_be_reused(db_session):
+    admin = user(db_session, "admin4@example.test", UserRole.ADMIN)
+    target_course = course(db_session)
+    _, raw_invite = create_invitation(db_session, admin, target_course, "device@example.test", UserRole.BETA_TESTER)
+    joined = redeem_invitation(db_session, course_id=target_course.id, display_name="Device", email="device@example.test", role=UserRole.BETA_TESTER, invitation_code=raw_invite)
+
+    renewed = renew_device(db_session, course_id=target_course.id, device_credential=joined.device_credential)
+
+    assert renewed.session_token
+    assert renewed.device_credential != joined.device_credential
+    with pytest.raises(AccessDenied):
+        renew_device(db_session, course_id=target_course.id, device_credential=joined.device_credential)

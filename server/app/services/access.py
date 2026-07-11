@@ -113,3 +113,18 @@ def resume_membership(db: DbSession, *, course_id: uuid.UUID, email: str, reconn
     session_token, device = _issue_access(db, membership)
     db.commit()
     return AccessResult(membership, session_token, device, reconnect_code="")
+
+
+def renew_device(db: DbSession, *, course_id: uuid.UUID, device_credential: str) -> AccessResult:
+    now = utc_now()
+    current = db.scalar(select(DeviceCredential).where(DeviceCredential.credential_hash == token_hash(device_credential), DeviceCredential.rotated_at.is_(None), DeviceCredential.revoked_at.is_(None), DeviceCredential.expires_at > now))
+    membership = None if current is None else db.get(CourseMembership, current.membership_id)
+    if current is None or membership is None or membership.course_id != course_id or membership.state is not MembershipState.APPROVED:
+        raise AccessDenied("Unable to verify reviewer access")
+    current.rotated_at = now
+    session_token = generate_token()
+    replacement = generate_token()
+    db.add(Session(user_id=membership.user_id, membership_id=membership.id, token_hash=token_hash(session_token), kind="extension", expires_at=now + timedelta(hours=8), created_at=now))
+    db.add(DeviceCredential(membership_id=membership.id, family_id=current.family_id, credential_hash=token_hash(replacement), expires_at=now + timedelta(days=90), created_at=now))
+    db.commit()
+    return AccessResult(membership, session_token, replacement, reconnect_code="")

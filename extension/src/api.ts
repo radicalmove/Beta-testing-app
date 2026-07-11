@@ -2,6 +2,42 @@ export type SessionToken = { apiToken: string; expiresAt: number };
 
 type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
+type CourseLookup = { course_handle: string; title: string };
+type ReviewerAccess = { state: string; role: string; session: SessionToken; deviceCredential: string; reconnectCode?: string };
+
+async function publicJson(originValue: string, path: string, body: unknown, fetcher?: Fetch): Promise<any> {
+  const origin = validateServiceOrigin(originValue).origin;
+  const response = await (fetcher ?? fetch)(`${origin}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), credentials: "omit" });
+  if (!response.ok) throw new Error(response.status === 404 ? "Course not enabled for review" : "Unable to verify reviewer access");
+  return response.json();
+}
+
+export async function lookupReviewCourse(options: { serviceOrigin: string; moodleOrigin: string; moodleCourseId: number; fetch?: Fetch }): Promise<CourseLookup> {
+  const body = await publicJson(options.serviceOrigin, "/api/access/course", { moodle_origin: options.moodleOrigin, moodle_course_id: options.moodleCourseId }, options.fetch);
+  if (typeof body?.course_handle !== "string" || typeof body?.title !== "string") throw new Error("Invalid course access response");
+  return body;
+}
+
+function parseReviewerAccess(body: any, now: () => number): ReviewerAccess {
+  if (typeof body?.session_token !== "string" || typeof body?.expires_in !== "number" || typeof body?.device_credential !== "string") throw new Error("Invalid reviewer access response");
+  return { state: body.state, role: body.role, session: { apiToken: body.session_token, expiresAt: now() + body.expires_in * 1000 }, deviceCredential: body.device_credential, reconnectCode: typeof body.reconnect_code === "string" ? body.reconnect_code : undefined };
+}
+
+export async function redeemReviewerInvitation(options: { serviceOrigin: string; courseHandle: string; displayName: string; email: string; role: string; invitationCode: string; fetch?: Fetch; now?: () => number }): Promise<ReviewerAccess> {
+  const body = await publicJson(options.serviceOrigin, "/api/access/redeem", { course_handle: options.courseHandle, display_name: options.displayName, email: options.email, role: options.role, invitation_code: options.invitationCode }, options.fetch);
+  return parseReviewerAccess(body, options.now ?? Date.now);
+}
+
+export async function resumeReviewerMembership(options: { serviceOrigin: string; courseHandle: string; email: string; reconnectCode: string; fetch?: Fetch; now?: () => number }): Promise<ReviewerAccess> {
+  const body = await publicJson(options.serviceOrigin, "/api/access/resume", { course_handle: options.courseHandle, email: options.email, reconnect_code: options.reconnectCode }, options.fetch);
+  return parseReviewerAccess(body, options.now ?? Date.now);
+}
+
+export async function renewReviewerDevice(options: { serviceOrigin: string; courseHandle: string; deviceCredential: string; fetch?: Fetch; now?: () => number }): Promise<ReviewerAccess> {
+  const body = await publicJson(options.serviceOrigin, "/api/access/renew", { course_handle: options.courseHandle, device_credential: options.deviceCredential }, options.fetch);
+  return parseReviewerAccess(body, options.now ?? Date.now);
+}
+
 export async function getActiveToken(
   session: SessionToken | undefined,
   options: { now?: () => number; clearToken: () => Promise<void>; onSignedOut: () => void },
