@@ -53,6 +53,7 @@ def _scan_version(releases: Path, version: str, identity: tuple[str, str]) -> No
                 continue
             if set(metadata)!={"version","commit","artifact_digest"} or not all(isinstance(value,str) for value in metadata.values()):
                 raise ValueError("unexpected release metadata")
+            _validate_versioned_release(entry,metadata)
         except (OSError, json.JSONDecodeError, ValueError) as error:
             raise RuntimeError(f"malformed immutable release metadata: {metadata_path}") from error
         if metadata["version"]==version:
@@ -80,6 +81,37 @@ def _validate_legacy_release(entry: Path, metadata: dict[str,str]) -> None:
         expected_zip=Path(temp)/"expected.zip"; deterministic_zip(unpacked,expected_zip)
         if archive.read_bytes() != expected_zip.read_bytes():
             raise ValueError("legacy ZIP differs")
+
+def _valid_version(version: str) -> bool:
+    if not re.fullmatch(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)",version): return False
+    components=[int(component) for component in version.split(".")]
+    return any(components) and all(component <= 65535 for component in components)
+
+def _validate_versioned_release(entry: Path, metadata: dict[str,str]) -> None:
+    version=metadata["version"]; commit=metadata["commit"]; digest=metadata["artifact_digest"]
+    if not _valid_version(version) or not re.fullmatch(r"[0-9a-f]{40}",commit) or not re.fullmatch(r"[0-9a-f]{12}",digest) or entry.name != f"v{version}-{commit[:12]}-{digest}":
+        raise ValueError("invalid versioned release identity")
+    unpacked=entry/"moodle-review-extension"; versioned=f"moodle-review-extension-v{version}-chrome-edge.zip"; stable="moodle-review-extension-chrome-edge.zip"
+    paths=[*(f"moodle-review-extension/{name}" for name in FILES),"moodle-review-extension/RELEASE.json","RELEASE.json",versioned,stable]
+    expected={Path("moodle-review-extension"),Path("SHA256SUMS"),*(Path(path) for path in paths)}
+    actual={path.relative_to(entry) for path in entry.rglob("*")}
+    if actual != expected or any((entry/path).is_symlink() for path in actual):
+        raise ValueError("invalid versioned release tree")
+    release_bytes=(entry/"RELEASE.json").read_bytes()
+    if (unpacked/"RELEASE.json").read_bytes() != release_bytes or json.loads(release_bytes) != metadata:
+        raise ValueError("versioned metadata copies differ")
+    computed=hashlib.sha256(b"".join((unpacked/name).read_bytes() for name in FILES)).hexdigest()[:12]
+    if computed != digest:
+        raise ValueError("versioned artifact digest differs")
+    expected_sums="".join(f"{hashlib.sha256((entry/path).read_bytes()).hexdigest()}  {path}\n" for path in paths)
+    if (entry/"SHA256SUMS").read_text() != expected_sums:
+        raise ValueError("versioned checksums differ")
+    if (entry/versioned).read_bytes() != (entry/stable).read_bytes():
+        raise ValueError("versioned ZIP aliases differ")
+    with tempfile.TemporaryDirectory() as temp:
+        expected_zip=Path(temp)/"expected.zip"; deterministic_zip(unpacked,expected_zip)
+        if (entry/versioned).read_bytes() != expected_zip.read_bytes():
+            raise ValueError("versioned ZIP differs")
 
 def _validate_immutable_release(expected: Path, installed: Path) -> None:
     if installed.is_symlink() or not installed.is_dir():

@@ -39,12 +39,12 @@ test("canonical package and lock versions match while the manifest remains a pla
   const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
   const lockJson = JSON.parse(await readFile(new URL("../package-lock.json", import.meta.url), "utf8"));
   const manifest = JSON.parse(await readFile(new URL("../public/manifest.json", import.meta.url), "utf8"));
-  assert.equal(packageJson.version, "0.2.0");
+  assert.equal(packageJson.version, "0.2.1");
   assert.equal(lockJson.version, packageJson.version);
   assert.equal(lockJson.packages[""].version, packageJson.version);
   assert.equal(manifest.version, "0.0.0");
   assert.equal(loadExtensionVersion(packageJson, lockJson).version, packageJson.version);
-  assert.throws(() => loadExtensionVersion(packageJson, { ...lockJson, version: "0.2.1" }), /mismatch/i);
+  assert.throws(() => loadExtensionVersion(packageJson, { ...lockJson, version: "0.2.0" }), /mismatch/i);
 });
 
 test("generated manifest version equals the canonical package version", async () => {
