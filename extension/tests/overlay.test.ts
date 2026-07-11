@@ -56,6 +56,20 @@ function auditOverlayContrast(styles: string): void {
   requireContrast("focus indicator on panel", surroundColor, property(panel, "background"), 3);
 }
 
+function auditShellBoundary(styles: string): void {
+  const rule = styles.match(/\.shell\{([^}]*)\}/)?.[1];
+  assert.ok(rule, "missing shell rule");
+  const declarations = new Map(rule.split(";").map((declaration) => declaration.split(":", 2) as [string, string]));
+  assert.equal(declarations.get("box-sizing"), "border-box", "shell width must include its boundary");
+  assert.equal(declarations.get("border"), "3px solid var(--review-red)", "shell must use the UCO red boundary");
+  assert.equal(declarations.get("box-shadow"), "0 8px 24px #00000038", "shell must have a clear neutral separation shadow");
+
+  const responsive = styles.match(/@media\(max-width:420px\)\{\.shell\{([^}]*)\}/)?.[1];
+  assert.ok(responsive, "missing responsive shell rule");
+  const responsiveDeclarations = new Map(responsive.split(";").map((declaration) => declaration.split(":", 2) as [string, string]));
+  assert.equal(responsiveDeclarations.get("width"), "calc(100vw - 16px)", "shell must fit within a 320 CSS pixel viewport");
+}
+
 test("contrast audit reads colors from the overlay stylesheet", () => {
   assert.doesNotThrow(() => auditOverlayContrast(overlayStyles));
   assert.throws(() => auditOverlayContrast(overlayStyles.replace("background:#000;color:#fff", "background:#777;color:#fff")), /toolbar text/);
@@ -72,6 +86,14 @@ test("overlay styles remain isolated, keyboard-visible, and usable at 320 CSS pi
   assert.match(overlayStyles, /width:calc\(100vw - 16px\)/);
   assert.match(overlayStyles, /flex-wrap:wrap/);
   assert.doesNotMatch(overlayStyles, /(?:^|})\s*(?:body|html|\.moodle)/);
+});
+
+test("shell boundary separates the complete overlay and remains in responsive bounds", () => {
+  assert.doesNotThrow(() => auditShellBoundary(overlayStyles));
+  assert.throws(() => auditShellBoundary(overlayStyles.replace("border:3px solid var(--review-red)", "border:1px solid var(--review-line)")), /UCO red boundary/);
+  assert.throws(() => auditShellBoundary(overlayStyles.replace("box-shadow:0 8px 24px #00000038", "box-shadow:0 4px 16px #00000024")), /separation shadow/);
+  assert.throws(() => auditShellBoundary(overlayStyles.replace("box-sizing:border-box", "box-sizing:content-box")), /width must include/);
+  assert.throws(() => auditShellBoundary(overlayStyles.replace("width:calc(100vw - 16px)", "width:100vw")), /320 CSS pixel viewport/);
 });
 
 test("overlay host inline reset preserves the review typography inheritance", () => {
