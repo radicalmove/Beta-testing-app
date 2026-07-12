@@ -35,11 +35,13 @@ The delete icon has an accessible name and still requires confirmation that the 
 - Only the original thread author can edit. LD/DCD/admin users may delete but cannot rewrite another person's observation.
 - Visibility and course access are checked before authorship, returning nondisclosing `404` for inaccessible/cross-course threads and `403` for a visible non-author.
 - The update changes `body` and `updated_at`. It does not alter author, category, location, replies, status or shares.
+- PATCH locks the comment row. Concurrent author edits serialize and intentionally use last-committed-write-wins semantics; the response returns the authoritative body and `updated_at`. An edit that obtains the lock after deletion returns the same nondisclosing `404` as any deleted thread.
 - The pencil opens an inline textarea with Save and Cancel; failures retain the draft.
 
 ## Replies and status
 
 - Existing reply and status services remain authoritative and course-membership scoped.
+- Each page-comment capability object includes `allowed_statuses`, an ordered list computed by the server containing the current status followed by valid next transitions for this viewer. Non-LD/DCD viewers receive only the current status. The extension renders exactly this list and never duplicates the transition graph.
 - The extension adds strict trusted-context background messages for reply and status mutations. A content script cannot supply a course id or role.
 - After every successful mutation, the extension refreshes the page comments and keeps the relevant marker/thread open where possible.
 
@@ -51,6 +53,13 @@ The delete icon has an accessible name and still requires confirmation that the 
 - The server exposes an exact course-scoped recipient list and replaces thread recipients transactionally. Cross-course, unapproved or non-SME ids are rejected without disclosing unrelated users.
 - The control displays selected SME names, not email addresses, after saving.
 
+Contracts:
+
+- `GET /api/comments/{comment_id}/sme-recipients` returns `{ "available": [{ "membership_id": <uuid>, "display_name": <non-empty string> }], "selected_membership_ids": [<uuid>] }`, ordered by case-folded display name then membership id. Maximum 200 available recipients and 200 selected ids.
+- `PUT /api/comments/{comment_id}/sme-recipients` accepts exactly `{ "membership_ids": [<unique uuid>...] }` and returns the same representation. An empty list removes every SME share.
+- Both routes first enforce thread visibility and same-course approved LD/DCD membership. Missing/invisible/cross-course threads return nondisclosing `404`; a visible non-LD/DCD returns `403`; malformed, duplicate, over-limit, unapproved, non-SME or wrong-course memberships return `422` without disclosing their user details.
+- PUT locks the comment row and its current share rows, validates the complete replacement set, then adds/removes shares in one transaction. Concurrent replacements serialize; the last committed complete set wins. Deletion wins by causing a waiting replacement to return `404`.
+
 ## Identity and persistent sign-in
 
 - The overlay always shows the authenticated user's display name (email fallback) and human-readable course role when connected.
@@ -59,12 +68,16 @@ The delete icon has an accessible name and still requires confirmation that the 
 - Device renewal failures distinguish transient service/network failures from terminal invalid/revoked credentials. Transient failures retain the device credential and retry; only authenticated terminal rejection removes it.
 - **Switch user** explicitly clears the current session/device/pending identity, then opens the course-scoped saved-reviewer chooser.
 
+Device renewal uses exact outcomes. `POST /api/access/renew` returns `200` with a new session and atomically rotated device credential; `401` means the presented device credential is expired, revoked, unknown, belongs to a revoked/rejected membership, or otherwise cannot authenticate and is terminal; `409` means a concurrent renewal already rotated this credential and the client must retry once using the newest credential found in trusted local storage; `429` and `5xx` are transient. Network errors, `409`, `429`, and `5xx` retain local credentials. Only `401` removes the matching credential. Rotation uses a database row lock and compare-and-swap generation; concurrent callers cannot revoke the newly issued credential. Local storage updates compare the credential used for the request before replacing/removing it, so an older failed request cannot overwrite a newer rotation.
+
 ## Comments list
 
 - The Comments button opens an ordered compact list of every comment visible to the current viewer on the current page.
 - Each item shows its sequence number, author, short body excerpt, status and anchor availability.
 - Activating an anchored item scrolls to and focuses its marker, then opens the thread. Activating an unavailable anchor opens the thread from the list without attempting a page jump.
 - The list does not show diagnostic terminology.
+
+Page comments are ordered by `created_at` ascending and comment UUID ascending as the deterministic tie-breaker. `Comment x of y` uses that exact visible list. Creation, deletion, SME recipient changes, and any visibility refresh immediately rebuild the list and numbering; editing, replies and status changes retain the existing order.
 
 ## Categories
 
