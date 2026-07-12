@@ -4,6 +4,7 @@ import { validateScreenshotDataUrl } from "./screenshot-validation.ts";
 import { reconcileOptionalContentScript } from "./optional-content-scripts";
 import { ReviewContextCache, validateContextMessage, type ReviewSender } from "./review-context.ts";
 import { ScreenshotCapabilities } from "./screenshot-capabilities.ts";
+import { PendingAccessStore, PendingApprovalManager } from "./pending-access.ts";
 
 declare const chrome: any;
 declare const __MOODLE_PATTERNS__: string[];
@@ -15,6 +16,16 @@ const DEFAULT_SERVICE_ORIGIN = __REVIEW_SERVICE_ORIGIN__;
 let optionalRegistration = Promise.resolve();
 const reviewContexts = new ReviewContextCache();
 const screenshotCapabilities = new ScreenshotCapabilities(chrome.storage.session);
+const pendingAccess = new PendingAccessStore(chrome.storage.local);
+const pendingApprovals = new PendingApprovalManager(
+  pendingAccess,
+  (record) => resumeReviewerMembership({ serviceOrigin: DEFAULT_SERVICE_ORIGIN, courseHandle: record.courseHandle, email: record.email, reconnectCode: record.reconnectCredential }),
+  async (access, record) => {
+    if (!access.session || !access.deviceCredential) return;
+    await chrome.storage.session.set(access.session);
+    await chrome.storage.local.set({ deviceCredential: access.deviceCredential, deviceCourseHandle: record.courseHandle, reviewerEmail: record.email });
+  },
+);
 let renewalPromise: Promise<string | undefined> | undefined;
 void chrome.storage.local.setAccessLevel?.({ accessLevel: "TRUSTED_CONTEXTS" }).catch(() => undefined);
 void screenshotCapabilities.cleanup().catch((error: Error) => console.error("Unable to clean screenshot capabilities", error));
@@ -128,8 +139,17 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       if (access.session && access.deviceCredential) {
         await chrome.storage.session.set(access.session);
         await chrome.storage.local.set({ deviceCredential: access.deviceCredential, deviceCourseHandle: value.course_handle, reviewerEmail: value.email });
+      } else if (access.state === "pending" && access.reconnectCode) {
+        await pendingAccess.save({ courseHandle: value.course_handle as string, email: value.email as string, reconnectCredential: access.reconnectCode });
       }
-      return { state: access.state, role: access.role, reconnect_code: access.reconnectCode };
+      return { state: access.state, role: access.role };
+    })();
+  } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "CHECK_PENDING_REVIEW_ACCESS") {
+    operation = (async () => {
+      if (!await authorizeResolveSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) })) throw new Error("Unauthorized access sender");
+      const value = message as { type?: unknown; course_handle?: unknown };
+      if (Object.keys(value).sort().join(",") !== "course_handle,type" || typeof value.course_handle !== "string") throw new Error("Invalid pending access check");
+      return pendingApprovals.check(value.course_handle);
     })();
   } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "RESUME_REVIEW_ACCESS") {
     operation = (async () => {

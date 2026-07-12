@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { PendingAccessStore } from "../src/pending-access.ts";
+import { PendingAccessStore, PendingApprovalManager } from "../src/pending-access.ts";
 
 class MemoryStorage {
   values: Record<string, unknown> = {};
@@ -48,4 +48,27 @@ test("pending access fails closed when trusted storage cannot be established", a
   const store = new PendingAccessStore(storage);
   await assert.rejects(store.get(course), /trusted storage/i);
   await assert.rejects(store.save({ courseHandle: course, email: "sme@example.test", reconnectCredential: "AAAAA-BBBBB-CCCCC-DDDDD" }), /trusted storage/i);
+});
+
+test("approval checks coalesce and consume hidden access only after successful resume", async () => {
+  const storage = new MemoryStorage(); const store = new PendingAccessStore(storage);
+  await store.save({ courseHandle: course, email: "sme@example.test", reconnectCredential: "AAAAA-BBBBB-CCCCC-DDDDD" });
+  let resumes = 0; let finish!: (value: any) => void;
+  const pending = new Promise<any>((resolve) => { finish = resolve; });
+  const connected: any[] = [];
+  const manager = new PendingApprovalManager(store, async (record) => { resumes += 1; assert.equal(record.reconnectCredential, "AAAAA-BBBBB-CCCCC-DDDDD"); return pending; }, async (access) => { connected.push(access); });
+  const first = manager.check(course); const second = manager.check(course);
+  finish({ state: "approved", session: { apiToken: "token", expiresAt: 10 }, deviceCredential: "device" });
+  assert.deepEqual(await Promise.all([first, second]), [{ state: "connected" }, { state: "connected" }]);
+  assert.equal(resumes, 1); assert.equal(connected.length, 1); assert.equal(await store.get(course), undefined);
+});
+
+test("approval check keeps hidden access while membership is pending or temporarily unavailable", async () => {
+  for (const outcome of [{ state: "pending" }, new Error("Unable to verify reviewer access")]) {
+    const storage = new MemoryStorage(); const store = new PendingAccessStore(storage);
+    await store.save({ courseHandle: course, email: "sme@example.test", reconnectCredential: "AAAAA-BBBBB-CCCCC-DDDDD" });
+    const manager = new PendingApprovalManager(store, async () => { if (outcome instanceof Error) throw outcome; return outcome as any; }, async () => undefined);
+    assert.deepEqual(await manager.check(course), { state: "pending" });
+    assert.ok(await store.get(course));
+  }
 });

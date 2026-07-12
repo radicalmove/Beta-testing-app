@@ -61,3 +61,39 @@ export class PendingAccessStore {
     if (uuid.test(courseHandle.trim())) await this.storage.remove(keyFor(courseHandle.trim().toLowerCase()));
   }
 }
+
+type ResumedAccess = { state: string; session?: { apiToken: string; expiresAt: number }; deviceCredential?: string };
+type ApprovalState = { state: "none" | "pending" | "connected" };
+
+export class PendingApprovalManager {
+  private readonly inFlight = new Map<string, Promise<ApprovalState>>();
+  private readonly store: PendingAccessStore;
+  private readonly resume: (record: PendingAccess) => Promise<ResumedAccess>;
+  private readonly connect: (access: ResumedAccess, record: PendingAccess) => Promise<void>;
+  constructor(
+    store: PendingAccessStore,
+    resume: (record: PendingAccess) => Promise<ResumedAccess>,
+    connect: (access: ResumedAccess, record: PendingAccess) => Promise<void>,
+  ) { this.store = store; this.resume = resume; this.connect = connect; }
+
+  check(courseHandle: string): Promise<ApprovalState> {
+    const key = courseHandle.trim().toLowerCase();
+    const current = this.inFlight.get(key);
+    if (current) return current;
+    const operation = this.run(key).finally(() => this.inFlight.delete(key));
+    this.inFlight.set(key, operation);
+    return operation;
+  }
+
+  private async run(courseHandle: string): Promise<ApprovalState> {
+    const record = await this.store.get(courseHandle);
+    if (!record) return { state: "none" };
+    try {
+      const access = await this.resume(record);
+      if (!access.session || !access.deviceCredential) return { state: "pending" };
+      await this.connect(access, record);
+      await this.store.remove(courseHandle);
+      return { state: "connected" };
+    } catch { return { state: "pending" }; }
+  }
+}
