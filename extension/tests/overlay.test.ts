@@ -251,6 +251,19 @@ test("course access form restores saved reviewers without asking them for anothe
   assert.equal(existingUses, 1);
 });
 
+test("approved course-team members can sign in without an invitation", async () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  let teamSignIns = 0;
+  mountReviewOverlay(document, context, "signed-out", { onAccessSubmit: async () => ({ status: "signed-out" }), onAuthenticate: async () => { teamSignIns += 1; return { status: "connected" }; } });
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  shadow.querySelector<HTMLElement>('[data-action="authenticate"]')!.click();
+  const form = shadow.querySelector<HTMLFormElement>("[data-access-form]")!;
+  assert.match(form.textContent!, /Course team sign in/);
+  form.querySelector<HTMLElement>("[data-team-sign-in]")!.click(); await tick();
+  assert.equal(teamSignIns, 1);
+  assert.match(shadow.querySelector("[data-status-message]")!.textContent!, /Connected/);
+});
+
 test("pending approval uses a direct Check approval action", async () => {
   const window = new Window(); const document = window.document as unknown as Document;
   let checks = 0;
