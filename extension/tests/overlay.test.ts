@@ -160,7 +160,7 @@ test("connected status stays textual with a decorative green indicator", () => {
 test("signed-out, pending, and offline states expose deterministic accessible controls", () => {
   for (const [status, label, action] of [
     ["signed-out", "Signed out", "Sign in"],
-    ["pending", "Account awaiting approval", "Retry"],
+    ["pending", "Waiting for approval — you can leave this page open or return later.", "Check approval"],
     ["offline", "Service unavailable—retry", "Retry"],
   ] as const) {
     const window = new Window();
@@ -220,24 +220,35 @@ test("successful authentication moves focus to the first review control", async 
   assert.match(shadow.querySelector('[aria-live="polite"]')!.textContent!, /Connected/);
 });
 
-test("course access form supports new and existing reviewers without listing identities", async () => {
+test("course access form asks for one invitation code and never exposes reconnect modes", async () => {
   const window = new Window(); const document = window.document as unknown as Document;
   const submitted: any[] = [];
-  mountReviewOverlay(document, context, "signed-out", { onAccessSubmit: async (input) => { submitted.push(input); return { status: "connected", reconnectCode: "AAAAA-BBBBB-CCCCC-DDDDD" }; } });
+  mountReviewOverlay(document, context, "signed-out", { onAccessSubmit: async (input) => { submitted.push(input); return { status: "connected" }; } });
   const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   shadow.querySelector<HTMLElement>('[data-action="authenticate"]')!.click();
   const form = shadow.querySelector<HTMLFormElement>("[data-access-form]")!;
   assert.ok(form);
-  assert.equal(form.textContent?.includes("New reviewer"), true);
-  assert.equal(form.textContent?.includes("Existing reviewer"), true);
+  assert.doesNotMatch(form.textContent!, /New reviewer|Existing reviewer|reconnect/i);
+  assert.match(form.textContent!, /Invitation code/);
   assert.equal(shadow.querySelectorAll("[data-reviewer-name]").length, 0);
   assert.ok(form.querySelector('[name="displayName"]'));
   assert.ok(form.querySelector('[name="email"]'));
   assert.ok(form.querySelector('[name="role"]'));
   assert.ok(form.querySelector('[name="code"]'));
-  shadow.querySelector<HTMLElement>('[data-mode="existing"]')!.click();
-  assert.equal(shadow.querySelector<HTMLElement>("[data-code-label]")!.textContent, "Personal reconnect code");
+  assert.equal(form.querySelectorAll('[name="code"]').length, 1);
   assert.equal(submitted.length, 0);
+});
+
+test("pending approval uses a direct Check approval action", async () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  let checks = 0;
+  mountReviewOverlay(document, context, "pending", { onCheckApproval: async () => { checks += 1; return { status: "connected", message: "Approved — connected" }; } });
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const check = shadow.querySelector<HTMLElement>('[data-action="authenticate"]')!;
+  assert.equal(check.textContent, "Check approval");
+  check.click(); await tick();
+  assert.equal(checks, 1);
+  assert.match(shadow.querySelector("[data-status-message]")!.textContent!, /Approved — connected/);
 });
 
 test("comments count follows visible top-level threads", () => {

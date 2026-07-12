@@ -5,7 +5,7 @@ declare const __BUILD_COMMIT__: string;
 declare const chrome: any;
 
 import { canonicalCourseUrlFromDocument, courseTitleFromDocument, detectCourseContext, explicitActivityIdFromDocument, explicitCourseIdFromDocument, type CourseContext } from "./course-context.ts";
-import { mountReviewOverlay, type BuildDiagnostics, type ConnectionStatus, type ReviewOverlay } from "./overlay/root.ts";
+import { mountReviewOverlay, type AuthenticationOutcome, type BuildDiagnostics, type ConnectionStatus, type ReviewOverlay } from "./overlay/root.ts";
 import type { PageComment } from "./background-bridge.ts";
 
 const MARKER = "data-moodle-review-extension";
@@ -165,20 +165,39 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
   let courseHandle: string | undefined;
   const courseIds = new Map<string, string>();
   const send = <T>(message: unknown) => new Promise<T>((resolve, reject) => runtime.sendMessage(message, (response) => response?.ok ? resolve(response.data as T) : reject(new Error(response?.error ?? "Review service unavailable"))));
+  let lastSignature = "";
+  let approvalCheck: Promise<AuthenticationOutcome> | undefined;
+  let approvalTimer: number | undefined;
+  let stopped = false;
   let commentSequence = 0;
   let overlay: ReviewOverlay;
+  const waitingForApproval = "Waiting for approval — you can leave this page open or return later.";
+  const checkPendingApproval = (): Promise<AuthenticationOutcome> => {
+    if (!courseHandle) return Promise.resolve({ status: "signed-out", message: "Enter your invitation code to join this course review." });
+    if (approvalCheck) return approvalCheck;
+    approvalCheck = send<{ state: string }>({ type: "CHECK_PENDING_REVIEW_ACCESS", course_handle: courseHandle }).then((response) => {
+      if (response.state === "connected") { lastSignature = ""; refresh(); return { status: "connected" as const, message: "Approved — connected" }; }
+      if (response.state === "pending") return { status: "pending" as const, message: waitingForApproval };
+      return { status: "signed-out" as const, message: "Enter your invitation code to join this course review." };
+    }).catch(() => ({ status: "pending" as const, message: waitingForApproval })).finally(() => { approvalCheck = undefined; });
+    return approvalCheck;
+  };
+  const clearApprovalTimer = () => { if (approvalTimer !== undefined) targetWindow.clearTimeout(approvalTimer); approvalTimer = undefined; };
+  const scheduleApprovalCheck = () => { clearApprovalTimer(); if (stopped) return; approvalTimer = targetWindow.setTimeout(async () => { approvalTimer = undefined; if (targetDocument.hidden) { scheduleApprovalCheck(); return; } const outcome = await checkPendingApproval(); overlay.update(context, outcome.status); if (outcome.status === "pending") scheduleApprovalCheck(); }, 10_000); };
+  const onVisibility = () => { if (!targetDocument.hidden && courseHandle) void checkPendingApproval().then((outcome) => { overlay.update(context, outcome.status); if (outcome.status === "pending") scheduleApprovalCheck(); }); };
+  targetDocument.addEventListener("visibilitychange", onVisibility);
   const loadPageComments = async (pageUrl: string) => { const sequence = ++commentSequence; overlay.setPageComments([]); try { const comments = await send<PageComment[]>({ type: "LIST_PAGE_COMMENTS", page_url: pageUrl }); if (sequence === commentSequence && context.page_url === pageUrl) overlay.setPageComments(comments); } catch { if (sequence === commentSequence) overlay.setPageComments([]); } };
   overlay = mountReviewOverlay(targetDocument, context, "connecting", { useAccessForm: () => Boolean(courseHandle), onAccessSubmit: async (input) => {
     if (!courseHandle) throw new Error("Course not enabled for review");
-    const response = await send<{ state: string; reconnect_code?: string }>(input.mode === "new" ? { type: "REDEEM_REVIEW_ACCESS", course_handle: courseHandle, display_name: input.displayName, email: input.email, role: input.role, invitation_code: input.code } : { type: "RESUME_REVIEW_ACCESS", course_handle: courseHandle, email: input.email, reconnect_code: input.code });
-    if (response.state === "pending") return { status: "pending", message: "Access awaiting approval", reconnectCode: response.reconnect_code };
+    const response = await send<{ state: string }>({ type: "REDEEM_REVIEW_ACCESS", course_handle: courseHandle, display_name: input.displayName, email: input.email, role: input.role, invitation_code: input.code });
+    if (response.state === "pending") { scheduleApprovalCheck(); return { status: "pending", message: waitingForApproval }; }
     lastSignature = ""; refresh();
-    return { status: "connected", reconnectCode: response.reconnect_code };
-  }, onAuthenticate: () => new Promise((resolve) => {
+    return { status: "connected" };
+  }, onCheckApproval: checkPendingApproval, onAuthenticate: () => new Promise((resolve) => {
     runtime.sendMessage({ type: "AUTHENTICATE" }, (response) => {
       if (!response?.ok) {
         if ((response?.status as string | undefined) === "cancelled") resolve({ status: "signed-out", message: "Sign-in cancelled" });
-        else if (response?.status === "pending") resolve({ status: "pending", message: "Account awaiting approval" });
+        else if (response?.status === "pending") resolve({ status: "pending", message: waitingForApproval });
         else if (response?.status === "offline") resolve({ status: "offline", message: "Service unavailable—retry" });
         else resolve({ status: "signed-out", message: "Sign-in failed—try again" });
         return;
@@ -196,7 +215,6 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
     if (context.page_url === contextSnapshot.page_url) void loadPageComments(context.page_url);
     return saved;
   }, uploadScreenshot: (commentId, dataUrl) => send({ type: "UPLOAD_SCREENSHOT", comment_id: commentId, data_url: dataUrl }), cancelScreenshot: (commentId) => send({ type: "CANCEL_SCREENSHOT", comment_id: commentId }) }, buildDiagnostics);
-  let lastSignature = "";
   let requestSequence = 0;
 
   const refresh = () => {
@@ -228,6 +246,7 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
         if (moodleOrigin) runtime.sendMessage({ type: "LOOKUP_REVIEW_COURSE", moodle_origin: moodleOrigin, moodle_course_id: context.moodle_course_id }, (lookup) => {
           const found = lookup?.data as { course_handle?: unknown } | undefined;
           courseHandle = lookup?.ok && typeof found?.course_handle === "string" ? found.course_handle : undefined;
+          if (courseHandle) void checkPendingApproval().then((outcome) => { if (outcome.status !== "signed-out") { overlay.update(context, outcome.status); if (outcome.status === "pending") scheduleApprovalCheck(); } });
           if (!lookup?.ok && response?.status === "signed-out" && !response.error?.includes("session expired")) overlay.update(context, "offline");
         });
       }
@@ -253,7 +272,7 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
   const onFrameReady = (event: MessageEvent) => { if (event.data?.type === "MOODLE_REVIEW_FRAME_READY") checkFrames(); };
   targetWindow.addEventListener("message", onFrameReady);
   refresh();
-  return () => { cancelTimeout(fallbackTimer); cancelTimeout(poll); cancelTimeout(latePoll); targetWindow.removeEventListener("message", onFrameReady); for (const eventName of ["popstate", "hashchange", "moodle-review:navigate"]) targetWindow.removeEventListener(eventName, clearNavigatedPage); lifecycle.teardown(); overlay.destroy(); };
+  return () => { stopped = true; clearApprovalTimer(); targetDocument.removeEventListener("visibilitychange", onVisibility); cancelTimeout(fallbackTimer); cancelTimeout(poll); cancelTimeout(latePoll); targetWindow.removeEventListener("message", onFrameReady); for (const eventName of ["popstate", "hashchange", "moodle-review:navigate"]) targetWindow.removeEventListener(eventName, clearNavigatedPage); lifecycle.teardown(); overlay.destroy(); };
 }
 
 type Runtime = { sendMessage(message: unknown, callback: (response: { ok?: boolean; status?: ConnectionStatus; error?: string; data?: unknown } | undefined) => void): void };

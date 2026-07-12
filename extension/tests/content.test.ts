@@ -208,11 +208,35 @@ test("sign in sends one authenticate per activation and refreshes course and com
   cleanup();
 });
 
+test("pending course access is checked automatically and connects without another code", async () => {
+  const window = new Window({ url: "https://my.uconline.ac.nz/course/view.php?id=896" });
+  window.document.title = "CRJU150";
+  let approved = false; let checks = 0;
+  const runtime = { sendMessage(message: any, callback: any) {
+    if (message.type === "RESOLVE_COURSE") callback(approved ? { ok: true, data: { id: "123e4567-e89b-12d3-a456-426614174000" } } : { ok: false, status: "signed-out", error: "Signed out" });
+    else if (message.type === "LOOKUP_REVIEW_COURSE") callback({ ok: true, data: { course_handle: "123e4567-e89b-12d3-a456-426614174000", title: "CRJU150" } });
+    else if (message.type === "CHECK_PENDING_REVIEW_ACCESS") { checks += 1; callback({ ok: true, data: { state: approved ? "connected" : "pending" } }); }
+    else callback({ ok: true, data: [] });
+  } };
+  const cleanup = startCourseReview(window as any, window.document as any, runtime);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const shadow = window.document.querySelector("#moodle-course-review-overlay")!.shadowRoot!;
+  assert.equal(checks, 1);
+  assert.match(shadow.querySelector("[data-status-message]")!.textContent!, /Waiting for approval/);
+  approved = true;
+  (shadow.querySelector('[data-action="authenticate"]') as unknown as HTMLElement).click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(checks, 2);
+  assert.match(shadow.querySelector("[data-status-message]")!.textContent!, /Connected/);
+  cleanup();
+});
+
 test("authentication maps cancellation, failure, pending, offline, and session expiry exactly", async () => {
   const cases = [
     [{ ok: false, status: "cancelled", error: "Authentication was cancelled" }, "Sign-in cancelled"],
     [{ ok: false, status: "failed", error: "Token exchange failed (500)" }, "Sign-in failed—try again"],
-    [{ ok: false, status: "pending", error: "Account pending approval" }, "Account awaiting approval"],
+    [{ ok: false, status: "pending", error: "Account pending approval" }, "Waiting for approval — you can leave this page open or return later."],
     [{ ok: false, status: "offline", error: "Network down" }, "Service unavailable—retry"],
   ] as const;
   for (const [authResponse, expected] of cases) {
@@ -222,7 +246,7 @@ test("authentication maps cancellation, failure, pending, offline, and session e
     const shadow = window.document.querySelector("#moodle-course-review-overlay")!.shadowRoot!; (shadow.querySelector('[data-action="authenticate"]') as unknown as HTMLElement).click(); await new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(shadow.querySelector("[data-status-message]")?.textContent, expected); cleanup();
   }
-  for (const [response, expected] of [[{ ok: false, status: "pending", error: "Account pending approval" }, "Account awaiting approval"], [{ ok: false, status: "offline", error: "Network down" }, "Service unavailable—retry"], [{ ok: false, status: "signed-out", error: "Signed out: session expired" }, "Session expired—sign in again"]] as const) {
+  for (const [response, expected] of [[{ ok: false, status: "pending", error: "Account pending approval" }, "Waiting for approval — you can leave this page open or return later."], [{ ok: false, status: "offline", error: "Network down" }, "Service unavailable—retry"], [{ ok: false, status: "signed-out", error: "Signed out: session expired" }, "Session expired—sign in again"]] as const) {
     const window = new Window({ url: "https://moodle.example.invalid/course/view.php?id=1" }); window.document.body.innerHTML = "<h1>Law</h1>";
     const cleanup = startCourseReview(window as any, window.document as any, { sendMessage: (_message: any, callback: any) => callback(response) }); await new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(window.document.querySelector("#moodle-course-review-overlay")!.shadowRoot!.querySelector("[data-status-message]")?.textContent, expected); cleanup();
