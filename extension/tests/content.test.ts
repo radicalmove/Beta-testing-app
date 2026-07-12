@@ -99,7 +99,7 @@ test("content passes version diagnostics into the mounted overlay", () => {
   } };
   const cleanup = startCourseReview(window as any, window.document as any, runtime, { version: "0.2.0", buildCommit: "abc1234def567890abc1234def567890abc1234d" });
   const shadow = window.document.querySelector("#moodle-course-review-overlay")!.shadowRoot!;
-  assert.equal(shadow.querySelector("[data-pilot-version]")?.getAttribute("aria-label"), "Pilot version 0.2.0");
+  assert.equal(shadow.querySelector('[data-action="help"]'), null);
   assert.equal(shadow.querySelector("[data-build-diagnostic]")?.textContent, "Version 0.2.0 · build abc1234");
   cleanup();
 });
@@ -152,7 +152,7 @@ test("embedded review obtains trusted course context and updates its hash page i
   const cleanup = startEmbeddedReview(window as unknown as globalThis.Window & typeof globalThis, window.document as unknown as Document, runtime);
   await new Promise((resolve) => setTimeout(resolve, 0));
   const host = window.document.querySelector("#moodle-course-review-overlay") as unknown as HTMLElement;
-  assert.match(host.shadowRoot!.textContent!, /Course: Law/);
+  assert.match(host.shadowRoot!.querySelector(".course")!.textContent!, /^Law$/);
   assert.match(host.shadowRoot!.textContent!, /Embedded activity · Lesson 1/);
   window.location.hash = "/lesson/2"; window.document.title = "Lesson 2"; window.dispatchEvent(new window.Event("hashchange"));
   await new Promise((resolve) => setTimeout(resolve, 140));
@@ -252,7 +252,7 @@ test("counts only inaccessible iframe DOMs", () => {
   assert.equal(countInaccessibleFrames(window.document as unknown as Document), 1);
 });
 
-test("mixed ready and inaccessible frames keep fallback and persist the exact label in page title", async () => {
+test("mixed ready and inaccessible frames keep a passive embedded activity notice", async () => {
   const window = new Window({ url: "https://moodle.example.invalid/course/view.php?id=1" });
   window.document.title = "Week 2";
   window.document.body.innerHTML = "<h1>Week 2</h1><iframe id=accessible></iframe><iframe id=blocked></iframe>";
@@ -268,18 +268,7 @@ test("mixed ready and inaccessible frames keep fallback and persist the exact la
   const cleanup = startCourseReview(window as unknown as globalThis.Window & typeof globalThis, window.document as unknown as Document, runtime);
   await new Promise((resolve) => setTimeout(resolve, 280));
   const shadow = window.document.querySelector("#moodle-course-review-overlay")!.shadowRoot! as unknown as ShadowRoot;
-  assert.match(shadow.textContent!, /embedded content—frame access unavailable/);
-  (shadow.querySelector("[data-parent-pin]") as HTMLElement).click();
-  const target = window.document.querySelector("h1") as unknown as HTMLElement;
-  target.getBoundingClientRect = () => ({ x: 0, y: 0, left: 0, top: 0, right: 100, bottom: 100, width: 100, height: 100, toJSON: () => ({}) });
-  window.document.elementFromPoint = (() => target) as unknown as typeof window.document.elementFromPoint;
-  window.document.dispatchEvent(new window.PointerEvent("pointerdown", { clientX: 1, clientY: 1, bubbles: true }));
-  const textarea = shadow.querySelector("textarea") as HTMLTextAreaElement;
-  textarea.value = "User text remains unchanged";
-  (shadow.querySelector("[data-save]") as HTMLElement).click();
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  const create = messages.find((message) => message.type === "CREATE_COMMENT");
-  assert.equal(create.payload.body, "User text remains unchanged");
-  assert.equal(create.payload.page_title, "Week 2 — embedded content—frame access unavailable");
+  assert.match(shadow.textContent!, /Embedded activity detected/);
+  assert.doesNotMatch(shadow.textContent!, /Place parent-page pin/);
   cleanup();
 });

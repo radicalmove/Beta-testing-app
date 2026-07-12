@@ -8,14 +8,14 @@ test("overlay markup is a compact accessible toolbar with course and connection 
   const markup = createOverlayMarkup({ courseTitle: "Criminal Law", pageTitle: "Week 2", status: "connected" });
   assert.match(markup, /role="toolbar"/);
   assert.match(markup, /aria-label="Course review tools"/);
-  assert.match(markup, /Highlight text/);
-  assert.match(markup, /Add pin/);
+  assert.match(markup, /Add comment/);
+  assert.match(markup, /Comments \(/); assert.match(markup, /data-comment-count>0/);
+  assert.match(markup, /Help and instructions/);
   assert.match(markup, /Criminal Law/);
   assert.match(markup, /Week 2/);
   assert.match(markup, /Connected/);
-  assert.match(markup, />Course:<\/span>/);
-  assert.match(markup, />Page:<\/span>/);
-  assert.match(markup, />Connection:<\/span>/);
+  assert.doesNotMatch(markup, />Course:<\/span>/);
+  assert.doesNotMatch(markup, />Page:<\/span>/);
   assert.match(createOverlayMarkup({ courseTitle: "Law", pageTitle: "Week 2", status: "pending" }), /Account awaiting approval/);
 });
 
@@ -25,10 +25,11 @@ const storedHighlight = { id: "00000000-0000-4000-8000-000000000001", body: "Cla
 test("mounted Shadow DOM traps focus, closes on Escape, and returns focus", () => {
   const window = new Window();
   const document = window.document as unknown as Document;
+  window.document.body.innerHTML = "<p>Selected words</p>"; const range = window.document.createRange(); range.selectNodeContents(window.document.querySelector("p")!.firstChild!); window.getSelection()!.addRange(range);
   mountReviewOverlay(document, context);
   const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
-  const trigger = shadow.querySelector<HTMLElement>('[data-action="highlight"]')!;
-  trigger.click();
+  const trigger = shadow.querySelector<HTMLElement>('[data-action="add-comment"]')!;
+  trigger.click(); shadow.querySelector<HTMLElement>('[data-choice="text"]')!.click();
   const textarea = shadow.querySelector<HTMLElement>("textarea")!;
   const cancel = shadow.querySelector<HTMLElement>("[data-cancel]")!;
   const save = shadow.querySelector<HTMLElement>(".primary")!;
@@ -46,10 +47,11 @@ test("mounted Shadow DOM traps focus, closes on Escape, and returns focus", () =
 test("updating identity and status preserves an open typed dialog, selection, and focus", () => {
   const window = new Window();
   const document = window.document as unknown as Document;
+  window.document.body.innerHTML = "<p>Selected words</p>"; const range = window.document.createRange(); range.selectNodeContents(window.document.querySelector("p")!.firstChild!); window.getSelection()!.addRange(range);
   const overlay = mountReviewOverlay(document, context);
   const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
-  const trigger = shadow.querySelector<HTMLElement>('[data-action="highlight"]')!;
-  trigger.click();
+  const trigger = shadow.querySelector<HTMLElement>('[data-action="add-comment"]')!;
+  trigger.click(); shadow.querySelector<HTMLElement>('[data-choice="text"]')!.click();
   const textarea = shadow.querySelector<HTMLTextAreaElement>("textarea")!;
   textarea.value = "Keep this draft";
   textarea.setSelectionRange(5, 9);
@@ -129,7 +131,7 @@ test("frame fallback does not replace loaded comments when shown and hidden", ()
   overlay.setPageComments([storedHighlight]); overlay.showFrameFallback();
   const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   assert.match(shadow.querySelector(".panel")!.textContent!, /Clarify this/);
-  assert.match(shadow.querySelector("[data-frame-fallback]")!.textContent!, /frame access unavailable/);
+  assert.match(shadow.querySelector("[data-frame-fallback]")!.textContent!, /Embedded activity detected/);
   overlay.hideFrameFallback();
   assert.match(shadow.querySelector(".panel")!.textContent!, /Clarify this/);
   assert.equal((shadow.querySelector("[data-frame-fallback]") as HTMLElement).hidden, true);
@@ -173,7 +175,7 @@ test("saves against the composer snapshot before offering a separate retryable s
     uploadScreenshot: async () => { calls.push("upload"); },
   });
   const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
-  shadow.querySelector<HTMLElement>('[data-action="highlight"]')!.click();
+  shadow.querySelector<HTMLElement>('[data-action="add-comment"]')!.click(); shadow.querySelector<HTMLElement>('[data-choice="text"]')!.click();
   (shadow.querySelector("textarea") as HTMLTextAreaElement).value = "Keep original";
   (shadow.querySelector("[data-screenshot]") as HTMLInputElement).checked = true;
   overlay.update({ ...context, page_url: "https://learn.example/mod/page/view.php?id=9", pageTitle: "Week 9" }, "connected");

@@ -8,7 +8,7 @@ import type { PageComment } from "../background-bridge.ts";
 export const OVERLAY_HOST_ID = "moodle-course-review-overlay";
 export const overlayStyles = `:host{--review-red:#d73b3d;--review-navy:#000;--review-pale:#f2f2f2;--review-line:#d8d8d8;all:initial;position:fixed!important;inset:auto!important;z-index:2147483647!important;isolation:isolate;display:block!important;color:#000;font:14px/1.4 Poppins,Arial,sans-serif}.shell{box-sizing:border-box;position:fixed;right:16px;bottom:16px;z-index:2147483647;max-width:min(560px,calc(100vw - 32px));background:#fff;border:3px solid var(--review-red);border-radius:8px;box-shadow:0 8px 24px #00000038;overflow:hidden}.toolbar{display:flex;align-items:center;gap:8px;padding:7px 8px;background:#000;color:#fff}.identity{min-width:9rem;padding:0 5px;flex:1}.course,.page{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.course{font-weight:700}.page{font-size:12px;color:#fff}.pilot-version{font-size:12px;font-weight:700;white-space:nowrap}button,select,textarea{box-sizing:border-box;font:inherit}button{appearance:none;min-height:36px;border:1px solid #b9b9b9;border-radius:5px;background:#f2f2f2;color:#000;font-weight:650;padding:7px 9px;cursor:pointer}button:hover{background:#fff}.toolbar button{border-color:var(--review-red);background:var(--review-red);color:#fff}.toolbar button:hover,.primary:hover{background:#b52d30;border-color:#b52d30}button:focus-visible,textarea:focus-visible,select:focus-visible,input:focus-visible,[data-build-diagnostic]:focus-visible{outline:3px solid #ffd54f;outline-offset:2px;box-shadow:0 0 0 5px #000}.icon{padding:7px 10px}.status{display:flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap}.dot{width:8px;height:8px;flex:0 0 8px;border:1px solid #fff;border-radius:50%;background:#ffd54f}.connected .dot{background:#16833b}.signed-out .dot,.offline .dot{background:var(--review-red)}.panel,[data-unresolved],[data-frame-fallback]{padding:10px;background:#fff;border-top:1px solid var(--review-line)}.build-diagnostic{margin:0 0 8px;padding:6px;background:#fff;color:#000;border:1px solid var(--review-line);font-size:12px}.panel[hidden],[data-unresolved][hidden]{display:none}[data-unresolved] h2{margin:0;font-size:14px}[data-unresolved] ul{display:grid;gap:6px;margin:6px 0 0;padding:0;list-style:none}[data-unresolved] li{display:flex;align-items:center;justify-content:space-between;gap:8px}.backdrop{position:fixed;inset:0;background:#0009;display:grid;place-items:center;z-index:2147483647}.dialog{box-sizing:border-box;width:min(420px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto;background:#fff;border:1px solid var(--review-line);border-radius:8px;padding:18px;box-shadow:0 8px 28px #0005}.dialog h2{margin:0 0 10px;color:#000;font-size:18px;border-left:4px solid var(--review-red);padding-left:8px}.dialog textarea{width:100%;min-height:110px;border:1px solid #777;border-radius:5px;padding:8px}.field{display:grid;gap:4px;margin-top:9px}.preview{padding:8px;border:1px solid var(--review-line);border-radius:5px;background:var(--review-pale);font-size:12px}.error{color:#a51d24}.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}.primary{background:var(--review-red);color:#fff;border-color:var(--review-red)}@media(max-width:420px){.shell{right:8px;bottom:8px;width:calc(100vw - 16px);max-width:none}.toolbar{align-items:flex-start;flex-wrap:wrap}.identity{flex-basis:100%}.status{margin-right:auto}.dialog{width:calc(100vw - 16px);max-height:calc(100vh - 16px);padding:12px}.actions{flex-wrap:wrap}.actions button{flex:1 1 auto}}`;
 
-export const tealOverlayOverrides = `:host{--review-teal:#0f4c5c;--review-pale:#f3f7f8;--review-line:#bfd0d5;color:#102f38}.shell{border:4px solid var(--review-teal);border-radius:10px}.toolbar{background:var(--review-teal)}.panel,[data-unresolved],[data-frame-fallback]{background:var(--review-pale)}.dialog{border:4px solid var(--review-teal)}.dialog h2{color:var(--review-teal)}input,select{box-sizing:border-box;width:100%;min-height:38px;border:1px solid #78909a;border-radius:5px;padding:7px;font:inherit}.mode-tabs{display:flex;gap:8px}.mode-tabs [aria-pressed="true"]{background:var(--review-teal);border-color:var(--review-teal);color:#fff}.reconnect-code{display:block;padding:12px;background:var(--review-pale);border:2px dashed var(--review-teal);font:700 16px/1.4 ui-monospace,monospace;letter-spacing:.04em}`;
+export const tealOverlayOverrides = `:host{--review-teal:#0f4c5c;--review-pale:#f3f7f8;--review-line:#bfd0d5;color:#102f38;font:16px/1.5 Poppins,Arial,sans-serif}.shell{width:min(600px,calc(100vw - 32px));max-width:600px;border:4px solid var(--review-teal);border-radius:10px}.toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;background:var(--review-teal);padding:12px}.identity{min-width:0}.course{font-size:16px}.page{font-size:14px}.status{font-size:14px}.toolbar-actions{display:grid;grid-template-columns:minmax(0,1fr) auto 44px;gap:8px;align-items:center}.toolbar-actions button,button{min-height:44px}.toolbar-actions [data-action="add-comment"]{background:var(--review-red);border-color:var(--review-red);color:#fff}.toolbar-actions [data-action="panel"],.toolbar-actions [data-action="help"]{background:#fff;color:var(--review-teal);border-color:#fff}.panel,[data-unresolved],[data-frame-fallback]{background:var(--review-pale);padding:16px}.panel-title{margin:0 0 12px;font-size:18px}.dialog{border:4px solid var(--review-teal)}.dialog h2{color:var(--review-teal);font-size:20px}input,select{box-sizing:border-box;width:100%;min-height:44px;border:1px solid #78909a;border-radius:5px;padding:7px;font:inherit}.mode-tabs{display:flex;gap:8px}.mode-tabs [aria-pressed="true"]{background:var(--review-teal);border-color:var(--review-teal);color:#fff}.reconnect-code{display:block;padding:12px;background:var(--review-pale);border:2px dashed var(--review-teal);font:700 16px/1.4 ui-monospace,monospace;letter-spacing:.04em}@media(max-width:600px){.toolbar{grid-template-columns:1fr}.toolbar-actions{grid-template-columns:minmax(0,1fr) auto 44px}.shell{right:8px;bottom:8px;width:calc(100vw - 16px)}}@media(max-width:360px){.toolbar{padding:8px}.toolbar-actions{grid-template-columns:minmax(0,1fr) auto 44px;gap:6px}.comments-wide{display:none}.comments-short{display:inline}}`;
 
 export type ConnectionStatus = "connecting" | "connected" | "pending" | "signed-out" | "offline";
 const statusLabels: Record<ConnectionStatus, string> = { connecting: "Connecting", connected: "Connected", pending: "Account awaiting approval", "signed-out": "Signed out", offline: "Service unavailable—retry" };
@@ -17,8 +17,8 @@ const authActionLabels: Partial<Record<ConnectionStatus, string>> = { "signed-ou
 
 function createStateActions(status: ConnectionStatus): string {
   const action = authActionLabels[status];
-  const reviewControls = status === "connected" || status === "connecting" ? `<button type="button" data-action="highlight">Highlight text</button><button type="button" data-action="pin">Add pin</button><button class="icon" type="button" data-action="panel" aria-expanded="false" aria-label="Open review panel">☰</button>` : "";
-  return `<span data-auth-action>${action ? `<button type="button" data-action="authenticate">${action}</button>` : ""}</span><span data-review-controls>${reviewControls}</span>`;
+  const reviewControls = status === "connected" || status === "connecting" ? `<span class="toolbar-actions" data-review-controls><button type="button" data-action="add-comment">Add comment</button><button type="button" data-action="panel" aria-expanded="false"><span class="comments-wide">Comments (<span data-comment-count>0</span>)</span><span class="comments-short"><span data-comment-count-short>0</span> comments</span></button><button type="button" data-action="help" aria-label="Help and instructions">?</button></span>` : "";
+  return `<span data-auth-action>${action ? `<button type="button" data-action="authenticate">${action}</button>` : ""}</span>${reviewControls}`;
 }
 
 export type BuildDiagnostics = { version: string; buildCommit: string };
@@ -26,7 +26,7 @@ const defaultBuildDiagnostics: BuildDiagnostics = { version: "0.0.0", buildCommi
 
 export function createOverlayMarkup(input: { courseTitle: string; pageTitle: string; status: ConnectionStatus } & Partial<BuildDiagnostics>): string {
   const { version, buildCommit } = { ...defaultBuildDiagnostics, ...input };
-  return `<section class="shell"><div class="toolbar" role="toolbar" aria-label="Course review tools"><div class="identity"><span class="course"><span class="label">Course:</span> ${escapeHtml(input.courseTitle)}</span><span class="page"><span class="label">Page:</span> ${escapeHtml(input.pageTitle)}</span></div><span class="pilot-version" data-pilot-version role="note" aria-label="Pilot version ${escapeHtml(version)}">Pilot v${escapeHtml(version)}</span><span class="status ${input.status}" data-auth-status aria-live="polite" aria-atomic="true"><span class="label">Connection:</span> <span class="dot" aria-hidden="true"></span><span data-status-message>${statusLabels[input.status]}</span></span>${createStateActions(input.status)}</div><div class="panel" hidden><p class="build-diagnostic" data-build-diagnostic tabindex="0">Version ${escapeHtml(version)} · build ${escapeHtml(buildCommit.slice(0, 7))}</p><div data-panel-content>No comments on this page yet.</div></div></section>`;
+  return `<section class="shell" tabindex="-1"><div class="toolbar" role="toolbar" aria-label="Course review tools"><div class="identity"><span class="course" title="${escapeHtml(input.courseTitle)}">${escapeHtml(input.courseTitle)}</span><span class="status ${input.status}" data-auth-status aria-live="polite" aria-atomic="true"><span class="dot" aria-hidden="true"></span><span data-status-message>${statusLabels[input.status]}</span></span></div>${createStateActions(input.status)}</div><div class="panel" hidden><h2 class="panel-title">${escapeHtml(input.pageTitle)}</h2><div data-panel-content>No comments on this page yet.</div></div><span data-build-info hidden>${escapeHtml(version)}|${escapeHtml(buildCommit.slice(0, 7))}</span></section>`;
 }
 
 export function handleDialogKey(input: { key: string; shiftKey: boolean; activeIndex: number; focusableCount: number }): { focusIndex: number; close: boolean } {
@@ -49,11 +49,11 @@ export function mountReviewOverlay(document: Document, context: CourseContext, s
   const host = document.createElement("div");
   host.id = OVERLAY_HOST_ID;
   host.setAttribute("data-moodle-review-ui", "true");
-  host.style.cssText = "all:initial;position:fixed;z-index:2147483647;isolation:isolate;display:block;font-family:Poppins,Arial,sans-serif;font-size:14px;line-height:1.4;color:#000";
+  host.style.cssText = "all:initial;position:fixed;z-index:2147483647;isolation:isolate;display:block;font-family:Poppins,Arial,sans-serif;font-size:16px;line-height:1.5;color:#102f38";
   document.documentElement.append(host);
   const shadow = host.attachShadow({ mode: "open" });
   const style = document.createElement("style");
-  style.textContent = overlayStyles + tealOverlayOverrides;
+  style.textContent = overlayStyles + tealOverlayOverrides + `.comments-short{display:none}@media(max-width:360px){.comments-wide{display:none}.comments-short{display:inline}}.comment-choice{padding:16px;background:var(--review-pale);border-top:1px solid var(--review-line)}.comment-choice h2{margin:0 0 10px;font-size:18px}.comment-choice button{display:grid;width:100%;margin-top:8px;text-align:left}.comment-choice button span{font-size:14px;font-weight:400}.help-dialog ol{display:grid;gap:12px;padding-left:22px}.help-dialog li span{display:block;font-size:14px}.help-version{font-size:14px;color:#52666c}`;
   shadow.append(style);
   return createController(host, shadow, context, status, options, buildDiagnostics);
 }
@@ -67,7 +67,11 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   let returnFocus: HTMLElement | null = null;
   let previewCleanup: (() => void) | undefined;
   let pinListener: ((event: PointerEvent) => void) | undefined;
+  let areaKeyListener: ((event: KeyboardEvent) => void) | undefined;
+  let areaCandidates: HTMLElement[] = [];
+  let areaCandidateIndex = -1;
   let fallbackPin = false;
+  let frameUnavailable = false;
   let composerContext: CourseContext | undefined;
   let pendingScreenshotId: string | undefined;
   let storedAnchorCleanups: Array<() => void> = [];
@@ -80,7 +84,15 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   ownerDocument.defaultView?.addEventListener("resize", scheduleReposition);
   ownerDocument.defaultView?.addEventListener("scroll", scheduleReposition, true);
   const trackReposition = (reposition: () => void, marker: HTMLElement) => { repositioners.add(reposition); reposition(); storedAnchorCleanups.push(() => { repositioners.delete(reposition); marker.remove(); }); };
-  const cancelPin = (event: KeyboardEvent) => { if (event.key === "Escape" && pinListener) { ownerDocument.removeEventListener("pointerdown", pinListener, true); ownerDocument.removeEventListener("keydown", cancelPin, true); pinListener = undefined; fallbackPin = false; shadow.querySelector<HTMLElement>(".panel")!.hidden = true; returnFocus?.focus(); } };
+  const clearAreaSelection = () => {
+    ownerDocument.removeEventListener("pointerdown", pinListener!, true);
+    ownerDocument.removeEventListener("keydown", cancelPin, true);
+    if (areaKeyListener) ownerDocument.removeEventListener("keydown", areaKeyListener, true);
+    pinListener = undefined; areaKeyListener = undefined;
+    for (const candidate of areaCandidates) { candidate.style.removeProperty("outline"); candidate.style.removeProperty("outline-offset"); }
+    areaCandidates = []; areaCandidateIndex = -1;
+  };
+  const cancelPin = (event: KeyboardEvent) => { if (event.key === "Escape" && pinListener) { clearAreaSelection(); fallbackPin = false; shadow.querySelector<HTMLElement>(".panel")!.hidden = true; returnFocus?.focus(); } };
   const mount = () => {
     const style = shadow.querySelector("style");
     shadow.innerHTML = "";
@@ -92,9 +104,9 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   };
   const updateLabels = () => {
     const course = shadow.querySelector<HTMLElement>(".course");
-    const page = shadow.querySelector<HTMLElement>(".page");
-    if (course) course.textContent = `Course: ${context.title}${context.identityConfidence === "unconfirmed" ? " (unconfirmed course)" : ""}`;
-    if (page) page.textContent = `Page: ${context.pageTitle}`;
+    const page = shadow.querySelector<HTMLElement>(".panel-title");
+    if (course) { course.textContent = `${context.title}${context.identityConfidence === "unconfirmed" ? " (unconfirmed)" : ""}`; course.title = context.title; }
+    if (page) page.textContent = context.pageTitle;
     renderStateControls();
   };
   const renderStateControls = (message = statusLabels[status]) => {
@@ -122,7 +134,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
         const outcome = await options.onAuthenticate?.();
         if (attemptVersion !== stateVersion) return;
         status = outcome?.status ?? "signed-out"; authenticating = false; renderStateControls(outcome?.message);
-        if (status === "connected") shadow.querySelector<HTMLElement>('[data-action="highlight"]')?.focus();
+        if (status === "connected") shadow.querySelector<HTMLElement>('[data-action="add-comment"]')?.focus();
         else shadow.querySelector<HTMLElement>('[data-action="authenticate"]')?.focus();
       } catch {
         if (attemptVersion !== stateVersion) return;
@@ -144,6 +156,43 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   };
   const cleanupPreview = () => { previewCleanup?.(); previewCleanup = undefined; };
   const closeDialog = () => { if (pendingScreenshotId) void options.cancelScreenshot?.(pendingScreenshotId).catch(() => undefined); pendingScreenshotId = undefined; shadow.querySelector(".backdrop")?.remove(); composerContext = undefined; cleanupPreview(); fallbackPin = false; returnFocus?.focus(); };
+  const closeChoice = (restore = true) => { shadow.querySelector("[data-comment-choice]")?.remove(); if (restore) returnFocus?.focus(); };
+  const startAreaSelection = (trigger: HTMLElement) => {
+    closeChoice(false);
+    if (pinListener) clearAreaSelection();
+    returnFocus = trigger;
+    const panel = shadow.querySelector<HTMLElement>(".panel")!; panel.hidden = false;
+    shadow.querySelector<HTMLElement>("[data-panel-content]")!.textContent = "Click an area to mark it. Keyboard: use the arrow keys to choose an area, Enter to select, or Escape to cancel.";
+    const finish = (element: HTMLElement, x: number, y: number) => { const anchor = capturePinAnchor(element, x, y); if (!anchor) return; clearAreaSelection(); previewCleanup = renderPin(ownerDocument, anchor); openDialog(trigger, frameUnavailable ? "Comment on embedded content" : "Comment on an area", { anchor_type: "visual_pin", ...anchor }); };
+    pinListener = (pointer) => { const element = ownerDocument.elementFromPoint(pointer.clientX, pointer.clientY) as HTMLElement | null; if (!element || host.contains(element)) return; pointer.preventDefault(); pointer.stopPropagation(); finish(element, pointer.clientX, pointer.clientY); };
+    areaCandidates = Array.from(ownerDocument.querySelectorAll<HTMLElement>("main,article,section,h1,h2,h3,h4,h5,h6,p,li,a,button,img,video,input,select,textarea,[role]"))
+      .filter((element) => !host.contains(element) && element.getBoundingClientRect().width >= 24 && element.getBoundingClientRect().height >= 24).slice(0, 200);
+    const showCandidate = (next: number) => { if (!areaCandidates.length) return; if (areaCandidateIndex >= 0) { areaCandidates[areaCandidateIndex]?.style.removeProperty("outline"); areaCandidates[areaCandidateIndex]?.style.removeProperty("outline-offset"); } areaCandidateIndex = (next + areaCandidates.length) % areaCandidates.length; const candidate = areaCandidates[areaCandidateIndex]!; candidate.style.setProperty("outline", "4px solid #d73b3d", "important"); candidate.style.setProperty("outline-offset", "3px", "important"); candidate.scrollIntoView?.({ block: "nearest", inline: "nearest" }); };
+    areaKeyListener = (event) => { if (["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp"].includes(event.key)) { event.preventDefault(); event.stopPropagation(); showCandidate(areaCandidateIndex + (["ArrowLeft", "ArrowUp"].includes(event.key) ? -1 : 1)); } else if (event.key === "Enter" && areaCandidateIndex >= 0) { event.preventDefault(); event.stopPropagation(); const candidate = areaCandidates[areaCandidateIndex]!; const rect = candidate.getBoundingClientRect(); finish(candidate, rect.left + rect.width / 2, rect.top + rect.height / 2); } };
+    ownerDocument.addEventListener("pointerdown", pinListener, true); ownerDocument.addEventListener("keydown", cancelPin, true);
+    ownerDocument.addEventListener("keydown", areaKeyListener, true);
+  };
+  const openCommentChoice = (trigger: HTMLElement) => {
+    closeChoice(false); returnFocus = trigger;
+    const selection = ownerDocument.defaultView?.getSelection();
+    const selectedRange = selection?.rangeCount && !selection.isCollapsed ? selection.getRangeAt(0).cloneRange() : undefined;
+    const textAnchor = selectedRange ? captureTextAnchor(selectedRange, ownerDocument) : null;
+    const choice = ownerDocument.createElement("section"); choice.dataset.commentChoice = "true"; choice.className = "comment-choice"; choice.setAttribute("aria-label", "Choose how to add a comment");
+    choice.innerHTML = `<h2>Add a comment</h2><button type="button" data-choice="text"><strong>Comment on text</strong><span>Select words on the course page, then choose this option.</span></button><button type="button" data-choice="area"><strong>${frameUnavailable ? "Comment on embedded content" : "Comment on an area"}</strong><span>${frameUnavailable ? "Mark the area of the embedded activity your feedback relates to." : "Click the part of the page your feedback relates to."}</span></button><button type="button" data-choice="cancel">Cancel</button>`;
+    choice.addEventListener("keydown", (event) => { if (event.key === "Escape") { event.preventDefault(); closeChoice(); } });
+    choice.querySelector('[data-choice="cancel"]')?.addEventListener("click", () => closeChoice());
+    choice.querySelector('[data-choice="text"]')?.addEventListener("click", () => { if (!textAnchor || !selectedRange) { closeChoice(false); const panel = shadow.querySelector<HTMLElement>(".panel")!; panel.hidden = false; shadow.querySelector<HTMLElement>("[data-panel-content]")!.textContent = "Select text on the page first."; ownerDocument.body?.focus?.(); return; } closeChoice(false); previewCleanup = renderTextHighlight(ownerDocument, selectedRange); openDialog(trigger, "Comment on text", { anchor_type: "text_highlight", ...textAnchor }); });
+    choice.querySelector('[data-choice="area"]')?.addEventListener("click", () => { fallbackPin = frameUnavailable; startAreaSelection(trigger); });
+    shadow.querySelector(".shell")?.append(choice); choice.querySelector<HTMLElement>('[data-choice="text"]')?.focus();
+  };
+  const openHelp = (trigger: HTMLElement) => {
+    returnFocus = trigger; const backdrop = ownerDocument.createElement("div"); backdrop.className = "backdrop";
+    backdrop.innerHTML = `<div class="dialog help-dialog" role="dialog" aria-modal="true" aria-labelledby="review-help-title" aria-describedby="review-help-intro"><h2 id="review-help-title" tabindex="-1">How course review works</h2><p id="review-help-intro">Choose the method that best identifies what your feedback relates to.</p><ol><li><strong>Comment on text</strong><span>Select exact words on the page, then add your feedback.</span></li><li><strong>Comment on an area</strong><span>Mark a visual element, image, layout area, or control.</span></li><li><strong>Embedded activities</strong><span>Choose Comment on embedded content when a Rise or SCORM activity cannot be inspected directly.</span></li><li><strong>Comments</strong><span>Open existing feedback for the current page.</span></li><li><strong>Conversations and status</strong><span>Replies stay with the comment; LD/DCD users can progress or resolve feedback.</span></li></ol><p class="help-version">Pilot ${escapeHtml(buildDiagnostics.version)} · build ${escapeHtml(buildDiagnostics.buildCommit.slice(0, 7))}</p><div class="actions"><button type="button" class="primary" data-close-help>Close help</button></div></div>`;
+    const shell = shadow.querySelector<HTMLElement>(".shell")!; shell.inert = true;
+    const close = () => { shell.inert = false; backdrop.remove(); (shadow.querySelector<HTMLElement>('[data-action="help"]') ?? shell)?.focus(); };
+    backdrop.addEventListener("keydown", (event) => { const focusable = Array.from(backdrop.querySelectorAll<HTMLElement>('h2,[data-close-help]')); const index = Math.max(0, focusable.indexOf(shadow.activeElement as HTMLElement)); const outcome = handleDialogKey({ key: event.key, shiftKey: event.shiftKey, activeIndex: index, focusableCount: focusable.length }); if (event.key === "Tab" || outcome.close) event.preventDefault(); if (outcome.close) close(); else if (event.key === "Tab") focusable[outcome.focusIndex]?.focus(); });
+    backdrop.querySelector("[data-close-help]")?.addEventListener("click", close); shadow.append(backdrop); backdrop.querySelector<HTMLElement>("h2")?.focus();
+  };
   const openDialog = (trigger: HTMLElement, label: string, anchor: CommentAnchor) => {
     const contextSnapshot = { ...context };
     composerContext = contextSnapshot;
@@ -195,20 +244,8 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   };
   const bind = () => {
     bindStateControls();
-    shadow.querySelector<HTMLElement>('[data-action="highlight"]')?.addEventListener("click", (event) => {
-      const selection = ownerDocument.defaultView?.getSelection();
-      if (!selection?.rangeCount) { openDialog(event.currentTarget as HTMLElement, "Comment on highlighted text", { anchor_type: "text_highlight", selected_quote: "", prefix: "", suffix: "" }); return; }
-      const range = selection.getRangeAt(0); const anchor = captureTextAnchor(range, ownerDocument);
-      if (!anchor) { openDialog(event.currentTarget as HTMLElement, "Comment on highlighted text", { anchor_type: "text_highlight", selected_quote: "", prefix: "", suffix: "" }); return; }
-      previewCleanup = renderTextHighlight(ownerDocument, range.cloneRange()); openDialog(event.currentTarget as HTMLElement, "Comment on highlighted text", { anchor_type: "text_highlight", ...anchor });
-    });
-    shadow.querySelector<HTMLElement>('[data-action="pin"]')?.addEventListener("click", (event) => {
-      if (pinListener) { ownerDocument.removeEventListener("pointerdown", pinListener, true); ownerDocument.removeEventListener("keydown", cancelPin, true); }
-      returnFocus = event.currentTarget as HTMLElement; shadow.querySelector<HTMLElement>(".panel")!.hidden = false; shadow.querySelector<HTMLElement>("[data-panel-content]")!.textContent = "Select a point on the page. Press Escape to cancel.";
-      pinListener = (pointer) => { const element = ownerDocument.elementFromPoint(pointer.clientX, pointer.clientY) as HTMLElement | null; const anchor = element && capturePinAnchor(element, pointer.clientX, pointer.clientY); if (!anchor) return; pointer.preventDefault(); ownerDocument.removeEventListener("pointerdown", pinListener!, true); ownerDocument.removeEventListener("keydown", cancelPin, true); pinListener = undefined; previewCleanup = renderPin(ownerDocument, anchor); openDialog(returnFocus!, "Add a page pin", { anchor_type: "visual_pin", ...anchor }); };
-      ownerDocument.addEventListener("pointerdown", pinListener, true);
-      ownerDocument.addEventListener("keydown", cancelPin, true);
-    });
+    shadow.querySelector<HTMLElement>('[data-action="add-comment"]')?.addEventListener("click", (event) => openCommentChoice(event.currentTarget as HTMLElement));
+    shadow.querySelector<HTMLElement>('[data-action="help"]')?.addEventListener("click", (event) => openHelp(event.currentTarget as HTMLElement));
     shadow.querySelector<HTMLElement>('[data-action="panel"]')?.addEventListener("click", (event) => {
       const button = event.currentTarget as HTMLElement;
       const panel = shadow.querySelector<HTMLElement>(".panel")!;
@@ -221,7 +258,8 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   updateLabels();
   return {
     update(next, nextStatus) {
-      stateVersion += 1; authenticating = false; context = next; status = nextStatus; updateLabels();
+      stateVersion += 1; authenticating = false; context = next; status = nextStatus; closeChoice(false); updateLabels();
+      if (nextStatus !== "connected") { shadow.querySelectorAll<HTMLElement>("[data-comment-count],[data-comment-count-short]").forEach((node) => { node.textContent = "0"; }); }
       const dialog = shadow.querySelector<HTMLElement>(".dialog");
       if (dialog && composerContext && (composerContext.page_url !== next.page_url || composerContext.course_url !== next.course_url) && !dialog.querySelector("[data-context-warning]")) {
         const warning = ownerDocument.createElement("p"); warning.dataset.contextWarning = "true"; warning.className = "error"; warning.textContent = "The page changed. This comment will stay attached to the page where you opened it."; dialog.querySelector(".preview")?.after(warning);
@@ -230,6 +268,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     setPageComments(comments) {
       for (const cleanup of storedAnchorCleanups) cleanup(); storedAnchorCleanups = [];
       loadedComments = new Map(comments.map((comment) => [comment.id, comment]));
+      shadow.querySelectorAll<HTMLElement>("[data-comment-count],[data-comment-count-short]").forEach((node) => { node.textContent = String(comments.length); });
       openThreads = new Map();
       const unresolved: UnresolvedAnchor[] = [];
       const panel = shadow.querySelector<HTMLElement>(".panel")!;
@@ -290,12 +329,12 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
       return false;
     },
     showFrameFallback() {
+      frameUnavailable = true;
       let region = shadow.querySelector<HTMLElement>("[data-frame-fallback]");
       if (!region) { region = ownerDocument.createElement("section"); region.dataset.frameFallback = "true"; region.setAttribute("role", "status"); region.setAttribute("aria-live", "polite"); region.setAttribute("aria-labelledby", "frame-fallback-heading"); shadow.querySelector(".shell")?.append(region); }
-      region.hidden = false; region.innerHTML = `<strong id="frame-fallback-heading">embedded content—frame access unavailable</strong><p>Place a pin on the embedded content instead.</p><button type="button" data-parent-pin>Place parent-page pin</button>`;
-      region.querySelector<HTMLElement>("[data-parent-pin]")?.addEventListener("click", () => { fallbackPin = true; options.onFrameFallback?.(); shadow.querySelector<HTMLElement>('[data-action="pin"]')?.click(); });
+      region.hidden = false; region.innerHTML = `<strong id="frame-fallback-heading">Embedded activity detected</strong><p>Use Add comment and choose Comment on embedded content.</p>`;
     },
-    hideFrameFallback() { const region = shadow.querySelector<HTMLElement>("[data-frame-fallback]"); if (region) region.hidden = true; },
+    hideFrameFallback() { frameUnavailable = false; fallbackPin = false; const region = shadow.querySelector<HTMLElement>("[data-frame-fallback]"); if (region) region.hidden = true; },
     setUnresolvedAnchors(anchors) {
       let region = shadow.querySelector<HTMLElement>("[data-unresolved]");
       if (!region) {

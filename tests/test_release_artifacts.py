@@ -2,7 +2,7 @@ import hashlib, json, multiprocessing, os, shutil, subprocess, tempfile, unittes
 from pathlib import Path
 from deploy.scripts.release_artifacts import canonical_delivery, deterministic_zip, git_identity, publish
 ROOT=Path(__file__).resolve().parents[1]
-VERSION="0.3.1"
+VERSION="0.3.2"
 
 def race_publish(dist, delivery, commit, queue):
  try:

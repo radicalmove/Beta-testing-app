@@ -131,6 +131,26 @@ test("0.3 visual treatment clearly separates the tool with teal and UCO accents"
   assert.match(overlayStyles, /--review-red:#d73b3d/);
 });
 
+test("compact toolbar exposes one primary action and calm metadata", () => {
+  const markup = createOverlayMarkup({ courseTitle: "CRJU150 – Legal Method", pageTitle: "Week 2", status: "connected", version: "0.3.2", buildCommit: "abc1234def" });
+  assert.match(markup, />Add comment</);
+  assert.match(markup, />Comments \(/); assert.match(markup, /data-comment-count>0/);
+  assert.match(markup, /aria-label="Help and instructions"/);
+  assert.doesNotMatch(markup, />Highlight text</);
+  assert.doesNotMatch(markup, />Add pin</);
+  assert.doesNotMatch(markup, /<span class="label">Course:/);
+  assert.doesNotMatch(markup, /Pilot v0\.3\.2/);
+});
+
+test("responsive toolbar keeps three actions in one row at 600 and 360 pixels", () => {
+  const styles = overlayStyles + tealOverlayOverrides;
+  assert.match(styles, /font:16px\/1\.5 Poppins/);
+  assert.match(styles, /min-height:44px/);
+  assert.match(styles, /@media\(max-width:600px\)/);
+  assert.match(styles, /grid-template-columns:minmax\(0,1fr\) auto 44px/);
+  assert.match(styles, /@media\(max-width:360px\)/);
+});
+
 test("connected status stays textual with a decorative green indicator", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   mountReviewOverlay(document, context, "connected");
@@ -221,6 +241,28 @@ test("course access form supports new and existing reviewers without listing ide
   shadow.querySelector<HTMLElement>('[data-mode="existing"]')!.click();
   assert.equal(shadow.querySelector<HTMLElement>("[data-code-label]")!.textContent, "Personal reconnect code");
   assert.equal(submitted.length, 0);
+});
+
+test("comments count follows visible top-level threads", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const comment = { id: "00000000-0000-4000-8000-000000000001", body: "One", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: context.pageTitle, anchor_type: "text_highlight" as const, selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [{ id: "reply", body: "Reply", author: { display_name: "LD", role: "ld_dcd" } }], status_history: [] };
+  overlay.setPageComments([comment, { ...comment, id: "00000000-0000-4000-8000-000000000002", body: "Two" }]);
+  assert.equal(shadow.querySelector("[data-comment-count]")?.textContent, "2");
+  overlay.update({ ...context, page_url: "https://learn.example/new", pageTitle: "New" }, "connecting");
+  assert.equal(shadow.querySelector("[data-comment-count]")?.textContent, "0");
+});
+
+test("Help dialog provides complete instructions and metadata", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  mountReviewOverlay(document, context, "connected", {}, { version: "0.3.2", buildCommit: "abc1234def" }); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const trigger = shadow.querySelector<HTMLElement>('[data-action="help"]')!; trigger.click();
+  const dialog = shadow.querySelector<HTMLElement>('[role="dialog"]')!;
+  assert.equal(dialog.getAttribute("aria-modal"), "true"); assert.equal(dialog.getAttribute("aria-labelledby"), "review-help-title"); assert.equal(dialog.getAttribute("aria-describedby"), "review-help-intro");
+  for (const text of ["Comment on text", "Comment on an area", "Embedded activities", "Comments", "Conversations and status", "Pilot 0.3.2 · build abc1234"]) assert.match(dialog.textContent!, new RegExp(text));
+  assert.equal(shadow.activeElement, dialog.querySelector("h2"));
+  dialog.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }) as unknown as Event);
+  assert.equal(shadow.querySelector('[role="dialog"]'), null); assert.equal(shadow.activeElement, trigger);
 });
 
 test("an authentication completion cannot overwrite a newer external state update", async () => {
