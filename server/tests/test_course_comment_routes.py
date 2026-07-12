@@ -61,6 +61,40 @@ def bound_extension_headers(client, course: Course, role=UserRole.BETA_TESTER):
     return {"Authorization": f"Bearer {raw_token}"}
 
 
+def test_bound_extension_identity_is_authoritative_for_the_course(client):
+    session = client.db_factory()
+    course = resolve_course(session, moodle_course_id=896, course_url="https://moodle.example/course/view.php?id=896", title="Law")
+    course_id = course.id
+    session.close()
+    headers = bound_extension_headers(client, Course(id=course_id, moodle_course_id="896"), UserRole.LD_DCD)
+
+    response = client.get(f"/api/me?course_id={course_id}", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "course_id": str(course_id),
+        "user": {
+            "id": response.json()["user"]["id"],
+            "display_name": "Bound reviewer",
+            "email": "bound-896@example.test",
+            "role": "ld_dcd",
+        },
+    }
+
+
+def test_bound_extension_identity_hides_other_courses(client):
+    session = client.db_factory()
+    own = resolve_course(session, moodle_course_id=896, course_url="https://moodle.example/course/view.php?id=896", title="Own")
+    other = resolve_course(session, moodle_course_id=897, course_url="https://moodle.example/course/view.php?id=897", title="Other")
+    own_id, other_id = own.id, other.id
+    session.close()
+    headers = bound_extension_headers(client, Course(id=own_id, moodle_course_id="896"), UserRole.LD_DCD)
+
+    response = client.get(f"/api/me?course_id={other_id}", headers=headers)
+
+    assert response.status_code == 404
+
+
 def test_extension_comment_route_defaults_omitted_category_to_general(client):
     headers = extension_headers(client)
     course = client.post("/api/courses/resolve", headers=headers, json={"course_url": "https://moodle.example/course/view.php?id=12", "title": "Law", "moodle_course_id": 12})

@@ -1,3 +1,4 @@
+import uuid
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -8,7 +9,7 @@ from sqlalchemy.orm import Session as DbSession
 
 from app.config import get_settings
 from app.db import get_session
-from app.dependencies import current_dashboard_user
+from app.dependencies import current_api_user, current_dashboard_user, require_course_access
 from app.models import User, UserRole
 from app.schemas import ExtensionTokenRequest, RegistrationRequest
 from app.security import dashboard_cookie_settings, generate_token
@@ -23,8 +24,25 @@ from app.services.accounts import (
     register_account,
     revoke_session,
 )
+from app.services.accounts import ExtensionAccess
 
 router = APIRouter()
+
+
+@router.get("/api/me")
+def extension_identity(course_id: uuid.UUID, user: ExtensionAccess = Depends(current_api_user)) -> dict:
+    require_course_access(user, course_id)
+    if user.course_id != course_id or user.membership_id is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
+    return {
+        "course_id": str(course_id),
+        "user": {
+            "id": str(user.id),
+            "display_name": user.display_name or None,
+            "email": user.email,
+            "role": user.role.value,
+        },
+    }
 templates = Jinja2Templates(directory="app/templates")
 
 

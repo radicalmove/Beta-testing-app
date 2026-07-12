@@ -7,7 +7,7 @@ from app.db import get_session
 from app.dependencies import current_api_user, require_course_access
 from app.models import Comment, CommentReply, CommentStatusEvent, Course, CourseMembership, MembershipState, User, UserRole
 from app.schemas import CommentCreateRequest, CommentReplyRequest, CommentShareRequest, CommentStatusRequest
-from app.services.comments import AuthorizationError, PageComment, create_comment, create_reply, share_comment_with_user, update_comment_status, visible_comment_for, visible_comments_for, visible_page_comments_for
+from app.services.comments import AuthorizationError, PageComment, comment_capabilities, create_comment, create_reply, share_comment_with_user, update_comment_status, visible_comment_for, visible_comments_for, visible_page_comments_for
 
 router = APIRouter(prefix="/api/comments", tags=["comments"])
 
@@ -16,7 +16,7 @@ def _reply_json(reply: CommentReply) -> dict[str, str]:
     return {"id": str(reply.id), "author_user_id": str(reply.author_user_id), "body": reply.body}
 
 
-def _page_comment_json(projected: PageComment) -> dict:
+def _page_comment_json(projected: PageComment, viewer: User) -> dict:
     comment, location, author = projected.comment, projected.location, projected.author
     return {
         "id": str(comment.id), "body": comment.body, "category": comment.category.value,
@@ -32,6 +32,7 @@ def _page_comment_json(projected: PageComment) -> dict:
             {"status": event.status.value, "created_at": event.created_at.isoformat(), "actor": actor.display_name}
             for event, actor in projected.status_events
         ],
+        "capabilities": comment_capabilities(viewer, comment),
     }
 
 
@@ -82,7 +83,7 @@ def list_comments(course_id: uuid.UUID, page_url: str | None = Query(default=Non
     if page_url is None:
         return [_comment_json(comment) for comment in visible_comments_for(db, user, course_id)]
     try:
-        return [_page_comment_json(comment) for comment in visible_page_comments_for(db, user, course_id, page_url)]
+        return [_page_comment_json(comment, user) for comment in visible_page_comments_for(db, user, course_id, page_url)]
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

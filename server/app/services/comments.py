@@ -66,6 +66,22 @@ class PageComment:
     status_events: tuple[tuple[CommentStatusEvent, User], ...]
 
 
+def comment_capabilities(viewer: User, comment: Comment) -> dict[str, bool]:
+    is_author = viewer.id == comment.author_user_id
+    is_lead = viewer.role is UserRole.LD_DCD
+    is_admin = viewer.role is UserRole.ADMIN
+    if comment.author_role is UserRole.BETA_TESTER:
+        can_reply = is_author or is_lead
+    else:
+        can_reply = viewer.role is not UserRole.BETA_TESTER or is_author
+    return {
+        "can_reply": can_reply,
+        "can_change_status": is_lead,
+        "can_share_with_sme": is_lead,
+        "can_delete": is_author or is_lead or is_admin,
+    }
+
+
 def normalized_page_url(value: str) -> str:
     clean = value.strip()
     if value != clean:

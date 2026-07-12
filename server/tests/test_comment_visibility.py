@@ -190,11 +190,14 @@ def test_page_comment_list_returns_anchors_and_role_filtered_conversation(client
     assert "author_user_id" not in encoded
     assert "actor_user_id" not in encoded
     assert item["status_history"][0]["status"] == "open"
+    assert item["capabilities"] == {"can_reply": True, "can_change_status": False, "can_share_with_sme": False, "can_delete": True}
 
     selected = client.get("/api/comments", headers=selected_sme, params={"course_id": course_id, "page_url": page_url})
     assert {row["id"] for row in selected.json()} == {comment_id}
+    assert selected.json()[0]["capabilities"] == {"can_reply": False, "can_change_status": False, "can_share_with_sme": False, "can_delete": False}
     assert client.get("/api/comments", headers=other_sme, params={"course_id": course_id, "page_url": page_url}).json() == []
     lead_page = client.get("/api/comments", headers=lead, params={"course_id": course_id, "page_url": page_url})
+    assert lead_page.json()[0]["capabilities"] == {"can_reply": True, "can_change_status": True, "can_share_with_sme": True, "can_delete": True}
     assert {reply["body"] for reply in lead_page.json()[0]["replies"]} == {"Visible LD reply", "Hidden SME reply"}
     for page_payload in (response.json(), selected.json(), lead_page.json()):
         encoded = json.dumps(page_payload)
