@@ -149,7 +149,21 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       if (!await authorizeResolveSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) })) throw new Error("Unauthorized access sender");
       const value = message as { type?: unknown; course_handle?: unknown };
       if (Object.keys(value).sort().join(",") !== "course_handle,type" || typeof value.course_handle !== "string") throw new Error("Invalid pending access check");
-      return pendingApprovals.check(value.course_handle);
+      const pending = await pendingApprovals.check(value.course_handle);
+      if (pending.state !== "none") return pending;
+      const saved = await chrome.storage.local.get(["deviceCourseHandle"]);
+      return saved.deviceCourseHandle === value.course_handle && await activeToken() ? { state: "connected" } : { state: "none" };
+    })();
+  } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "LIST_SAVED_REVIEWERS") {
+    operation = (async () => {
+      if (!await authorizeResolveSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) })) throw new Error("Unauthorized access sender");
+      const value = message as { type?: unknown; course_handle?: unknown };
+      if (Object.keys(value).sort().join(",") !== "course_handle,type" || typeof value.course_handle !== "string") throw new Error("Invalid saved reviewer request");
+      const reviewers = new Set<string>();
+      const pending = await pendingAccess.get(value.course_handle); if (pending) reviewers.add(pending.email);
+      const saved = await chrome.storage.local.get(["deviceCourseHandle", "reviewerEmail"]);
+      if (saved.deviceCourseHandle === value.course_handle && typeof saved.reviewerEmail === "string") reviewers.add(saved.reviewerEmail.trim().toLowerCase());
+      return Array.from(reviewers).sort().map((email) => ({ email, label: email }));
     })();
   } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "RESUME_REVIEW_ACCESS") {
     operation = (async () => {

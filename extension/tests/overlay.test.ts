@@ -220,15 +220,21 @@ test("successful authentication moves focus to the first review control", async 
   assert.match(shadow.querySelector('[aria-live="polite"]')!.textContent!, /Connected/);
 });
 
-test("course access form asks for one invitation code and never exposes reconnect modes", async () => {
+test("course access form restores saved reviewers without asking them for another code", async () => {
   const window = new Window(); const document = window.document as unknown as Document;
   const submitted: any[] = [];
-  mountReviewOverlay(document, context, "signed-out", { onAccessSubmit: async (input) => { submitted.push(input); return { status: "connected" }; } });
+  let existingUses = 0;
+  mountReviewOverlay(document, context, "signed-out", {
+    onAccessSubmit: async (input) => { submitted.push(input); return { status: "connected" }; },
+    getSavedReviewers: async () => [{ email: "richard@example.test", label: "Richard (richard@example.test)" }],
+    onUseSavedReviewer: async () => { existingUses += 1; return { status: "connected" }; },
+  });
   const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   shadow.querySelector<HTMLElement>('[data-action="authenticate"]')!.click();
   const form = shadow.querySelector<HTMLFormElement>("[data-access-form]")!;
   assert.ok(form);
-  assert.doesNotMatch(form.textContent!, /New reviewer|Existing reviewer|reconnect/i);
+  assert.match(form.textContent!, /New reviewer|Existing reviewer/);
+  assert.doesNotMatch(form.textContent!, /reconnect/i);
   assert.match(form.textContent!, /Invitation code/);
   assert.equal(shadow.querySelectorAll("[data-reviewer-name]").length, 0);
   assert.ok(form.querySelector('[name="displayName"]'));
@@ -237,6 +243,12 @@ test("course access form asks for one invitation code and never exposes reconnec
   assert.ok(form.querySelector('[name="code"]'));
   assert.equal(form.querySelectorAll('[name="code"]').length, 1);
   assert.equal(submitted.length, 0);
+  shadow.querySelector<HTMLElement>('[data-mode="existing"]')!.click();
+  await tick();
+  assert.match(form.textContent!, /Richard/);
+  assert.equal((form.querySelector("[data-new-fields]") as HTMLElement).hidden, true);
+  (form.querySelector('[data-use-existing]') as HTMLElement).click(); await tick();
+  assert.equal(existingUses, 1);
 });
 
 test("pending approval uses a direct Check approval action", async () => {

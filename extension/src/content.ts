@@ -193,7 +193,7 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
     if (response.state === "pending") { scheduleApprovalCheck(); return { status: "pending", message: waitingForApproval }; }
     lastSignature = ""; refresh();
     return { status: "connected" };
-  }, onCheckApproval: checkPendingApproval, onAuthenticate: () => new Promise((resolve) => {
+  }, getSavedReviewers: () => courseHandle ? send<Array<{ email: string; label: string }>>({ type: "LIST_SAVED_REVIEWERS", course_handle: courseHandle }) : Promise.resolve([]), onUseSavedReviewer: () => checkPendingApproval(), onCheckApproval: checkPendingApproval, onAuthenticate: () => new Promise((resolve) => {
     runtime.sendMessage({ type: "AUTHENTICATE" }, (response) => {
       if (!response?.ok) {
         if ((response?.status as string | undefined) === "cancelled") resolve({ status: "signed-out", message: "Sign-in cancelled" });
