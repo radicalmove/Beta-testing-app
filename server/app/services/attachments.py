@@ -112,3 +112,11 @@ def attachment_path(attachment: Attachment, storage_dir: str) -> Path:
     if path.parent != directory:
         raise FileNotFoundError("Invalid attachment object name")
     return path
+
+
+def delete_attachment_objects(object_names: tuple[str, ...], storage_dir: str) -> None:
+    directory = Path(storage_dir).expanduser().resolve()
+    for object_name in object_names:
+        path = (directory / object_name).resolve()
+        if path.parent == directory:
+            path.unlink(missing_ok=True)

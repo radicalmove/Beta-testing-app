@@ -251,7 +251,7 @@ class CommentReply(Base):
     __tablename__ = "comment_replies"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    comment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("comments.id"), nullable=False)
+    comment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("comments.id", ondelete="CASCADE"), nullable=False)
     author_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -263,7 +263,7 @@ class CommentShare(Base):
     __tablename__ = "comment_shares"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    comment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("comments.id"), nullable=False)
+    comment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("comments.id", ondelete="CASCADE"), nullable=False)
     shared_with_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     shared_by_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -275,7 +275,7 @@ class CommentStatusEvent(Base):
     __tablename__ = "comment_status_events"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    comment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("comments.id"), nullable=False)
+    comment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("comments.id", ondelete="CASCADE"), nullable=False)
     actor_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     status: Mapped[CommentStatus] = mapped_column(Enum(CommentStatus, values_callable=lambda items: [item.value for item in items]), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -286,7 +286,7 @@ class CommentStatusEvent(Base):
 class CommentReadState(Base):
     __tablename__ = "comment_read_states"
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), primary_key=True)
-    comment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("comments.id"), primary_key=True)
+    comment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("comments.id", ondelete="CASCADE"), primary_key=True)
     read_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
@@ -294,7 +294,7 @@ class Attachment(Base):
     __tablename__ = "attachments"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    comment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("comments.id"), nullable=False)
+    comment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("comments.id", ondelete="CASCADE"), nullable=False)
     uploader_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     object_name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)

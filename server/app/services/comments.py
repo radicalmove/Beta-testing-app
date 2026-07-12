@@ -3,11 +3,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from urllib.parse import urlsplit
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.orm import aliased
 from sqlalchemy.orm import Session as DbSession
 
-from app.models import AnchorType, Comment, CommentCategory, CommentReadState, CommentReply, CommentShare, CommentStatus, CommentStatusEvent, PageLocation, User, UserRole
+from app.models import AnchorType, Attachment, Comment, CommentCategory, CommentReadState, CommentReply, CommentShare, CommentStatus, CommentStatusEvent, PageLocation, User, UserRole
 from app.security import utc_now
 
 
@@ -191,6 +191,24 @@ def visible_page_comments_for(db: DbSession, user: User, course_id: uuid.UUID, p
 
 def visible_comment_for(db: DbSession, user: User, comment_id: uuid.UUID) -> Comment | None:
     return db.scalar(select(Comment).where(Comment.id == comment_id, _visibility_clause(user)))
+
+
+def delete_comment_thread(db: DbSession, actor: User, comment: Comment) -> tuple[str, ...]:
+    if actor.id != comment.author_user_id and actor.role not in {UserRole.LD_DCD, UserRole.ADMIN}:
+        raise AuthorizationError("Only the author or an LD/DCD can delete this thread")
+    location_id = comment.location_id
+    attachments = list(db.scalars(select(Attachment).where(Attachment.comment_id == comment.id)))
+    object_names = tuple(item.object_name for item in attachments)
+    for model in (CommentReply, CommentStatusEvent, CommentShare, CommentReadState, Attachment):
+        db.execute(delete(model).where(model.comment_id == comment.id))
+    db.delete(comment)
+    db.flush()
+    if location_id is not None and db.scalar(select(Comment.id).where(Comment.location_id == location_id).limit(1)) is None:
+        location = db.get(PageLocation, location_id)
+        if location is not None:
+            db.delete(location)
+    db.commit()
+    return object_names
 
 
 def create_comment(db: DbSession, author: User, *, course_id: uuid.UUID, page_url: str, page_title: str, body: str, category: str = "general", anchor_type: str = "", selected_quote: str | None = None, prefix: str | None = None, suffix: str | None = None, css_selector: str | None = None, dom_selector: str | None = None, relative_x: float | None = None, relative_y: float | None = None) -> Comment:

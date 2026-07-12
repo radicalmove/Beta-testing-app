@@ -98,6 +98,22 @@ def test_comment_author_can_upload_and_download_signature_verified_image(client,
     check.close()
 
 
+def test_deleting_a_thread_removes_its_attachment_object(client):
+    author, _ = headers_for(client, "delete-attachment@example.test", UserRole.BETA_TESTER)
+    comment_id = make_comment(client, author)
+    uploaded = client.post(f"/api/comments/{comment_id}/attachments", headers=author, files={"file": ("proof.png", io.BytesIO(PNG), "image/png")})
+    assert uploaded.status_code == 201
+    check = client.db_factory()
+    object_name = check.query(Attachment).one().object_name
+    check.close()
+    assert (client.storage_dir / object_name).is_file()
+
+    response = client.delete(f"/api/comments/{comment_id}", headers=author)
+
+    assert response.status_code == 204
+    assert not (client.storage_dir / object_name).exists()
+
+
 @pytest.mark.parametrize(("filename", "content_type", "content", "status_code"), [
     ("proof.gif", "image/gif", b"GIF89a", 415),
     ("large.png", "image/png", b"\x89PNG\r\n\x1a\n" + b"x" * 25, 413),

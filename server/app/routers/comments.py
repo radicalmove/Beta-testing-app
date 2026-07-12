@@ -4,10 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session as DbSession
 
 from app.db import get_session
+from app.config import Settings, get_settings
 from app.dependencies import current_api_user, require_course_access
 from app.models import Comment, CommentReply, CommentStatusEvent, Course, CourseMembership, MembershipState, User, UserRole
 from app.schemas import CommentCreateRequest, CommentReplyRequest, CommentShareRequest, CommentStatusRequest
-from app.services.comments import AuthorizationError, PageComment, comment_capabilities, create_comment, create_reply, share_comment_with_user, update_comment_status, visible_comment_for, visible_comments_for, visible_page_comments_for
+from app.services.attachments import delete_attachment_objects
+from app.services.comments import AuthorizationError, PageComment, comment_capabilities, create_comment, create_reply, delete_comment_thread, share_comment_with_user, update_comment_status, visible_comment_for, visible_comments_for, visible_page_comments_for
 
 router = APIRouter(prefix="/api/comments", tags=["comments"])
 
@@ -95,6 +97,19 @@ def get_comment(comment_id: uuid.UUID, user: User = Depends(current_api_user), d
         raise HTTPException(status_code=404, detail="Comment not found")
     require_course_access(user, comment.course_id)
     return _comment_json(comment, db, user)
+
+
+@router.delete("/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_thread(comment_id: uuid.UUID, user: User = Depends(current_api_user), db: DbSession = Depends(get_session), settings: Settings = Depends(get_settings)) -> None:
+    comment = visible_comment_for(db, user, comment_id)
+    if comment is None:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    require_course_access(user, comment.course_id)
+    try:
+        object_names = delete_comment_thread(db, user, comment)
+    except AuthorizationError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    delete_attachment_objects(object_names, settings.attachment_storage_dir)
 
 
 @router.post("/{comment_id}/replies", status_code=status.HTTP_201_CREATED)
