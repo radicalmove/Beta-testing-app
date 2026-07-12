@@ -44,6 +44,48 @@ test("mounted Shadow DOM traps focus, closes on Escape, and returns focus", () =
   assert.equal(shadow.activeElement, trigger);
 });
 
+test("comment choice dismisses on an outside click and restores Add comment focus", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected");
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const trigger = shadow.querySelector<HTMLElement>('[data-action="add-comment"]')!;
+  trigger.click();
+  assert.ok(shadow.querySelector("[data-comment-choice]"));
+  document.body.dispatchEvent(new window.PointerEvent("pointerdown", { bubbles: true }) as unknown as Event);
+  assert.equal(shadow.querySelector("[data-comment-choice]"), null);
+  assert.equal(shadow.activeElement, trigger);
+  overlay.destroy();
+});
+
+test("keyboard area selection starts from the last focused eligible page target", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  document.body.innerHTML = '<button id="page-action">Course action</button>';
+  const pageAction = document.querySelector<HTMLElement>("#page-action")!;
+  pageAction.getBoundingClientRect = () => ({ x: 10, y: 20, left: 10, top: 20, right: 110, bottom: 70, width: 100, height: 50, toJSON: () => ({}) });
+  const overlay = mountReviewOverlay(document, context, "connected");
+  pageAction.focus();
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  shadow.querySelector<HTMLElement>('[data-action="add-comment"]')!.click();
+  shadow.querySelector<HTMLElement>('[data-choice="area"]')!.click();
+  assert.match(shadow.querySelector("[data-panel-content]")!.textContent!, /arrow keys/);
+  assert.match(pageAction.style.outline, /4px/);
+  assert.match(pageAction.style.outline, /#d73b3d/);
+  document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }) as unknown as Event);
+  assert.ok(shadow.querySelector(".dialog"));
+  assert.equal(pageAction.style.outline, "");
+  overlay.destroy();
+});
+
+test("area selection announces when no eligible page targets exist", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected");
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  shadow.querySelector<HTMLElement>('[data-action="add-comment"]')!.click();
+  shadow.querySelector<HTMLElement>('[data-choice="area"]')!.click();
+  assert.equal(shadow.querySelector("[data-panel-content]")!.textContent, "No selectable areas found; use Comment on text instead.");
+  overlay.destroy();
+});
+
 test("updating identity and status preserves an open typed dialog, selection, and focus", () => {
   const window = new Window();
   const document = window.document as unknown as Document;

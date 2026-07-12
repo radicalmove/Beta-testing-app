@@ -60,6 +60,9 @@ export function mountReviewOverlay(document: Document, context: CourseContext, s
 
 function createController(host: HTMLElement, shadow: ShadowRoot, initial: CourseContext, initialStatus: ConnectionStatus, options: ReviewOverlayOptions, buildDiagnostics: BuildDiagnostics): ReviewOverlay {
   const ownerDocument = host.ownerDocument;
+  let lastPageFocus: HTMLElement | null = null;
+  const rememberPageFocus = (event: FocusEvent) => { const target = event.target as HTMLElement | null; if (target && target !== host && !host.contains(target)) lastPageFocus = target; };
+  ownerDocument.addEventListener("focusin", rememberPageFocus, true);
   let context = initial;
   let status = initialStatus;
   let authenticating = false;
@@ -70,6 +73,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   let areaKeyListener: ((event: KeyboardEvent) => void) | undefined;
   let areaCandidates: HTMLElement[] = [];
   let areaCandidateIndex = -1;
+  let choiceOutsideListener: ((event: PointerEvent) => void) | undefined;
   let fallbackPin = false;
   let frameUnavailable = false;
   let composerContext: CourseContext | undefined;
@@ -156,13 +160,15 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   };
   const cleanupPreview = () => { previewCleanup?.(); previewCleanup = undefined; };
   const closeDialog = () => { if (pendingScreenshotId) void options.cancelScreenshot?.(pendingScreenshotId).catch(() => undefined); pendingScreenshotId = undefined; shadow.querySelector(".backdrop")?.remove(); composerContext = undefined; cleanupPreview(); fallbackPin = false; returnFocus?.focus(); };
-  const closeChoice = (restore = true) => { shadow.querySelector("[data-comment-choice]")?.remove(); if (restore) returnFocus?.focus(); };
+  const closeChoice = (restore = true) => { shadow.querySelector("[data-comment-choice]")?.remove(); if (choiceOutsideListener) ownerDocument.removeEventListener("pointerdown", choiceOutsideListener, true); choiceOutsideListener = undefined; if (restore) returnFocus?.focus(); };
   const startAreaSelection = (trigger: HTMLElement) => {
     closeChoice(false);
     if (pinListener) clearAreaSelection();
     returnFocus = trigger;
     const panel = shadow.querySelector<HTMLElement>(".panel")!; panel.hidden = false;
-    shadow.querySelector<HTMLElement>("[data-panel-content]")!.textContent = "Click an area to mark it. Keyboard: use the arrow keys to choose an area, Enter to select, or Escape to cancel.";
+    const instruction = shadow.querySelector<HTMLElement>("[data-panel-content]")!;
+    instruction.tabIndex = -1;
+    instruction.textContent = "Click an area, or use the arrow keys to choose one. Press Escape to cancel.";
     const finish = (element: HTMLElement, x: number, y: number) => { const anchor = capturePinAnchor(element, x, y); if (!anchor) return; clearAreaSelection(); previewCleanup = renderPin(ownerDocument, anchor); openDialog(trigger, frameUnavailable ? "Comment on embedded content" : "Comment on an area", { anchor_type: "visual_pin", ...anchor }); };
     pinListener = (pointer) => { const element = ownerDocument.elementFromPoint(pointer.clientX, pointer.clientY) as HTMLElement | null; if (!element || host.contains(element)) return; pointer.preventDefault(); pointer.stopPropagation(); finish(element, pointer.clientX, pointer.clientY); };
     areaCandidates = Array.from(ownerDocument.querySelectorAll<HTMLElement>("main,article,section,h1,h2,h3,h4,h5,h6,p,li,a,button,img,video,input,select,textarea,[role]"))
@@ -171,6 +177,9 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     areaKeyListener = (event) => { if (["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp"].includes(event.key)) { event.preventDefault(); event.stopPropagation(); showCandidate(areaCandidateIndex + (["ArrowLeft", "ArrowUp"].includes(event.key) ? -1 : 1)); } else if (event.key === "Enter" && areaCandidateIndex >= 0) { event.preventDefault(); event.stopPropagation(); const candidate = areaCandidates[areaCandidateIndex]!; const rect = candidate.getBoundingClientRect(); finish(candidate, rect.left + rect.width / 2, rect.top + rect.height / 2); } };
     ownerDocument.addEventListener("pointerdown", pinListener, true); ownerDocument.addEventListener("keydown", cancelPin, true);
     ownerDocument.addEventListener("keydown", areaKeyListener, true);
+    if (areaCandidates.length) showCandidate(Math.max(0, areaCandidates.indexOf(lastPageFocus!)));
+    else instruction.textContent = "No selectable areas found; use Comment on text instead.";
+    instruction.focus();
   };
   const openCommentChoice = (trigger: HTMLElement) => {
     closeChoice(false); returnFocus = trigger;
@@ -183,11 +192,14 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     choice.querySelector('[data-choice="cancel"]')?.addEventListener("click", () => closeChoice());
     choice.querySelector('[data-choice="text"]')?.addEventListener("click", () => { if (!textAnchor || !selectedRange) { closeChoice(false); const panel = shadow.querySelector<HTMLElement>(".panel")!; panel.hidden = false; shadow.querySelector<HTMLElement>("[data-panel-content]")!.textContent = "Select text on the page first."; ownerDocument.body?.focus?.(); return; } closeChoice(false); previewCleanup = renderTextHighlight(ownerDocument, selectedRange); openDialog(trigger, "Comment on text", { anchor_type: "text_highlight", ...textAnchor }); });
     choice.querySelector('[data-choice="area"]')?.addEventListener("click", () => { fallbackPin = frameUnavailable; startAreaSelection(trigger); });
-    shadow.querySelector(".shell")?.append(choice); choice.querySelector<HTMLElement>('[data-choice="text"]')?.focus();
+    shadow.querySelector(".shell")?.append(choice);
+    choiceOutsideListener = (event) => { if (event.target !== host) closeChoice(); };
+    ownerDocument.addEventListener("pointerdown", choiceOutsideListener, true);
+    choice.querySelector<HTMLElement>('[data-choice="text"]')?.focus();
   };
   const openHelp = (trigger: HTMLElement) => {
     returnFocus = trigger; const backdrop = ownerDocument.createElement("div"); backdrop.className = "backdrop";
-    backdrop.innerHTML = `<div class="dialog help-dialog" role="dialog" aria-modal="true" aria-labelledby="review-help-title" aria-describedby="review-help-intro"><h2 id="review-help-title" tabindex="-1">How course review works</h2><p id="review-help-intro">Choose the method that best identifies what your feedback relates to.</p><ol><li><strong>Comment on text</strong><span>Select exact words on the page, then add your feedback.</span></li><li><strong>Comment on an area</strong><span>Mark a visual element, image, layout area, or control.</span></li><li><strong>Embedded activities</strong><span>Choose Comment on embedded content when a Rise or SCORM activity cannot be inspected directly.</span></li><li><strong>Comments</strong><span>Open existing feedback for the current page.</span></li><li><strong>Conversations and status</strong><span>Replies stay with the comment; LD/DCD users can progress or resolve feedback.</span></li></ol><p class="help-version">Pilot ${escapeHtml(buildDiagnostics.version)} · build ${escapeHtml(buildDiagnostics.buildCommit.slice(0, 7))}</p><div class="actions"><button type="button" class="primary" data-close-help>Close help</button></div></div>`;
+    backdrop.innerHTML = `<div class="dialog help-dialog" role="dialog" aria-modal="true" aria-labelledby="review-help-title" aria-describedby="review-help-intro"><h2 id="review-help-title" tabindex="-1">How course review works</h2><p id="review-help-intro">Choose the method that best identifies what your feedback relates to.</p><ol><li><strong>Comment on text</strong><span>Select exact words on the page, then add your feedback.</span></li><li><strong>Comment on an area</strong><span>Mark a visual element, image, layout area, or control.</span></li><li><strong>Embedded activities</strong><span>Choose Comment on embedded content when a Rise or SCORM activity cannot be inspected directly. The location is attached to the containing Moodle page.</span></li><li><strong>Comments</strong><span>Open existing feedback for the current page.</span></li><li><strong>Conversations and status</strong><span>Replies stay with the comment; LD/DCD users can progress or resolve feedback.</span></li></ol><p class="help-version">Pilot ${escapeHtml(buildDiagnostics.version)} · build ${escapeHtml(buildDiagnostics.buildCommit.slice(0, 7))}</p><div class="actions"><button type="button" class="primary" data-close-help>Close help</button></div></div>`;
     const shell = shadow.querySelector<HTMLElement>(".shell")!; shell.inert = true;
     const close = () => { shell.inert = false; backdrop.remove(); (shadow.querySelector<HTMLElement>('[data-action="help"]') ?? shell)?.focus(); };
     backdrop.addEventListener("keydown", (event) => { const focusable = Array.from(backdrop.querySelectorAll<HTMLElement>('h2,[data-close-help]')); const index = Math.max(0, focusable.indexOf(shadow.activeElement as HTMLElement)); const outcome = handleDialogKey({ key: event.key, shiftKey: event.shiftKey, activeIndex: index, focusableCount: focusable.length }); if (event.key === "Tab" || outcome.close) event.preventDefault(); if (outcome.close) close(); else if (event.key === "Tab") focusable[outcome.focusIndex]?.focus(); });
@@ -355,6 +367,6 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
       }
       region.replaceChildren(heading, list);
     },
-    destroy() { if (pinListener) ownerDocument.removeEventListener("pointerdown", pinListener, true); ownerDocument.removeEventListener("keydown", cancelPin, true); ownerDocument.defaultView?.removeEventListener("resize", scheduleReposition); ownerDocument.defaultView?.removeEventListener("scroll", scheduleReposition, true); if (repositionFrame !== undefined) ownerDocument.defaultView?.cancelAnimationFrame(repositionFrame); cleanupPreview(); for (const cleanup of storedAnchorCleanups) cleanup(); host.remove(); },
+    destroy() { clearAreaSelection(); closeChoice(false); ownerDocument.removeEventListener("focusin", rememberPageFocus, true); ownerDocument.defaultView?.removeEventListener("resize", scheduleReposition); ownerDocument.defaultView?.removeEventListener("scroll", scheduleReposition, true); if (repositionFrame !== undefined) ownerDocument.defaultView?.cancelAnimationFrame(repositionFrame); cleanupPreview(); for (const cleanup of storedAnchorCleanups) cleanup(); host.remove(); },
   };
 }
