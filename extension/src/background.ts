@@ -1,5 +1,5 @@
 import { ApiClient, authenticate, getActiveToken, lookupReviewCourse, redeemReviewerInvitation, renewReviewerDevice, resumeReviewerMembership, type SessionToken } from "./api";
-import { authorizeAuthenticateSender, authorizeResolveSender, handleCreateCommentBridge, handleListPageCommentsBridge, handleResolveCourseBridge, normalizeErrorMessage, validateAuthenticateMessage, validateCancelScreenshotMessage, validateUploadScreenshotMessage, type CreateCommentPayload, type ResolveCoursePayload } from "./background-bridge.ts";
+import { authorizeAuthenticateSender, authorizeResolveSender, handleCreateCommentBridge, handleDeleteCommentBridge, handleListPageCommentsBridge, handleResolveCourseBridge, normalizeErrorMessage, validateAuthenticateMessage, validateCancelScreenshotMessage, validateUploadScreenshotMessage, validateViewerResponse, type CreateCommentPayload, type ResolveCoursePayload } from "./background-bridge.ts";
 import { validateScreenshotDataUrl } from "./screenshot-validation.ts";
 import { reconcileOptionalContentScript } from "./optional-content-scripts";
 import { ReviewContextCache, validateContextMessage, type ReviewSender } from "./review-context.ts";
@@ -117,6 +117,22 @@ async function listPageComments(courseId: string, pageUrl: string): Promise<unkn
   return response.json();
 }
 
+async function currentViewer(courseId: string): Promise<unknown> {
+  const api = await client();
+  const response = await api.request(`/api/me?${new URLSearchParams({ course_id: courseId })}`);
+  if (!response.ok) throw new Error(`Viewer identity failed (${response.status})`);
+  return validateViewerResponse(await response.json(), courseId);
+}
+
+async function deleteComment(commentId: string, _courseId: string): Promise<unknown> {
+  const api = await client();
+  const response = await api.request(`/api/comments/${commentId}`, { method: "DELETE" });
+  if (response.status === 404) throw new Error("Comment was already removed");
+  if (response.status === 403) throw new Error("You do not have permission to delete this thread");
+  if (!response.ok) throw new Error(`Comment deletion failed (${response.status})`);
+  return {};
+}
+
 chrome.tabs?.onRemoved?.addListener((tabId: number) => reviewContexts.removeTab(tabId));
 chrome.webNavigation?.onCommitted?.addListener((details: { tabId: number; frameId: number }) => { if (details.frameId === 0) reviewContexts.removeTab(details.tabId); });
 
@@ -224,6 +240,20 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       authorize: (candidate) => authorizeResolveSender(candidate, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) }),
       courseId: () => reviewContexts.courseId(sender),
       list: listPageComments,
+    });
+  } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "GET_CURRENT_VIEWER") {
+    operation = (async () => {
+      if (Object.keys(message as object).length !== 1) throw new Error("Invalid GET_CURRENT_VIEWER message");
+      if (!(await authorizeResolveSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) }))) throw new Error("Unauthorized GET_CURRENT_VIEWER sender");
+      const courseId = reviewContexts.courseId(sender);
+      if (!courseId) throw new Error("GET_CURRENT_VIEWER course context unavailable");
+      return currentViewer(courseId);
+    })();
+  } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "DELETE_COMMENT_THREAD") {
+    operation = handleDeleteCommentBridge(message, sender, {
+      authorize: (candidate) => authorizeResolveSender(candidate, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) }),
+      courseId: () => reviewContexts.courseId(sender),
+      remove: deleteComment,
     });
   } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "UPLOAD_SCREENSHOT") {
     operation = (async () => {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { authorizeAuthenticateSender, authorizeResolveSender, handleCreateCommentBridge, handleListPageCommentsBridge, handleResolveCourseBridge, normalizeErrorMessage, validateAuthenticateMessage, validateCancelScreenshotMessage, validateCreateCommentMessage, validateListPageCommentsMessage, validatePageCommentsResponse, validateResolveCourseMessage, validateUploadScreenshotMessage } from "../src/background-bridge.ts";
+import { authorizeAuthenticateSender, authorizeResolveSender, handleCreateCommentBridge, handleDeleteCommentBridge, handleListPageCommentsBridge, handleResolveCourseBridge, normalizeErrorMessage, validateAuthenticateMessage, validateCancelScreenshotMessage, validateCreateCommentMessage, validateDeleteCommentMessage, validateListPageCommentsMessage, validatePageCommentsResponse, validateResolveCourseMessage, validateUploadScreenshotMessage, validateViewerResponse } from "../src/background-bridge.ts";
 
 test("authenticate accepts only an exact empty envelope", () => {
   assert.deepEqual(validateAuthenticateMessage({ type: "AUTHENTICATE" }), {});
@@ -154,7 +154,7 @@ test("LIST_PAGE_COMMENTS derives course from cache and validates API data", asyn
   const result = await handleListPageCommentsBridge({ type: "LIST_PAGE_COMMENTS", page_url: pageUrl }, { id: "ours", url: pageUrl }, {
     authorize: async () => true,
     courseId: () => "00000000-0000-4000-8000-000000000090",
-    list: async (courseId, requestedPage) => { requested = { courseId, pageUrl: requestedPage }; return [{ id: "00000000-0000-4000-8000-000000000001", body: "Feedback", category: "general", status: "open", author: { display_name: "beta@example.test", role: "beta_tester" }, page_url: requestedPage, page_title: "Topic", anchor_type: "visual_pin", selected_quote: null, prefix: null, suffix: null, css_selector: "#main", dom_selector: null, relative_x: 0.2, relative_y: 0.8, replies: [], status_history: [] }]; },
+    list: async (courseId, requestedPage) => { requested = { courseId, pageUrl: requestedPage }; return [{ id: "00000000-0000-4000-8000-000000000001", body: "Feedback", category: "general", status: "open", author: { display_name: "beta@example.test", role: "beta_tester" }, page_url: requestedPage, page_title: "Topic", anchor_type: "visual_pin", selected_quote: null, prefix: null, suffix: null, css_selector: "#main", dom_selector: null, relative_x: 0.2, relative_y: 0.8, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: true } }]; },
   });
   assert.deepEqual(requested, { courseId: "00000000-0000-4000-8000-000000000090", pageUrl });
   assert.equal(result.length, 1);
@@ -163,8 +163,20 @@ test("LIST_PAGE_COMMENTS derives course from cache and validates API data", asyn
 
 test("page comment response rejects extra fields and wrong pages", () => {
   const pageUrl = "https://example.test/page";
-  const base = { id: "00000000-0000-4000-8000-000000000001", body: "Feedback", category: "general", status: "open", author: { display_name: "beta@example.test", role: "beta_tester" }, page_url: pageUrl, page_title: "Page", anchor_type: "text_highlight", selected_quote: "words", prefix: "before", suffix: "after", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [] };
+  const base = { id: "00000000-0000-4000-8000-000000000001", body: "Feedback", category: "general", status: "open", author: { display_name: "beta@example.test", role: "beta_tester" }, page_url: pageUrl, page_title: "Page", anchor_type: "text_highlight", selected_quote: "words", prefix: "before", suffix: "after", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: true } };
   assert.equal(validatePageCommentsResponse([base], pageUrl).length, 1);
   assert.throws(() => validatePageCommentsResponse([{ ...base, secret: true }], pageUrl), /Invalid page comments response/);
   assert.throws(() => validatePageCommentsResponse([{ ...base, page_url: "https://example.test/other" }], pageUrl), /Invalid page comments response/);
+});
+
+test("viewer and delete messages use exact trusted envelopes", async () => {
+  const courseId = "00000000-0000-4000-8000-000000000090";
+  const commentId = "00000000-0000-4000-8000-000000000001";
+  assert.deepEqual(validateDeleteCommentMessage({ type: "DELETE_COMMENT_THREAD", comment_id: commentId }), { comment_id: commentId });
+  assert.throws(() => validateDeleteCommentMessage({ type: "DELETE_COMMENT_THREAD", comment_id: commentId, course_id: courseId }), /Invalid/);
+  assert.deepEqual(validateViewerResponse({ course_id: courseId, user: { id: commentId, display_name: null, email: "reviewer@example.test", role: "ld_dcd" } }, courseId).user.role, "ld_dcd");
+  let deleted = "";
+  await handleDeleteCommentBridge({ type: "DELETE_COMMENT_THREAD", comment_id: commentId }, { id: "ours", url: "https://learn.example/page" }, { authorize: async () => true, courseId: () => courseId, remove: async (id, trustedCourse) => { deleted = `${id}:${trustedCourse}`; } });
+  assert.equal(deleted, `${commentId}:${courseId}`);
+  await assert.rejects(() => handleDeleteCommentBridge({ type: "DELETE_COMMENT_THREAD", comment_id: commentId }, { id: "ours", url: "https://learn.example/page" }, { authorize: async () => true, courseId: () => undefined, remove: async () => undefined }), /context unavailable/);
 });
