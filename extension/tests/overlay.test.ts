@@ -58,20 +58,17 @@ function auditOverlayContrast(styles: string): void {
   requireContrast("focus indicator on panel", surroundColor, property(panel, "background"), 3);
 }
 
-test("overlay displays accessible pilot version diagnostics", () => {
+test("Help displays accessible pilot version diagnostics", () => {
   const markup = createOverlayMarkup({ courseTitle: "Law", pageTitle: "Week 2", status: "connected", version: "0.2.0", buildCommit: "abc1234def567890abc1234def567890abc1234d" });
-  assert.match(markup, />Pilot v0\.2\.0</);
+  assert.match(markup, /data-build-info hidden>0\.2\.0\|abc1234</);
 
   const window = new Window(); const document = window.document as unknown as Document;
   mountReviewOverlay(document, context, "connected", {}, { version: "0.2.0", buildCommit: "abc1234def567890abc1234def567890abc1234d" });
   const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
-  const version = shadow.querySelector<HTMLElement>("[data-pilot-version]")!;
-  assert.equal(version.getAttribute("role"), "note");
-  assert.equal(version.getAttribute("aria-label"), "Pilot version 0.2.0");
-  shadow.querySelector<HTMLElement>('[data-action="panel"]')!.click();
-  const diagnostic = shadow.querySelector<HTMLElement>("[data-build-diagnostic]")!;
-  assert.equal(diagnostic.textContent, "Version 0.2.0 · build abc1234");
-  assert.equal(diagnostic.tabIndex, 0);
+  shadow.querySelector<HTMLElement>('[data-action="help"]')!.click();
+  assert.equal(shadow.querySelector('[role="dialog"]')?.getAttribute("aria-modal"), "true");
+  const diagnostic = shadow.querySelector<HTMLElement>(".help-version")!;
+  assert.equal(diagnostic.textContent, "Pilot 0.2.0 · build abc1234");
 });
 
 function auditShellBoundary(styles: string): void {
@@ -119,9 +116,9 @@ test("overlay host inline reset preserves the review typography inheritance", ()
   mountReviewOverlay(document, context, "connected");
   const host = document.getElementById(OVERLAY_HOST_ID)!;
   assert.equal(host.style.fontFamily, "Poppins, Arial, sans-serif");
-  assert.equal(host.style.fontSize, "14px");
-  assert.equal(host.style.lineHeight, "1.4");
-  assert.equal(host.style.color, "#000");
+  assert.equal(host.style.fontSize, "16px");
+  assert.equal(host.style.lineHeight, "1.5");
+  assert.equal(host.style.color, "#102f38");
 });
 
 test("0.3 visual treatment clearly separates the tool with teal and UCO accents", () => {
@@ -155,7 +152,7 @@ test("connected status stays textual with a decorative green indicator", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   mountReviewOverlay(document, context, "connected");
   const status = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!.querySelector<HTMLElement>("[data-auth-status]")!;
-  assert.match(status.textContent!, /Connection:\s*Connected/);
+  assert.equal(status.textContent!.trim(), "Connected");
   assert.equal(status.querySelector(".dot")?.getAttribute("aria-hidden"), "true");
   assert.match(overlayStyles, /\.connected \.dot\{background:#16833b\}/);
 });
@@ -219,7 +216,7 @@ test("successful authentication moves focus to the first review control", async 
   mountReviewOverlay(document, context, "signed-out", { onAuthenticate: async () => ({ status: "connected" }) });
   const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   shadow.querySelector<HTMLElement>('[data-action="authenticate"]')!.click(); await tick();
-  assert.equal(shadow.activeElement, shadow.querySelector('[data-action="highlight"]'));
+  assert.equal(shadow.activeElement, shadow.querySelector('[data-action="add-comment"]'));
   assert.match(shadow.querySelector('[aria-live="polite"]')!.textContent!, /Connected/);
 });
 
