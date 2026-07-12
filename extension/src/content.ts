@@ -21,6 +21,16 @@ type MarkerRoot = {
 };
 type OwnedRoot = MarkerRoot & { [OWNER]?: { cleanup(): void } };
 
+export async function refreshCourseBindingBeforeComment(
+  send: (message: unknown) => Promise<{ id?: unknown }>,
+  context: Pick<CourseContext, "course_url" | "title" | "moodle_course_id">,
+  expectedCourseId: string,
+): Promise<void> {
+  const payload = { course_url: context.course_url, title: context.title, ...(context.moodle_course_id ? { moodle_course_id: context.moodle_course_id } : {}) };
+  const resolved = await send({ type: "RESOLVE_COURSE", payload });
+  if (resolved?.id !== expectedCourseId) throw new Error("The course connection changed. Close this comment and try again.");
+}
+
 function matchPattern(url: string, pattern: string): boolean {
   const match = /^(\*|http|https|file|ftp):\/\/([^/]+)(\/.*)$/.exec(pattern);
   if (!match) return false;
@@ -209,6 +219,7 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
   }), onTakeToContext: (id) => { overlay.takeToContext(id); }, submit: async ({ body, category, anchor, screenshot, embeddedFrameUnavailable, contextSnapshot }) => {
     const snapshotCourseId = courseIds.get(contextSnapshot.course_url);
     if (!snapshotCourseId) throw new Error("The original course is no longer connected. Cancel and reopen the comment.");
+    await refreshCourseBindingBeforeComment(send, contextSnapshot, snapshotCourseId);
     const fallbackSuffix = " — embedded content—frame access unavailable";
     const pageTitle = embeddedFrameUnavailable ? `${contextSnapshot.pageTitle.slice(0, 512 - fallbackSuffix.length)}${fallbackSuffix}` : contextSnapshot.pageTitle;
     const saved = await send<{ id?: string; screenshot_available?: boolean }>({ type: "CREATE_COMMENT", payload: { course_id: snapshotCourseId, page_url: contextSnapshot.page_url, page_title: pageTitle, body, category, ...anchor }, screenshot_requested: screenshot });

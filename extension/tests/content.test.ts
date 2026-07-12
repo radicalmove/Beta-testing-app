@@ -2,7 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Window } from "happy-dom";
 
-import { bootstrapContentScript, countInaccessibleFrames, createLifecycleController, isConfiguredFrame, startCourseReview, startEmbeddedReview } from "../src/content.ts";
+import { bootstrapContentScript, countInaccessibleFrames, createLifecycleController, isConfiguredFrame, refreshCourseBindingBeforeComment, startCourseReview, startEmbeddedReview } from "../src/content.ts";
+
+test("comment submission refreshes the trusted course binding after a worker restart", async () => {
+  const messages: unknown[] = [];
+  await refreshCourseBindingBeforeComment(async (message) => {
+    messages.push(message);
+    return { id: "course-1" };
+  }, { course_url: "https://moodle.example.invalid/course/view.php?id=7", title: "Law", moodle_course_id: 7 }, "course-1");
+  assert.deepEqual(messages, [{ type: "RESOLVE_COURSE", payload: { course_url: "https://moodle.example.invalid/course/view.php?id=7", title: "Law", moodle_course_id: 7 } }]);
+  await assert.rejects(() => refreshCourseBindingBeforeComment(async () => ({ id: "course-2" }), { course_url: "https://moodle.example.invalid/course/view.php?id=7", title: "Law" }, "course-1"), /connection changed/);
+});
 
 test("content activates on configured Moodle patterns", () => {
   assert.equal(isConfiguredFrame("https://moodle.example.invalid/course/view.php?id=1", ["https://moodle.example.invalid/*"], []), true);
