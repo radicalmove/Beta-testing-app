@@ -225,7 +225,7 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
     const saved = await send<{ id?: string; screenshot_available?: boolean }>({ type: "CREATE_COMMENT", payload: { course_id: snapshotCourseId, page_url: contextSnapshot.page_url, page_title: pageTitle, body, category, ...anchor }, screenshot_requested: screenshot });
     if (context.page_url === contextSnapshot.page_url) void loadPageComments(context.page_url);
     return saved;
-  }, uploadScreenshot: (commentId, dataUrl) => send({ type: "UPLOAD_SCREENSHOT", comment_id: commentId, data_url: dataUrl }), cancelScreenshot: (commentId) => send({ type: "CANCEL_SCREENSHOT", comment_id: commentId }) }, buildDiagnostics);
+  }, deleteThread: async (commentId) => { await send({ type: "DELETE_COMMENT_THREAD", comment_id: commentId }); await loadPageComments(context.page_url); }, uploadScreenshot: (commentId, dataUrl) => send({ type: "UPLOAD_SCREENSHOT", comment_id: commentId, data_url: dataUrl }), cancelScreenshot: (commentId) => send({ type: "CANCEL_SCREENSHOT", comment_id: commentId }) }, buildDiagnostics);
   let requestSequence = 0;
 
   const refresh = () => {
@@ -247,6 +247,10 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
       if (courseId) courseIds.set(requestedCourseUrl, courseId);
       const status: ConnectionStatus = response?.ok ? "connected" : response?.status === "signed-out" ? "signed-out" : response?.status === "pending" ? "pending" : "offline";
       overlay.update(context, status);
+      if (courseId && status === "connected") runtime.sendMessage({ type: "GET_CURRENT_VIEWER" }, (viewerResponse) => {
+        const identity = (viewerResponse?.data as { user?: { display_name: string | null; email: string; role: string } } | undefined)?.user;
+        if (viewerResponse?.ok && identity && typeof identity.email === "string" && typeof identity.role === "string") overlay.setViewer(identity);
+      }); else overlay.setViewer(undefined);
       if (!response?.ok && response?.status === "signed-out" && response.error?.includes("session expired")) {
         const message = targetDocument.getElementById("moodle-course-review-overlay")?.shadowRoot?.querySelector<HTMLElement>("[data-status-message]");
         if (message) message.textContent = "Session expired—sign in again";

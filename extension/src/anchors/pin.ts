@@ -44,7 +44,8 @@ export function recoverPinAnchor(document: Document, anchor: PinAnchor): { statu
 
 export function renderPin(document: Document, anchor: PinAnchor): () => void {
   const marker = document.createElement("button"); marker.type = "button"; marker.setAttribute("data-moodle-review-pin", "true"); marker.setAttribute("aria-label", "Selected page pin");
-  marker.style.cssText = "position:fixed;z-index:2147483646;width:22px;height:22px;border-radius:50%;border:2px solid white;background:#087f78;color:white;pointer-events:none;transform:translate(-50%,-50%)";
+  marker.textContent = "💬";
+  marker.style.cssText = "position:fixed;z-index:2147483646;width:34px;height:34px;border-radius:9px;border:3px solid white;background:#28c4c2;color:#082f2f;pointer-events:none;transform:translate(-50%,-50%);font:20px/1 sans-serif;box-shadow:0 3px 10px #0005";
   const place = () => { const result = recoverPinAnchor(document, anchor); marker.hidden = result.status !== "resolved"; if (result.status === "resolved") { marker.style.left = `${result.x}px`; marker.style.top = `${result.y}px`; } };
   document.documentElement.append(marker); place(); document.defaultView?.addEventListener("resize", place); document.defaultView?.addEventListener("scroll", place, true);
   return () => { document.defaultView?.removeEventListener("resize", place); document.defaultView?.removeEventListener("scroll", place, true); marker.remove(); };

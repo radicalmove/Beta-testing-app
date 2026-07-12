@@ -29,7 +29,7 @@ test("mounted Shadow DOM traps focus, closes on Escape, and returns focus", () =
   mountReviewOverlay(document, context);
   const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   const trigger = shadow.querySelector<HTMLElement>('[data-action="add-comment"]')!;
-  trigger.click(); shadow.querySelector<HTMLElement>('[data-choice="text"]')!.click();
+  trigger.click();
   const textarea = shadow.querySelector<HTMLElement>("textarea")!;
   const cancel = shadow.querySelector<HTMLElement>("[data-cancel]")!;
   const save = shadow.querySelector<HTMLElement>(".primary")!;
@@ -44,15 +44,13 @@ test("mounted Shadow DOM traps focus, closes on Escape, and returns focus", () =
   assert.equal(shadow.activeElement, trigger);
 });
 
-test("comment choice dismisses on an outside click and restores Add comment focus", () => {
+test("marker placement cancels with Escape and restores Add comment focus", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   const overlay = mountReviewOverlay(document, context, "connected");
   const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   const trigger = shadow.querySelector<HTMLElement>('[data-action="add-comment"]')!;
   trigger.click();
-  assert.ok(shadow.querySelector("[data-comment-choice]"));
-  document.body.dispatchEvent(new window.PointerEvent("pointerdown", { bubbles: true }) as unknown as Event);
-  assert.equal(shadow.querySelector("[data-comment-choice]"), null);
+  document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }) as unknown as Event);
   assert.equal(shadow.activeElement, trigger);
   overlay.destroy();
 });
@@ -66,7 +64,6 @@ test("keyboard area selection starts from the last focused eligible page target"
   pageAction.focus();
   const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   shadow.querySelector<HTMLElement>('[data-action="add-comment"]')!.click();
-  shadow.querySelector<HTMLElement>('[data-choice="area"]')!.click();
   assert.match(shadow.querySelector("[data-panel-content]")!.textContent!, /arrow keys/);
   assert.match(pageAction.style.outline, /4px/);
   assert.match(pageAction.style.outline, /#d73b3d/);
@@ -81,7 +78,6 @@ test("area selection announces when no eligible page targets exist", () => {
   const overlay = mountReviewOverlay(document, context, "connected");
   const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   shadow.querySelector<HTMLElement>('[data-action="add-comment"]')!.click();
-  shadow.querySelector<HTMLElement>('[data-choice="area"]')!.click();
   assert.equal(shadow.querySelector("[data-panel-content]")!.textContent, "No selectable areas found; use Comment on text instead.");
   overlay.destroy();
 });
@@ -93,7 +89,7 @@ test("updating identity and status preserves an open typed dialog, selection, an
   const overlay = mountReviewOverlay(document, context);
   const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   const trigger = shadow.querySelector<HTMLElement>('[data-action="add-comment"]')!;
-  trigger.click(); shadow.querySelector<HTMLElement>('[data-choice="text"]')!.click();
+  trigger.click();
   const textarea = shadow.querySelector<HTMLTextAreaElement>("textarea")!;
   textarea.value = "Keep this draft";
   textarea.setSelectionRange(5, 9);
@@ -217,7 +213,7 @@ test("saves against the composer snapshot before offering a separate retryable s
     uploadScreenshot: async () => { calls.push("upload"); },
   });
   const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
-  shadow.querySelector<HTMLElement>('[data-action="add-comment"]')!.click(); shadow.querySelector<HTMLElement>('[data-choice="text"]')!.click();
+  shadow.querySelector<HTMLElement>('[data-action="add-comment"]')!.click();
   (shadow.querySelector("textarea") as HTMLTextAreaElement).value = "Keep original";
   (shadow.querySelector("[data-screenshot]") as HTMLInputElement).checked = true;
   overlay.update({ ...context, page_url: "https://learn.example/mod/page/view.php?id=9", pageTitle: "Week 9" }, "connected");

@@ -122,15 +122,15 @@ test("overlay host inline reset preserves the review typography inheritance", ()
 });
 
 test("0.3 visual treatment clearly separates the tool with teal and UCO accents", () => {
-  assert.match(tealOverlayOverrides, /--review-teal:#0f4c5c/);
-  assert.match(tealOverlayOverrides, /--review-pale:#f3f7f8/);
+  assert.match(tealOverlayOverrides, /--review-teal:#28c4c2/);
+  assert.match(tealOverlayOverrides, /--review-pale:#effafa/);
   assert.match(tealOverlayOverrides, /border:4px solid var\(--review-teal\)/);
   assert.match(overlayStyles, /--review-red:#d73b3d/);
 });
 
 test("compact toolbar exposes one primary action and calm metadata", () => {
   const markup = createOverlayMarkup({ courseTitle: "CRJU150 – Legal Method", pageTitle: "Week 2", status: "connected", version: "0.3.2", buildCommit: "abc1234def" });
-  assert.match(markup, />Add comment</);
+  assert.match(markup, />Add comment marker</);
   assert.match(markup, />Comments \(/); assert.match(markup, /data-comment-count>0/);
   assert.match(markup, /aria-label="Help and instructions"/);
   assert.doesNotMatch(markup, />Highlight text</);
@@ -284,6 +284,20 @@ test("comments count follows visible top-level threads", () => {
   assert.equal(shadow.querySelector("[data-comment-count]")?.textContent, "2");
   overlay.update({ ...context, page_url: "https://learn.example/new", pageTitle: "New" }, "connecting");
   assert.equal(shadow.querySelector("[data-comment-count]")?.textContent, "0");
+});
+
+test("one adaptive action opens highlighted text directly or enters marker placement", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  document.body.innerHTML = '<main><p id="copy">Select these words for review</p></main>';
+  mountReviewOverlay(document, context, "connected");
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const button = shadow.querySelector<HTMLButtonElement>('[data-action="add-comment"]')!;
+  assert.equal(button.textContent, "Add comment marker");
+  const text = document.querySelector("#copy")!.firstChild!; const range = document.createRange(); range.setStart(text, 0); range.setEnd(text, 12);
+  window.getSelection()!.removeAllRanges(); window.getSelection()!.addRange(range as any); document.dispatchEvent(new window.Event("selectionchange") as any);
+  assert.equal(button.textContent, "Add comment to highlighted text");
+  button.click();
+  assert.match(shadow.querySelector(".dialog")!.textContent!, /Comment on highlighted text/);
 });
 
 test("Help dialog provides complete instructions and metadata", () => {

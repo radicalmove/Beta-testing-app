@@ -8,7 +8,7 @@ import type { PageComment } from "../background-bridge.ts";
 export const OVERLAY_HOST_ID = "moodle-course-review-overlay";
 export const overlayStyles = `:host{--review-red:#d73b3d;--review-navy:#000;--review-pale:#f2f2f2;--review-line:#d8d8d8;all:initial;position:fixed!important;inset:auto!important;z-index:2147483647!important;isolation:isolate;display:block!important;color:#000;font:14px/1.4 Poppins,Arial,sans-serif}.shell{box-sizing:border-box;position:fixed;right:16px;bottom:16px;z-index:2147483647;max-width:min(560px,calc(100vw - 32px));background:#fff;border:3px solid var(--review-red);border-radius:8px;box-shadow:0 8px 24px #00000038;overflow:hidden}.toolbar{display:flex;align-items:center;gap:8px;padding:7px 8px;background:#000;color:#fff}.identity{min-width:9rem;padding:0 5px;flex:1}.course,.page{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.course{font-weight:700}.page{font-size:12px;color:#fff}.pilot-version{font-size:12px;font-weight:700;white-space:nowrap}button,select,textarea{box-sizing:border-box;font:inherit}button{appearance:none;min-height:36px;border:1px solid #b9b9b9;border-radius:5px;background:#f2f2f2;color:#000;font-weight:650;padding:7px 9px;cursor:pointer}button:hover{background:#fff}.toolbar button{border-color:var(--review-red);background:var(--review-red);color:#fff}.toolbar button:hover,.primary:hover{background:#b52d30;border-color:#b52d30}button:focus-visible,textarea:focus-visible,select:focus-visible,input:focus-visible,[data-build-diagnostic]:focus-visible{outline:3px solid #ffd54f;outline-offset:2px;box-shadow:0 0 0 5px #000}.icon{padding:7px 10px}.status{display:flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap}.dot{width:8px;height:8px;flex:0 0 8px;border:1px solid #fff;border-radius:50%;background:#ffd54f}.connected .dot{background:#16833b}.signed-out .dot,.offline .dot{background:var(--review-red)}.panel,[data-unresolved],[data-frame-fallback]{padding:10px;background:#fff;border-top:1px solid var(--review-line)}.build-diagnostic{margin:0 0 8px;padding:6px;background:#fff;color:#000;border:1px solid var(--review-line);font-size:12px}.panel[hidden],[data-unresolved][hidden]{display:none}[data-unresolved] h2{margin:0;font-size:14px}[data-unresolved] ul{display:grid;gap:6px;margin:6px 0 0;padding:0;list-style:none}[data-unresolved] li{display:flex;align-items:center;justify-content:space-between;gap:8px}.backdrop{position:fixed;inset:0;background:#0009;display:grid;place-items:center;z-index:2147483647}.dialog{box-sizing:border-box;width:min(420px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto;background:#fff;border:1px solid var(--review-line);border-radius:8px;padding:18px;box-shadow:0 8px 28px #0005}.dialog h2{margin:0 0 10px;color:#000;font-size:18px;border-left:4px solid var(--review-red);padding-left:8px}.dialog textarea{width:100%;min-height:110px;border:1px solid #777;border-radius:5px;padding:8px}.field{display:grid;gap:4px;margin-top:9px}.preview{padding:8px;border:1px solid var(--review-line);border-radius:5px;background:var(--review-pale);font-size:12px}.error{color:#a51d24}.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}.primary{background:var(--review-red);color:#fff;border-color:var(--review-red)}@media(max-width:420px){.shell{right:8px;bottom:8px;width:calc(100vw - 16px);max-width:none}.toolbar{align-items:flex-start;flex-wrap:wrap}.identity{flex-basis:100%}.status{margin-right:auto}.dialog{width:calc(100vw - 16px);max-height:calc(100vh - 16px);padding:12px}.actions{flex-wrap:wrap}.actions button{flex:1 1 auto}}`;
 
-export const tealOverlayOverrides = `:host{--review-teal:#0f4c5c;--review-pale:#f3f7f8;--review-line:#bfd0d5;color:#102f38;font:16px/1.5 Poppins,Arial,sans-serif}.shell{width:min(600px,calc(100vw - 32px));max-width:600px;border:4px solid var(--review-teal);border-radius:10px}.toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;background:var(--review-teal);padding:12px}.identity{min-width:0}.course{font-size:16px}.page{font-size:14px}.status{font-size:14px}.toolbar-actions{display:grid;grid-template-columns:minmax(0,1fr) auto 44px;gap:8px;align-items:center}.toolbar-actions button,button{min-height:44px}.toolbar-actions [data-action="add-comment"]{background:var(--review-red);border-color:var(--review-red);color:#fff}.toolbar-actions [data-action="panel"],.toolbar-actions [data-action="help"]{background:#fff;color:var(--review-teal);border-color:#fff}.panel,[data-unresolved],[data-frame-fallback]{background:var(--review-pale);padding:16px}.panel-title{margin:0 0 12px;font-size:18px}.dialog{border:4px solid var(--review-teal)}.dialog h2{color:var(--review-teal);font-size:20px}input,select{box-sizing:border-box;width:100%;min-height:44px;border:1px solid #78909a;border-radius:5px;padding:7px;font:inherit}.mode-tabs{display:flex;gap:8px}.mode-tabs [aria-pressed="true"]{background:var(--review-teal);border-color:var(--review-teal);color:#fff}.reconnect-code{display:block;padding:12px;background:var(--review-pale);border:2px dashed var(--review-teal);font:700 16px/1.4 ui-monospace,monospace;letter-spacing:.04em}@media(max-width:600px){.toolbar{grid-template-columns:1fr}.toolbar-actions{grid-template-columns:minmax(0,1fr) auto 44px}.shell{right:8px;bottom:8px;width:calc(100vw - 16px)}}@media(max-width:360px){.toolbar{padding:8px}.toolbar-actions{grid-template-columns:minmax(0,1fr) auto 44px;gap:6px}.comments-wide{display:none}.comments-short{display:inline}}`;
+export const tealOverlayOverrides = `:host{--review-teal:#28c4c2;--review-teal-dark:#0b6261;--review-pale:#effafa;--review-line:#8ad9d8;color:#102f38;font:16px/1.5 Poppins,Arial,sans-serif}.shell{width:min(600px,calc(100vw - 32px));max-width:600px;border:5px solid var(--review-teal);border-radius:10px}.toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;background:var(--review-teal);color:#082f2f;padding:12px}.identity{min-width:0}.course{font-size:16px}.page{font-size:14px}.status{font-size:14px}.toolbar-actions{display:grid;grid-template-columns:minmax(0,1fr) auto 44px;gap:8px;align-items:center}.toolbar-actions button,button{min-height:44px}.toolbar-actions [data-action="add-comment"]{background:#082f2f;border-color:#082f2f;color:#fff}.toolbar-actions [data-action="panel"],.toolbar-actions [data-action="help"]{background:#fff;color:var(--review-teal-dark);border-color:#fff}.panel,[data-unresolved],[data-frame-fallback]{background:var(--review-pale);padding:16px}.panel-title{margin:0 0 12px;font-size:18px}.dialog{border:4px solid var(--review-teal)}.dialog h2{color:var(--review-teal-dark);font-size:20px}.primary{background:var(--review-teal-dark);border-color:var(--review-teal-dark)}input,select{box-sizing:border-box;width:100%;min-height:44px;border:1px solid #527f7f;border-radius:5px;padding:7px;font:inherit}.mode-tabs{display:flex;gap:8px}.mode-tabs [aria-pressed="true"]{background:var(--review-teal-dark);border-color:var(--review-teal-dark);color:#fff}.reconnect-code{display:block;padding:12px;background:var(--review-pale);border:2px dashed var(--review-teal-dark);font:700 16px/1.4 ui-monospace,monospace;letter-spacing:.04em}@media(max-width:600px){.toolbar{grid-template-columns:1fr}.toolbar-actions{grid-template-columns:minmax(0,1fr) auto 44px}.shell{right:8px;bottom:8px;width:calc(100vw - 16px)}}@media(max-width:360px){.toolbar{padding:8px}.toolbar-actions{grid-template-columns:minmax(0,1fr) auto 44px;gap:6px}.comments-wide{display:none}.comments-short{display:inline}}`;
 
 export type ConnectionStatus = "connecting" | "connected" | "pending" | "signed-out" | "offline";
 const statusLabels: Record<ConnectionStatus, string> = { connecting: "Connecting", connected: "Connected", pending: "Waiting for approval — you can leave this page open or return later.", "signed-out": "Signed out", offline: "Service unavailable—retry" };
@@ -17,7 +17,7 @@ const authActionLabels: Partial<Record<ConnectionStatus, string>> = { "signed-ou
 
 function createStateActions(status: ConnectionStatus): string {
   const action = authActionLabels[status];
-  const reviewControls = status === "connected" || status === "connecting" ? `<span class="toolbar-actions" data-review-controls><button type="button" data-action="add-comment">Add comment</button><button type="button" data-action="panel" aria-expanded="false"><span class="comments-wide">Comments (<span data-comment-count>0</span>)</span><span class="comments-short"><span data-comment-count-short>0</span> comments</span></button><button type="button" data-action="help" aria-label="Help and instructions">?</button></span>` : "";
+  const reviewControls = status === "connected" || status === "connecting" ? `<span class="toolbar-actions" data-review-controls><button type="button" data-action="add-comment">Add comment marker</button><button type="button" data-action="panel" aria-expanded="false"><span class="comments-wide">Comments (<span data-comment-count>0</span>)</span><span class="comments-short"><span data-comment-count-short>0</span> comments</span></button><button type="button" data-action="help" aria-label="Help and instructions">?</button></span>` : "";
   return `<span data-auth-action>${action ? `<button type="button" data-action="authenticate">${action}</button>` : ""}</span>${reviewControls}`;
 }
 
@@ -26,7 +26,7 @@ const defaultBuildDiagnostics: BuildDiagnostics = { version: "0.0.0", buildCommi
 
 export function createOverlayMarkup(input: { courseTitle: string; pageTitle: string; status: ConnectionStatus } & Partial<BuildDiagnostics>): string {
   const { version, buildCommit } = { ...defaultBuildDiagnostics, ...input };
-  return `<section class="shell" tabindex="-1"><div class="toolbar" role="toolbar" aria-label="Course review tools"><div class="identity"><span class="course" title="${escapeHtml(input.courseTitle)}">${escapeHtml(input.courseTitle)}</span><span class="status ${input.status}" data-auth-status aria-live="polite" aria-atomic="true"><span class="dot" aria-hidden="true"></span><span data-status-message>${statusLabels[input.status]}</span></span></div>${createStateActions(input.status)}</div><div class="panel" hidden><h2 class="panel-title">${escapeHtml(input.pageTitle)}</h2><div data-panel-content>No comments on this page yet.</div></div><span data-build-info hidden>${escapeHtml(version)}|${escapeHtml(buildCommit.slice(0, 7))}</span></section>`;
+  return `<section class="shell" tabindex="-1"><div class="toolbar" role="toolbar" aria-label="Course review tools"><div class="identity"><span class="course" title="${escapeHtml(input.courseTitle)}">${escapeHtml(input.courseTitle)}</span><span class="viewer" data-viewer hidden></span><span class="status ${input.status}" data-auth-status aria-live="polite" aria-atomic="true"><span class="dot" aria-hidden="true"></span><span data-status-message>${statusLabels[input.status]}</span></span></div>${createStateActions(input.status)}</div><div class="panel" hidden><h2 class="panel-title">${escapeHtml(input.pageTitle)}</h2><div data-panel-content>No comments on this page yet.</div></div><span data-build-info hidden>${escapeHtml(version)}|${escapeHtml(buildCommit.slice(0, 7))}</span></section>`;
 }
 
 export function handleDialogKey(input: { key: string; shiftKey: boolean; activeIndex: number; focusableCount: number }): { focusIndex: number; close: boolean } {
@@ -40,8 +40,8 @@ export type CommentAnchor = ({ anchor_type: "text_highlight" } & TextAnchor) | (
 export type UnresolvedAnchor = { id: string; label: string; quote?: string };
 export type AuthenticationOutcome = { status: ConnectionStatus; message?: string };
 export type ReviewerAccessInput = { displayName: string; email: string; role: string; code: string };
-export type ReviewOverlayOptions = { onAuthenticate?: () => Promise<AuthenticationOutcome>; onCheckApproval?: () => Promise<AuthenticationOutcome>; onAccessSubmit?: (input: ReviewerAccessInput) => Promise<AuthenticationOutcome>; getSavedReviewers?: () => Promise<Array<{ email: string; label: string }>>; onUseSavedReviewer?: (email: string) => Promise<AuthenticationOutcome>; useAccessForm?: () => boolean; submit?: (input: { body: string; category: string; anchor: CommentAnchor; screenshot: boolean; embeddedFrameUnavailable: boolean; contextSnapshot: CourseContext }) => Promise<{ id?: string; screenshot_available?: boolean } | void>; uploadScreenshot?: (commentId: string, dataUrl: string) => Promise<void>; cancelScreenshot?: (commentId: string) => Promise<void>; captureScreenshot?: () => Promise<string>; onFrameFallback?: () => void; onTakeToContext?: (id: string) => void };
-export type ReviewOverlay = { update(context: CourseContext, status: ConnectionStatus): void; setPageComments(comments: PageComment[]): void; takeToContext(id: string): boolean; showFrameFallback(): void; hideFrameFallback(): void; setUnresolvedAnchors(anchors: UnresolvedAnchor[]): void; destroy(): void };
+export type ReviewOverlayOptions = { onAuthenticate?: () => Promise<AuthenticationOutcome>; onCheckApproval?: () => Promise<AuthenticationOutcome>; onAccessSubmit?: (input: ReviewerAccessInput) => Promise<AuthenticationOutcome>; getSavedReviewers?: () => Promise<Array<{ email: string; label: string }>>; onUseSavedReviewer?: (email: string) => Promise<AuthenticationOutcome>; useAccessForm?: () => boolean; submit?: (input: { body: string; category: string; anchor: CommentAnchor; screenshot: boolean; embeddedFrameUnavailable: boolean; contextSnapshot: CourseContext }) => Promise<{ id?: string; screenshot_available?: boolean } | void>; deleteThread?: (commentId: string) => Promise<void>; uploadScreenshot?: (commentId: string, dataUrl: string) => Promise<void>; cancelScreenshot?: (commentId: string) => Promise<void>; captureScreenshot?: () => Promise<string>; onFrameFallback?: () => void; onTakeToContext?: (id: string) => void };
+export type ReviewOverlay = { update(context: CourseContext, status: ConnectionStatus): void; setViewer(viewer?: { display_name: string | null; email: string; role: string }): void; setPageComments(comments: PageComment[]): void; takeToContext(id: string): boolean; showFrameFallback(): void; hideFrameFallback(): void; setUnresolvedAnchors(anchors: UnresolvedAnchor[]): void; destroy(): void };
 
 export function mountReviewOverlay(document: Document, context: CourseContext, status: ConnectionStatus = "connecting", options: ReviewOverlayOptions = {}, buildDiagnostics: BuildDiagnostics = defaultBuildDiagnostics): ReviewOverlay {
   const existing = document.getElementById(OVERLAY_HOST_ID) as HTMLElement | null;
@@ -53,7 +53,7 @@ export function mountReviewOverlay(document: Document, context: CourseContext, s
   document.documentElement.append(host);
   const shadow = host.attachShadow({ mode: "open" });
   const style = document.createElement("style");
-  style.textContent = overlayStyles + tealOverlayOverrides + `.comments-short{display:none}@media(max-width:360px){.comments-wide{display:none}.comments-short{display:inline}}.comment-choice{padding:16px;background:var(--review-pale);border-top:1px solid var(--review-line)}.comment-choice h2{margin:0 0 10px;font-size:18px}.comment-choice button{display:grid;width:100%;margin-top:8px;text-align:left}.comment-choice button span{font-size:14px;font-weight:400}.help-dialog ol{display:grid;gap:12px;padding-left:22px}.help-dialog li span{display:block;font-size:14px}.help-version{font-size:14px;color:#52666c}`;
+  style.textContent = overlayStyles + tealOverlayOverrides + `.viewer{display:block;font-size:13px;font-weight:650;color:#082f2f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.viewer[hidden]{display:none}.comments-short{display:none}@media(max-width:360px){.comments-wide{display:none}.comments-short{display:inline}}.comment-choice{padding:16px;background:var(--review-pale);border-top:1px solid var(--review-line)}.comment-choice h2{margin:0 0 10px;font-size:18px}.comment-choice button{display:grid;width:100%;margin-top:8px;text-align:left}.comment-choice button span{font-size:14px;font-weight:400}.help-dialog ol{display:grid;gap:12px;padding-left:22px}.help-dialog li span{display:block;font-size:14px}.help-version{font-size:14px;color:#52666c}`;
   shadow.append(style);
   return createController(host, shadow, context, status, options, buildDiagnostics);
 }
@@ -65,6 +65,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   ownerDocument.addEventListener("focusin", rememberPageFocus, true);
   let context = initial;
   let status = initialStatus;
+  let currentViewer: { display_name: string | null; email: string; role: string } | undefined;
   let authenticating = false;
   let stateVersion = 0;
   let returnFocus: HTMLElement | null = null;
@@ -111,6 +112,8 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     const page = shadow.querySelector<HTMLElement>(".panel-title");
     if (course) { course.textContent = `${context.title}${context.identityConfidence === "unconfirmed" ? " (unconfirmed)" : ""}`; course.title = context.title; }
     if (page) page.textContent = context.pageTitle;
+    const viewer = shadow.querySelector<HTMLElement>("[data-viewer]");
+    if (viewer) { viewer.hidden = !currentViewer; viewer.textContent = currentViewer ? `${currentViewer.display_name || currentViewer.email} · ${currentViewer.role === "ld_dcd" ? "Learning Designer / Course Developer" : currentViewer.role === "sme" ? "Subject Matter Expert" : currentViewer.role === "beta_tester" ? "Beta Tester" : "Administrator"}` : ""; }
     renderStateControls();
   };
   const renderStateControls = (message = statusLabels[status]) => {
@@ -218,6 +221,19 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     ownerDocument.addEventListener("pointerdown", choiceOutsideListener, true);
     choice.querySelector<HTMLElement>('[data-choice="text"]')?.focus();
   };
+  const selectedTextDraft = () => {
+    const selection = ownerDocument.defaultView?.getSelection();
+    if (!selection?.rangeCount || selection.isCollapsed) return undefined;
+    const range = selection.getRangeAt(0).cloneRange();
+    const anchor = captureTextAnchor(range, ownerDocument);
+    return anchor ? { range, anchor } : undefined;
+  };
+  const updateAdaptiveAction = () => {
+    const button = shadow.querySelector<HTMLButtonElement>('[data-action="add-comment"]');
+    if (button) button.textContent = selectedTextDraft() ? "Add comment to highlighted text" : "Add comment marker";
+  };
+  const selectionListener = () => updateAdaptiveAction();
+  ownerDocument.addEventListener("selectionchange", selectionListener);
   const openHelp = (trigger: HTMLElement) => {
     returnFocus = trigger; const backdrop = ownerDocument.createElement("div"); backdrop.className = "backdrop";
     backdrop.innerHTML = `<div class="dialog help-dialog" role="dialog" aria-modal="true" aria-labelledby="review-help-title" aria-describedby="review-help-intro"><h2 id="review-help-title" tabindex="-1">How course review works</h2><p id="review-help-intro">Choose the method that best identifies what your feedback relates to.</p><ol><li><strong>Comment on text</strong><span>Select exact words on the page, then add your feedback.</span></li><li><strong>Comment on an area</strong><span>Mark a visual element, image, layout area, or control.</span></li><li><strong>Embedded activities</strong><span>Choose Comment on embedded content when a Rise or SCORM activity cannot be inspected directly. The location is attached to the containing Moodle page.</span></li><li><strong>Comments</strong><span>Open existing feedback for the current page.</span></li><li><strong>Conversations and status</strong><span>Replies stay with the comment; LD/DCD users can progress or resolve feedback.</span></li></ol><p class="help-version">Pilot ${escapeHtml(buildDiagnostics.version)} · build ${escapeHtml(buildDiagnostics.buildCommit.slice(0, 7))}</p><div class="actions"><button type="button" class="primary" data-close-help>Close help</button></div></div>`;
@@ -277,7 +293,14 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   };
   const bind = () => {
     bindStateControls();
-    shadow.querySelector<HTMLElement>('[data-action="add-comment"]')?.addEventListener("click", (event) => openCommentChoice(event.currentTarget as HTMLElement));
+    const addComment = shadow.querySelector<HTMLElement>('[data-action="add-comment"]');
+    addComment?.addEventListener("click", (event) => {
+      const trigger = event.currentTarget as HTMLElement;
+      const selected = selectedTextDraft();
+      if (selected) { returnFocus = trigger; previewCleanup = renderTextHighlight(ownerDocument, selected.range); openDialog(trigger, "Comment on highlighted text", { anchor_type: "text_highlight", ...selected.anchor }); }
+      else startAreaSelection(trigger);
+    });
+    updateAdaptiveAction();
     shadow.querySelector<HTMLElement>('[data-action="help"]')?.addEventListener("click", (event) => openHelp(event.currentTarget as HTMLElement));
     shadow.querySelector<HTMLElement>('[data-action="panel"]')?.addEventListener("click", (event) => {
       const button = event.currentTarget as HTMLElement;
@@ -298,6 +321,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
         const warning = ownerDocument.createElement("p"); warning.dataset.contextWarning = "true"; warning.className = "error"; warning.textContent = "The page changed. This comment will stay attached to the page where you opened it."; dialog.querySelector(".preview")?.after(warning);
       }
     },
+    setViewer(viewer) { currentViewer = viewer; updateLabels(); },
     setPageComments(comments) {
       for (const cleanup of storedAnchorCleanups) cleanup(); storedAnchorCleanups = [];
       loadedComments = new Map(comments.map((comment) => [comment.id, comment]));
@@ -308,21 +332,23 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
       const panelContent = panel.querySelector<HTMLElement>("[data-panel-content]")!;
       panelContent.replaceChildren();
       for (const comment of comments) {
-        const openThread = () => {
-          panel.hidden = false;
-          const article = ownerDocument.createElement("article");
+        const openThread = (marker?: HTMLElement) => {
+          shadow.querySelector("[data-thread-popover]")?.remove();
+          const article = ownerDocument.createElement("article"); article.dataset.threadPopover = "true"; article.tabIndex = -1;
           const heading = ownerDocument.createElement("h2"); heading.textContent = `${comment.category.replaceAll("_", " ")} · ${comment.status.replaceAll("_", " ")}`;
           const byline = ownerDocument.createElement("p"); byline.textContent = `${comment.author.display_name} (${comment.author.role.replaceAll("_", " ")})`;
           const body = ownerDocument.createElement("p"); body.textContent = comment.body; article.append(heading, byline, body);
           for (const reply of comment.replies) { const node = ownerDocument.createElement("p"); node.textContent = `${reply.author.display_name} (${reply.author.role.replaceAll("_", " ")}): ${reply.body}`; article.append(node); }
-          panelContent.replaceChildren(article);
+          if (comment.capabilities.can_delete && options.deleteThread) { const remove = ownerDocument.createElement("button"); remove.type = "button"; remove.textContent = "Delete thread"; remove.addEventListener("click", async () => { if (!ownerDocument.defaultView?.confirm("Delete this entire thread, including all replies and screenshots?")) return; remove.disabled = true; try { await options.deleteThread!(comment.id); article.remove(); } catch (error) { remove.disabled = false; const alert = ownerDocument.createElement("p"); alert.setAttribute("role", "alert"); alert.textContent = error instanceof Error ? error.message : "Could not delete thread"; article.append(alert); } }); article.append(remove); }
+          if (marker) { const rect = marker.getBoundingClientRect(); article.style.cssText = `position:fixed;z-index:2147483647;width:min(360px,calc(100vw - 16px));max-height:min(480px,calc(100vh - 16px));overflow:auto;left:${Math.max(8, Math.min((ownerDocument.defaultView?.innerWidth ?? 800) - 368, rect.right + 8))}px;top:${Math.max(8, Math.min((ownerDocument.defaultView?.innerHeight ?? 600) - 300, rect.top))}px;background:white;border:4px solid #28c4c2;border-radius:10px;padding:14px;box-shadow:0 8px 28px #0006`; shadow.append(article); article.focus(); }
+          else { panel.hidden = false; panelContent.replaceChildren(article); }
         };
         openThreads.set(comment.id, openThread);
         if (comment.anchor_type === "text_highlight" && comment.selected_quote) {
           const recovered = recoverTextAnchor(ownerDocument, { selected_quote: comment.selected_quote, prefix: comment.prefix ?? "", suffix: comment.suffix ?? "" });
           if (recovered.status === "resolved") {
             storedAnchorCleanups.push(renderTextHighlight(ownerDocument, recovered.range));
-            const marker = ownerDocument.createElement("button"); marker.type = "button"; marker.id = `moodle-review-highlight-${comment.id}`; marker.dataset.moodleReviewStoredHighlight = comment.id; marker.setAttribute("aria-label", `Open feedback: ${comment.body}`); marker.textContent = "Comment"; marker.style.cssText = "position:fixed;z-index:2147483646;border:2px solid white;border-radius:999px;background:#d73b3d;color:white;padding:4px 7px;font:600 12px/1.2 Poppins,Arial,sans-serif;box-shadow:0 2px 8px #0005"; marker.addEventListener("click", openThread);
+            const marker = ownerDocument.createElement("button"); marker.type = "button"; marker.id = `moodle-review-highlight-${comment.id}`; marker.dataset.moodleReviewStoredHighlight = comment.id; marker.setAttribute("aria-label", `Open feedback: ${comment.body}`); marker.textContent = "💬"; marker.style.cssText = "position:fixed;z-index:2147483646;width:38px;height:38px;border:3px solid white;border-radius:10px;background:#28c4c2;color:#082f2f;padding:4px;font:20px/1 sans-serif;box-shadow:0 3px 10px #0005"; marker.addEventListener("click", () => openThread(marker));
             const place = () => { const position = recovered.range.getBoundingClientRect(); marker.hidden = position.width === 0 && position.height === 0; marker.style.left = `${Math.max(0, position.left)}px`; marker.style.top = `${Math.max(0, position.bottom + 4)}px`; };
             ownerDocument.documentElement.append(marker); trackReposition(place, marker);
           }
@@ -332,12 +358,12 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
           const recovered = recoverPinAnchor(ownerDocument, anchor);
           if (recovered.status === "unresolved") unresolved.push({ id: comment.id, label: `${comment.page_title} · ${comment.body}` });
           else {
-            const marker = ownerDocument.createElement("button"); marker.type = "button"; marker.dataset.moodleReviewStoredPin = comment.id; marker.setAttribute("aria-label", `Open feedback: ${comment.body}`); marker.style.cssText = "position:fixed;z-index:2147483646;width:24px;height:24px;border-radius:50%;border:2px solid white;background:#d73b3d;color:white;transform:translate(-50%,-50%)"; marker.textContent = "•"; marker.addEventListener("click", openThread);
+            const marker = ownerDocument.createElement("button"); marker.type = "button"; marker.dataset.moodleReviewStoredPin = comment.id; marker.setAttribute("aria-label", `Open feedback: ${comment.body}`); marker.style.cssText = "position:fixed;z-index:2147483646;width:38px;height:38px;border-radius:10px;border:3px solid white;background:#28c4c2;color:#082f2f;transform:translate(-50%,-50%);font:20px/1 sans-serif;box-shadow:0 3px 10px #0005"; marker.textContent = "💬"; marker.addEventListener("click", () => openThread(marker));
             const place = () => { const position = recoverPinAnchor(ownerDocument, anchor); marker.hidden = position.status !== "resolved"; if (position.status === "resolved") { marker.style.left = `${position.x}px`; marker.style.top = `${position.y}px`; } };
             ownerDocument.documentElement.append(marker); trackReposition(place, marker);
           }
         }
-        const item = ownerDocument.createElement("button"); item.type = "button"; item.textContent = comment.body; item.addEventListener("click", openThread); panelContent.append(item);
+        const item = ownerDocument.createElement("button"); item.type = "button"; item.textContent = comment.body; item.addEventListener("click", () => openThread()); panelContent.append(item);
       }
       if (!comments.length) panelContent.replaceChildren("No comments on this page yet.");
       this.setUnresolvedAnchors(unresolved);
@@ -388,6 +414,6 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
       }
       region.replaceChildren(heading, list);
     },
-    destroy() { clearAreaSelection(); closeChoice(false); ownerDocument.removeEventListener("focusin", rememberPageFocus, true); ownerDocument.defaultView?.removeEventListener("resize", scheduleReposition); ownerDocument.defaultView?.removeEventListener("scroll", scheduleReposition, true); if (repositionFrame !== undefined) ownerDocument.defaultView?.cancelAnimationFrame(repositionFrame); cleanupPreview(); for (const cleanup of storedAnchorCleanups) cleanup(); host.remove(); },
+    destroy() { clearAreaSelection(); closeChoice(false); ownerDocument.removeEventListener("focusin", rememberPageFocus, true); ownerDocument.removeEventListener("selectionchange", selectionListener); ownerDocument.defaultView?.removeEventListener("resize", scheduleReposition); ownerDocument.defaultView?.removeEventListener("scroll", scheduleReposition, true); if (repositionFrame !== undefined) ownerDocument.defaultView?.cancelAnimationFrame(repositionFrame); cleanupPreview(); for (const cleanup of storedAnchorCleanups) cleanup(); host.remove(); },
   };
 }
