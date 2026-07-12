@@ -156,8 +156,19 @@ test("course lookup and invitation redemption use public credential-free endpoin
   const course = await lookupReviewCourse({ serviceOrigin: "https://review.example.org", moodleOrigin: "https://my.uconline.ac.nz", moodleCourseId: 896, fetch: fetcher });
   const access = await redeemReviewerInvitation({ serviceOrigin: "https://review.example.org", courseHandle: course.course_handle, displayName: "Reviewer", email: "reviewer@example.org", role: "beta_tester", invitationCode: "11111-22222-33333-44444", fetch: fetcher });
 
-  assert.equal(access.session.apiToken, "session");
+  assert.equal(access.session?.apiToken, "session");
   assert.equal(access.deviceCredential, "device");
   assert.equal(requests.every((request) => new Headers(request.init?.headers).get("Authorization") === null), true);
   assert.equal(requests.every((request) => request.init?.credentials === "omit"), true);
+});
+
+test("pending reviewer access preserves the reconnect code without inventing a session", async () => {
+  const access = await redeemReviewerInvitation({
+    serviceOrigin: "https://review.example.org", courseHandle: "course-1", displayName: "SME", email: "sme@example.org", role: "sme", invitationCode: "11111-22222-33333-44444",
+    fetch: async () => new Response(JSON.stringify({ state: "pending", role: "sme", session_token: null, expires_in: null, device_credential: null, reconnect_code: "AAAAA-BBBBB-CCCCC-DDDDD" }), { status: 200 }),
+  });
+  assert.equal(access.state, "pending");
+  assert.equal(access.session, undefined);
+  assert.equal(access.deviceCredential, undefined);
+  assert.equal(access.reconnectCode, "AAAAA-BBBBB-CCCCC-DDDDD");
 });

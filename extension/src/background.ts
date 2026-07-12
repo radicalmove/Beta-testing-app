@@ -58,6 +58,7 @@ async function renewStoredDevice(): Promise<string | undefined> {
   if (typeof local.deviceCredential !== "string" || typeof local.deviceCourseHandle !== "string") return undefined;
   try {
     const renewed = await renewReviewerDevice({ serviceOrigin: await serviceOrigin(), courseHandle: local.deviceCourseHandle, deviceCredential: local.deviceCredential });
+    if (!renewed.session || !renewed.deviceCredential) return undefined;
     await chrome.storage.session.set(renewed.session);
     await chrome.storage.local.set({ deviceCredential: renewed.deviceCredential });
     return renewed.session.apiToken;
@@ -124,8 +125,10 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       const value = message as { course_handle?: unknown; display_name?: unknown; email?: unknown; role?: unknown; invitation_code?: unknown };
       if (![value.course_handle, value.display_name, value.email, value.role, value.invitation_code].every((item) => typeof item === "string")) throw new Error("Invalid reviewer access request");
       const access = await redeemReviewerInvitation({ serviceOrigin: await serviceOrigin(), courseHandle: value.course_handle as string, displayName: value.display_name as string, email: value.email as string, role: value.role as string, invitationCode: value.invitation_code as string });
-      await chrome.storage.session.set(access.session);
-      await chrome.storage.local.set({ deviceCredential: access.deviceCredential, deviceCourseHandle: value.course_handle, reviewerEmail: value.email });
+      if (access.session && access.deviceCredential) {
+        await chrome.storage.session.set(access.session);
+        await chrome.storage.local.set({ deviceCredential: access.deviceCredential, deviceCourseHandle: value.course_handle, reviewerEmail: value.email });
+      }
       return { state: access.state, role: access.role, reconnect_code: access.reconnectCode };
     })();
   } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "RESUME_REVIEW_ACCESS") {
@@ -134,6 +137,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       const value = message as { course_handle?: unknown; email?: unknown; reconnect_code?: unknown };
       if (![value.course_handle, value.email, value.reconnect_code].every((item) => typeof item === "string")) throw new Error("Invalid reviewer access request");
       const access = await resumeReviewerMembership({ serviceOrigin: await serviceOrigin(), courseHandle: value.course_handle as string, email: value.email as string, reconnectCode: value.reconnect_code as string });
+      if (!access.session || !access.deviceCredential) throw new Error("Reviewer access is pending approval");
       await chrome.storage.session.set(access.session);
       await chrome.storage.local.set({ deviceCredential: access.deviceCredential, deviceCourseHandle: value.course_handle, reviewerEmail: value.email });
       return { state: access.state, role: access.role };

@@ -3,7 +3,7 @@ export type SessionToken = { apiToken: string; expiresAt: number };
 type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 type CourseLookup = { course_handle: string; title: string };
-type ReviewerAccess = { state: string; role: string; session: SessionToken; deviceCredential: string; reconnectCode?: string };
+type ReviewerAccess = { state: string; role: string; session?: SessionToken; deviceCredential?: string; reconnectCode?: string };
 
 async function publicJson(originValue: string, path: string, body: unknown, fetcher?: Fetch): Promise<any> {
   const origin = validateServiceOrigin(originValue).origin;
@@ -19,7 +19,9 @@ export async function lookupReviewCourse(options: { serviceOrigin: string; moodl
 }
 
 function parseReviewerAccess(body: any, now: () => number): ReviewerAccess {
-  if (typeof body?.session_token !== "string" || typeof body?.expires_in !== "number" || typeof body?.device_credential !== "string") throw new Error("Invalid reviewer access response");
+  if (typeof body?.state !== "string" || typeof body?.role !== "string") throw new Error("Invalid reviewer access response");
+  if (body.state === "pending" && body.session_token == null && body.device_credential == null) return { state: body.state, role: body.role, reconnectCode: typeof body.reconnect_code === "string" ? body.reconnect_code : undefined };
+  if (typeof body.session_token !== "string" || typeof body.expires_in !== "number" || typeof body.device_credential !== "string") throw new Error("Invalid reviewer access response");
   return { state: body.state, role: body.role, session: { apiToken: body.session_token, expiresAt: now() + body.expires_in * 1000 }, deviceCredential: body.device_credential, reconnectCode: typeof body.reconnect_code === "string" ? body.reconnect_code : undefined };
 }
 
