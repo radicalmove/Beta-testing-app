@@ -172,11 +172,11 @@ def extension_authorize(
 
 
 @router.post("/extension/token")
-def extension_token(payload: ExtensionTokenRequest, db: DbSession = Depends(get_session)) -> dict[str, str]:
+def extension_token(payload: ExtensionTokenRequest, db: DbSession = Depends(get_session)) -> dict[str, str | int]:
     if payload.redirect_uri not in extension_redirect_uris():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unapproved redirect URI")
     try:
         token = exchange_extension_login_code(db, payload.code, payload.redirect_uri)
     except AuthenticationError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid extension authorization code") from exc
-    return {"access_token": token, "token_type": "Bearer"}
+    return {"access_token": token, "token_type": "Bearer", "expires_in": 8 * 60 * 60}
