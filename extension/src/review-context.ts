@@ -80,6 +80,18 @@ export class ReviewContextCache {
 
   courseId(sender: ReviewSender): string | undefined { return this.authorizedEntry(sender, false, true)?.id; }
 
+  exportTab(tabId: number): StoredReviewContext | undefined {
+    const entry = this.entries.get(tabId);
+    if (!entry || this.now() - entry.lastActivityAt > this.ttlMs) return undefined;
+    return { id: entry.id, title: entry.title, course_url: entry.course_url, parent_activity_url: entry.parent_activity_url };
+  }
+
+  restoreTab(tabId: number, extensionId: string, context: StoredReviewContext): boolean {
+    if (!Number.isInteger(tabId) || tabId < 0 || !extensionId || !isStoredReviewContext(context)) return false;
+    this.entries.set(tabId, { ...context, extensionId, lastActivityAt: this.now(), readyFrames: new Map() });
+    return true;
+  }
+
   removeTab(tabId: number): void { this.entries.delete(tabId); }
 
   private authorizedEntry(sender: ReviewSender, requireSubframe: boolean, allowAnyFrame = false): Entry | undefined {
@@ -92,4 +104,10 @@ export class ReviewContextCache {
     entry.lastActivityAt = now;
     return entry;
   }
+}
+
+function isStoredReviewContext(context: StoredReviewContext): boolean {
+  if (!context || typeof context !== "object") return false;
+  if (![context.id, context.title, context.course_url, context.parent_activity_url].every((value) => typeof value === "string" && value.length > 0)) return false;
+  try { return new URL(context.course_url).protocol === "https:" && new URL(context.parent_activity_url).protocol === "https:"; } catch { return false; }
 }

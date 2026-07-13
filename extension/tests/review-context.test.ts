@@ -74,3 +74,14 @@ test("ready origins are deduplicated and valid activity slides the session TTL",
   now = 9; assert.ok(cache.obtain(frame));
   now = 18; assert.ok(cache.obtain(frame));
 });
+
+test("trusted course binding survives a background worker restart", () => {
+  const beforeRestart = new ReviewContextCache();
+  beforeRestart.register(top, context);
+  const stored = beforeRestart.exportTab(4);
+  assert.deepEqual(stored, context);
+
+  const afterRestart = new ReviewContextCache();
+  assert.equal(afterRestart.restoreTab(4, "extension", stored!), true);
+  assert.deepEqual(afterRestart.obtain(frame), { course_id: context.id, course_title: context.title, parent_activity_url: context.parent_activity_url });
+});

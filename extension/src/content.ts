@@ -308,14 +308,21 @@ type Runtime = {
   onMessage?: { addListener(listener: RuntimeListener): void; removeListener(listener: RuntimeListener): void };
 };
 
-export function startEmbeddedReview(targetWindow: Window & typeof globalThis, targetDocument: Document, runtime: Runtime, retryDelay = 200): () => void {
+export function startEmbeddedReview(targetWindow: Window & typeof globalThis, targetDocument: Document, runtime: Runtime, retryDelay = 200, leaseDelay = 2_000): () => void {
   let stopped = false;
   let activeCleanup: (() => void) | undefined;
   let generation = -1;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  let leaseTimer: ReturnType<typeof globalThis.setInterval> | undefined;
   let attempts = 0;
   const scheduleRetry = typeof targetWindow.setTimeout === "function" ? targetWindow.setTimeout.bind(targetWindow) : globalThis.setTimeout;
   const cancelRetry = typeof targetWindow.clearTimeout === "function" ? targetWindow.clearTimeout.bind(targetWindow) : globalThis.clearTimeout;
+  const scheduleLease: (handler: () => void, delay: number) => ReturnType<typeof globalThis.setInterval> = typeof targetWindow.setInterval === "function"
+    ? ((handler: () => void, delay: number) => targetWindow.setInterval(handler, delay) as unknown as ReturnType<typeof globalThis.setInterval>)
+    : ((handler, delay) => globalThis.setInterval(handler, delay));
+  const cancelLease: (timer: ReturnType<typeof globalThis.setInterval>) => void = typeof targetWindow.clearInterval === "function"
+    ? ((timer: ReturnType<typeof globalThis.setInterval>) => targetWindow.clearInterval(timer as unknown as number))
+    : ((timer) => globalThis.clearInterval(timer));
   const activate = (nextGeneration: number) => {
     if (stopped || nextGeneration < generation) return;
     if (nextGeneration === generation && activeCleanup) return;
@@ -342,15 +349,19 @@ export function startEmbeddedReview(targetWindow: Window & typeof globalThis, ta
       if (attempts < 25 && context?.error === "Review context unavailable") retryTimer = scheduleRetry(register, retryDelay);
       return;
     }
+    attempts = 0;
     runtime.sendMessage({ type: "REGISTER_REVIEW_FRAME", capabilities: measureFrameCapabilities(targetDocument, targetWindow) }, () => undefined);
     // Unit-test and legacy runtimes have no command channel. Production Chrome
     // always supplies runtime.onMessage and therefore remains coordinator-owned.
     if (!runtime.onMessage) activate(0);
   });
   register();
+  leaseTimer = scheduleLease(register, leaseDelay);
+  (leaseTimer as unknown as { unref?: () => void }).unref?.();
   return () => {
     stopped = true;
     if (retryTimer !== undefined) cancelRetry(retryTimer);
+    if (leaseTimer !== undefined) cancelLease(leaseTimer);
     runtime.onMessage?.removeListener(onCommand);
     deactivate();
   };

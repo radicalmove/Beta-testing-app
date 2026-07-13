@@ -157,6 +157,27 @@ test("embedded review stays dormant until the coordinator activates it", async (
   cleanup();
 });
 
+test("embedded review re-registers after a background worker restart interval", async () => {
+  const window = new Window({ url: "https://rise.example/activity#/lesson/1" });
+  window.document.body.innerHTML = "<main><h1>Lesson</h1><p>Meaningful Rise lesson content for review.</p></main>";
+  let contextRequests = 0; let registrations = 0;
+  const runtime = {
+    onMessage: { addListener: () => undefined, removeListener: () => undefined },
+    sendMessage: (message: any, callback: (response: any) => void) => {
+      if (message.type === "GET_REVIEW_CONTEXT") { contextRequests += 1; callback({ ok: true, data: { course_id: "123e4567-e89b-12d3-a456-426614174000", course_title: "Law", parent_activity_url: "https://learn.example/mod/scorm/player.php?cmid=22" } }); }
+      else { if (message.type === "REGISTER_REVIEW_FRAME") registrations += 1; callback({ ok: true, data: {} }); }
+    },
+  };
+  const cleanup = startEmbeddedReview(window as any, window.document as any, runtime as any, 0, 5);
+  await new Promise((resolve) => setTimeout(resolve, 18));
+  assert.ok(contextRequests >= 2);
+  assert.ok(registrations >= 2);
+  cleanup();
+  const stoppedAt = contextRequests;
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(contextRequests, stoppedAt);
+});
+
 test("embedded review obtains trusted course context and updates its hash page identity", async () => {
   const window = new Window({ url: "https://rise.example/activity#/lesson/1" });
   window.document.title = "Lesson 1"; window.document.body.innerHTML = "<p>Review phrase</p>";

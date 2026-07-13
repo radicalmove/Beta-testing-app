@@ -2,7 +2,7 @@ import { ApiClient, authenticate, getActiveToken, lookupReviewCourse, redeemRevi
 import { authorizeAuthenticateSender, authorizeResolveSender, handleCreateCommentBridge, handleDeleteCommentBridge, handleListCourseCommentsBridge, handleListPageCommentsBridge, handleResolveCourseBridge, normalizeErrorMessage, validateAuthenticateMessage, validateCancelScreenshotMessage, validateUploadScreenshotMessage, validateViewerResponse, type CreateCommentPayload, type ResolveCoursePayload } from "./background-bridge.ts";
 import { validateScreenshotDataUrl } from "./screenshot-validation.ts";
 import { reconcileOptionalContentScript } from "./optional-content-scripts";
-import { ReviewContextCache, validateContextMessage, type ReviewSender } from "./review-context.ts";
+import { ReviewContextCache, validateContextMessage, type ReviewSender, type StoredReviewContext } from "./review-context.ts";
 import { ScreenshotCapabilities } from "./screenshot-capabilities.ts";
 import { PendingAccessStore, PendingApprovalManager } from "./pending-access.ts";
 import { FrameCoordinatorRuntime } from "./frame-coordination-runtime.ts";
@@ -152,9 +152,9 @@ async function deleteComment(commentId: string, _courseId: string): Promise<unkn
   return {};
 }
 
-chrome.tabs?.onRemoved?.addListener((tabId: number) => { reviewContexts.removeTab(tabId); frameCoordination.removeTab(tabId); });
+chrome.tabs?.onRemoved?.addListener((tabId: number) => { reviewContexts.removeTab(tabId); frameCoordination.removeTab(tabId); void chrome.storage.session.remove(`reviewContext:${tabId}`); });
 chrome.tabs?.onRemoved?.addListener((tabId: number) => chrome.storage.session.remove(`commentNavigation:${tabId}`));
-chrome.webNavigation?.onCommitted?.addListener((details: { tabId: number; frameId: number }) => { if (details.frameId === 0) reviewContexts.removeTab(details.tabId); });
+chrome.webNavigation?.onCommitted?.addListener((details: { tabId: number; frameId: number }) => { if (details.frameId === 0) { reviewContexts.removeTab(details.tabId); frameCoordination.removeTab(details.tabId); void chrome.storage.session.remove(`reviewContext:${details.tabId}`); } });
 
 chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & { tab?: { id?: number; windowId?: number } }, sendResponse: (value: unknown) => void) => {
   void screenshotCapabilities.cleanup().catch(() => undefined);
@@ -234,13 +234,17 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       resolve: async (payload) => {
         const resolved = await resolveCourse(payload) as { id?: unknown; title?: unknown };
         if (typeof resolved?.id === "string" && sender.frameId === 0) {
-          reviewContexts.register(sender, {
+          const storedContext: StoredReviewContext = {
             id: resolved.id,
             title: typeof resolved.title === "string" && resolved.title.trim() ? resolved.title : payload.title,
             course_url: payload.course_url,
             parent_activity_url: sender.url!,
-          });
-          if (typeof sender.tab?.id === "number") frameCoordination.bindCourse(sender.tab.id, resolved.id);
+          };
+          reviewContexts.register(sender, storedContext);
+          if (typeof sender.tab?.id === "number") {
+            frameCoordination.bindCourse(sender.tab.id, resolved.id);
+            await chrome.storage.session.set({ [`reviewContext:${sender.tab.id}`]: storedContext });
+          }
         }
         return resolved;
       },
@@ -336,7 +340,15 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       const authorized = await authorizeResolveSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) });
       if (!authorized) throw new Error("Unauthorized review context sender");
       if (control.type === "GET_REVIEW_CONTEXT") {
-        const context = reviewContexts.obtain(sender);
+        let context = reviewContexts.obtain(sender);
+        if (!context && typeof sender.tab?.id === "number") {
+          const key = `reviewContext:${sender.tab.id}`;
+          const stored = (await chrome.storage.session.get(key))[key] as StoredReviewContext | undefined;
+          if (stored && reviewContexts.restoreTab(sender.tab.id, chrome.runtime.id, stored)) {
+            frameCoordination.bindCourse(sender.tab.id, stored.id);
+            context = reviewContexts.obtain(sender);
+          }
+        }
         if (!context) throw new Error("Review context unavailable");
         return context;
       }
