@@ -388,6 +388,23 @@ test("thread popover remains positioned from its marker and markers have no whit
   marker.click(); assert.equal(shadow.querySelector("[data-thread-popover]"), null);
 });
 
+test("thread popover hides when its marker scrolls outside the viewport", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  document.body.innerHTML = '<div id="target">Target</div>';
+  const target = document.querySelector<HTMLElement>("#target")!;
+  target.getBoundingClientRect = () => ({ x: 40, y: 100, left: 40, top: 100, right: 140, bottom: 140, width: 100, height: 40, toJSON: () => ({}) });
+  const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const comment = { id: "00000000-0000-4000-8000-000000000012", body: "Pinned", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: context.pageTitle, anchor_type: "visual_pin" as const, selected_quote: null, prefix: null, suffix: null, css_selector: "#target", dom_selector: null, relative_x: .5, relative_y: .5, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: true } };
+  overlay.setPageComments([comment]); const marker = document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")!;
+  let markerTop = 100;
+  marker.getBoundingClientRect = () => ({ x: 70, y: markerTop, left: 70, top: markerTop, right: 108, bottom: markerTop + 38, width: 38, height: 38, toJSON: () => ({}) });
+  marker.click(); const popover = shadow.querySelector<HTMLElement>("[data-thread-popover]")!;
+  assert.equal(popover.hidden, false);
+  markerTop = -40; window.dispatchEvent(new window.Event("scroll")); assert.equal(popover.hidden, true);
+  markerTop = 100; window.dispatchEvent(new window.Event("scroll")); assert.equal(popover.hidden, false);
+  overlay.destroy();
+});
+
 test("marker placement has an obvious active button and comment cursor", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   document.body.innerHTML = '<main style="width:300px;height:200px"><p>Place here</p></main>';
@@ -416,6 +433,21 @@ test("course comments default to open and expose resolved separately", () => {
   shadow.querySelector<HTMLElement>('[data-comment-filter="resolved"]')!.click();
   assert.equal(items.find((item) => item.textContent!.includes("Finished feedback"))!.hidden, false);
   assert.equal(items.find((item) => item.textContent!.includes("Open feedback"))!.hidden, true);
+});
+
+test("resolving shows a large checked confirmation for three seconds", async () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  document.body.innerHTML = '<div id="target">Target</div>'; const target = document.querySelector<HTMLElement>("#target")!;
+  target.getBoundingClientRect = () => ({ x: 20, y: 40, left: 20, top: 40, right: 120, bottom: 80, width: 100, height: 40, toJSON: () => ({}) });
+  let delayed: (() => void) | undefined; let delay = 0;
+  window.setTimeout = ((handler: TimerHandler, milliseconds?: number) => { delayed = handler as () => void; delay = milliseconds ?? 0; return 1; }) as unknown as typeof window.setTimeout;
+  const overlay = mountReviewOverlay(document, context, "connected", { changeStatus: async () => undefined }); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const comment = { id: "00000000-0000-4000-8000-000000000051", body: "Resolve me", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: context.pageTitle, anchor_type: "visual_pin" as const, selected_quote: null, prefix: null, suffix: null, css_selector: "#target", dom_selector: null, relative_x: .5, relative_y: .5, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: true, can_share_with_sme: false, can_delete: false } };
+  overlay.setPageComments([comment]); document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")!.click();
+  const resolve = shadow.querySelector<HTMLButtonElement>(".resolve-toggle")!; resolve.click(); await Promise.resolve(); await Promise.resolve();
+  assert.equal(resolve.textContent, "☑ Resolved"); assert.match(resolve.style.fontSize, /18px/); assert.equal(delay, 3000); assert.ok(shadow.querySelector("[data-thread-popover]"));
+  delayed?.(); assert.equal(shadow.querySelector("[data-thread-popover]"), null);
+  overlay.destroy();
 });
 
 test("comment index switches between whole course and current page and renumbers visible links", () => {
