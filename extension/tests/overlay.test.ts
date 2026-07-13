@@ -404,6 +404,7 @@ test("marker placement has an obvious active button and comment cursor", () => {
 });
 
 test("course comments default to open and expose resolved separately", () => {
+  assert.match(tealOverlayOverrides, /\.comment-index-link\[hidden\]\{display:none!important\}/);
   const window = new Window(); const document = window.document as unknown as Document;
   const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   const base = { id: "00000000-0000-4000-8000-000000000021", body: "Open feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Week 2", anchor_type: "text_highlight" as const, selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: true, can_share_with_sme: false, can_delete: true, allowed_statuses: ["open", "resolved"] } };

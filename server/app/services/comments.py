@@ -76,11 +76,11 @@ def comment_capabilities(viewer: User, comment: Comment) -> dict:
         can_reply = viewer.role is not UserRole.BETA_TESTER or is_author
     return {
         "can_reply": can_reply,
-        "can_change_status": is_lead,
+        "can_change_status": is_lead or is_admin,
         "can_share_with_sme": is_lead,
         "can_delete": is_author or is_lead or is_admin,
         "can_edit": is_author,
-        "allowed_statuses": [item.value for item in allowed_status_choices(comment.status)] if is_lead else [comment.status.value],
+        "allowed_statuses": [item.value for item in allowed_status_choices(comment.status)] if is_lead or is_admin else [comment.status.value],
     }
 
 
@@ -308,7 +308,7 @@ def update_comment_status(db: DbSession, actor: User, comment: Comment, status: 
     comment = db.scalar(select(Comment).where(Comment.id == comment.id).with_for_update())
     if comment is None:
         raise ValueError("Comment no longer exists")
-    if actor.role is not UserRole.LD_DCD:
+    if actor.role not in {UserRole.LD_DCD, UserRole.ADMIN}:
         raise AuthorizationError("Only an LD/DCD can change comment status")
     new_status = CommentStatus(status)
     if new_status is CommentStatus.RESOLVED and comment.status is not CommentStatus.RESOLVED:

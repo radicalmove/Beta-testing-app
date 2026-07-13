@@ -88,8 +88,10 @@ def test_only_ld_dcd_can_change_a_beta_thread_status(client):
     share_comment_with_user(session, lead_user, session.get(Comment, UUID(comment_id)), sme_user)
     session.close()
 
-    for headers in (beta, admin, sme):
+    for headers in (beta, sme):
         assert client.post(f"/api/comments/{comment_id}/status", headers=headers, json={"status": "in_progress"}).status_code == 403
+    assert client.post(f"/api/comments/{comment_id}/status", headers=admin, json={"status": "resolved"}).status_code == 200
+    assert client.post(f"/api/comments/{comment_id}/status", headers=admin, json={"status": "open"}).status_code == 200
     assert client.post(f"/api/comments/{comment_id}/status", headers=lead, json={"status": "in_progress"}).status_code == 200
 
 
