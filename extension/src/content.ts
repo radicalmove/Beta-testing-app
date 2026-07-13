@@ -8,6 +8,7 @@ import { canonicalCourseUrlFromDocument, courseTitleFromDocument, detectCourseCo
 import { mountReviewOverlay, type AuthenticationOutcome, type BuildDiagnostics, type ConnectionStatus, type ReviewOverlay } from "./overlay/root.ts";
 import type { PageComment } from "./background-bridge.ts";
 import { measureFrameCapabilities } from "./frame-capabilities.ts";
+import { startFrameViewportBridge, toolbarDocumentPosition, type Rect } from "./frame-viewport.ts";
 
 const MARKER = "data-moodle-review-extension";
 const BUILD_DIAGNOSTICS = {
@@ -227,6 +228,7 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
     if (context.page_url === contextSnapshot.page_url) void loadPageComments(context.page_url);
     return saved;
   }, editThread: async (commentId, body) => { if (!courseId) throw new Error("Course connection unavailable"); await refreshCourseBindingBeforeComment(send, context, courseId); await send({ type: "EDIT_COMMENT_THREAD", comment_id: commentId, body }); await loadPageComments(context.page_url); }, replyThread: async (commentId, body) => { if (!courseId) throw new Error("Course connection unavailable"); await refreshCourseBindingBeforeComment(send, context, courseId); await send({ type: "REPLY_COMMENT_THREAD", comment_id: commentId, body }); await loadPageComments(context.page_url); }, changeStatus: async (commentId, nextStatus) => { if (!courseId) throw new Error("Course connection unavailable"); await refreshCourseBindingBeforeComment(send, context, courseId); await send({ type: "UPDATE_COMMENT_STATUS", comment_id: commentId, status: nextStatus }); await loadPageComments(context.page_url); }, manageSme: async (commentId, userIds) => { if (!courseId) throw new Error("Course connection unavailable"); await refreshCourseBindingBeforeComment(send, context, courseId); return send({ type: userIds ? "SET_SME_RECIPIENTS" : "GET_SME_RECIPIENTS", comment_id: commentId, ...(userIds ? { user_ids: userIds } : {}) }); }, deleteThread: async (commentId) => { if (!courseId) throw new Error("Course connection unavailable"); await refreshCourseBindingBeforeComment(send, context, courseId); await send({ type: "DELETE_COMMENT_THREAD", comment_id: commentId }); await loadPageComments(context.page_url); }, uploadScreenshot: (commentId, dataUrl) => send({ type: "UPLOAD_SCREENSHOT", comment_id: commentId, data_url: dataUrl }), cancelScreenshot: (commentId) => send({ type: "CANCEL_SCREENSHOT", comment_id: commentId }) }, buildDiagnostics);
+  const viewportCleanup = startFrameViewportBridge(targetWindow, targetDocument, () => undefined);
   let requestSequence = 0;
 
   const refresh = () => {
@@ -275,14 +277,19 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
   const cancelTimeout = typeof targetWindow.clearTimeout === "function" ? targetWindow.clearTimeout.bind(targetWindow) : globalThis.clearTimeout;
   let fallbackTimer: ReturnType<typeof setTimeout>;
   const setParentOverlayVisible = (visible: boolean) => {
-    const host = targetDocument.getElementById("moodle-course-review-overlay");
-    if (host) host.hidden = !visible;
+    overlay.setPresentationVisible(visible);
   };
   const checkFrames = () => {
     const inaccessible = inaccessibleFrameOrigins(targetDocument);
-    if (!inaccessible.length) { setParentOverlayVisible(true); overlay.hideFrameFallback(); return; }
     runtime.sendMessage({ type: "GET_REVIEW_FRAME_STATUS" }, (response) => {
-      const ready = (response?.data as { ready_origins?: unknown } | undefined)?.ready_origins;
+      const status = response?.data as { ready_origins?: unknown; active_embedded_count?: unknown } | undefined;
+      if (response?.ok && typeof status?.active_embedded_count === "number" && status.active_embedded_count > 0) {
+        overlay.hideFrameFallback();
+        setParentOverlayVisible(false);
+        return;
+      }
+      if (!inaccessible.length) { setParentOverlayVisible(true); overlay.hideFrameFallback(); return; }
+      const ready = status?.ready_origins;
       const trusted = response?.ok && Array.isArray(ready) ? new Set(ready.filter((value): value is string => typeof value === "string")) : new Set<string>();
       if (inaccessible.some((origin) => !trusted.has(origin))) {
         setParentOverlayVisible(true);
@@ -298,7 +305,7 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
   const onFrameReady = (event: MessageEvent) => { if (event.data?.type === "MOODLE_REVIEW_FRAME_READY") checkFrames(); };
   targetWindow.addEventListener("message", onFrameReady);
   refresh();
-  return () => { stopped = true; clearApprovalTimer(); targetDocument.removeEventListener("visibilitychange", onVisibility); cancelTimeout(fallbackTimer); cancelTimeout(poll); cancelTimeout(latePoll); targetWindow.removeEventListener("message", onFrameReady); for (const eventName of ["popstate", "hashchange", "moodle-review:navigate"]) targetWindow.removeEventListener(eventName, clearNavigatedPage); lifecycle.teardown(); overlay.destroy(); };
+  return () => { stopped = true; clearApprovalTimer(); targetDocument.removeEventListener("visibilitychange", onVisibility); cancelTimeout(fallbackTimer); cancelTimeout(poll); cancelTimeout(latePoll); targetWindow.removeEventListener("message", onFrameReady); for (const eventName of ["popstate", "hashchange", "moodle-review:navigate"]) targetWindow.removeEventListener(eventName, clearNavigatedPage); viewportCleanup(); lifecycle.teardown(); overlay.destroy(); };
 }
 
 type RuntimeResponse = { ok?: boolean; status?: ConnectionStatus; error?: string; data?: unknown } | undefined;
@@ -315,6 +322,14 @@ export function startEmbeddedReview(targetWindow: Window & typeof globalThis, ta
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let leaseTimer: ReturnType<typeof globalThis.setInterval> | undefined;
   let attempts = 0;
+  let activeOverlay: ReviewOverlay | undefined;
+  let latestVisibleRect: Rect | undefined;
+  const positionOverlay = () => {
+    if (!activeOverlay || !latestVisibleRect) return;
+    activeOverlay.setPresentationPosition(toolbarDocumentPosition(latestVisibleRect, { x: targetWindow.scrollX, y: targetWindow.scrollY }, activeOverlay.presentationSize(), 16));
+    activeOverlay.setPresentationVisible(true);
+  };
+  const viewportCleanup = startFrameViewportBridge(targetWindow, targetDocument, (rect) => { latestVisibleRect = rect; if (rect) positionOverlay(); else activeOverlay?.setPresentationVisible(false); });
   const scheduleRetry = typeof targetWindow.setTimeout === "function" ? targetWindow.setTimeout.bind(targetWindow) : globalThis.setTimeout;
   const cancelRetry = typeof targetWindow.clearTimeout === "function" ? targetWindow.clearTimeout.bind(targetWindow) : globalThis.clearTimeout;
   const scheduleLease: (handler: () => void, delay: number) => ReturnType<typeof globalThis.setInterval> = typeof targetWindow.setInterval === "function"
@@ -328,9 +343,9 @@ export function startEmbeddedReview(targetWindow: Window & typeof globalThis, ta
     if (nextGeneration === generation && activeCleanup) return;
     activeCleanup?.();
     generation = nextGeneration;
-    activeCleanup = startActiveEmbeddedReview(targetWindow, targetDocument, runtime, retryDelay);
+    activeCleanup = startActiveEmbeddedReview(targetWindow, targetDocument, runtime, retryDelay, (mounted) => { activeOverlay = mounted; mounted.setPresentationVisible(false); positionOverlay(); });
   };
-  const deactivate = () => { activeCleanup?.(); activeCleanup = undefined; };
+  const deactivate = () => { activeOverlay = undefined; activeCleanup?.(); activeCleanup = undefined; };
   const onCommand: RuntimeListener = (message, _sender, sendResponse) => {
     const command = message as { type?: unknown; generation?: unknown };
     if (command.type === "ACTIVATE_REVIEW_FRAME" && Number.isInteger(command.generation)) {
@@ -364,10 +379,11 @@ export function startEmbeddedReview(targetWindow: Window & typeof globalThis, ta
     if (leaseTimer !== undefined) cancelLease(leaseTimer);
     runtime.onMessage?.removeListener(onCommand);
     deactivate();
+    viewportCleanup();
   };
 }
 
-function startActiveEmbeddedReview(targetWindow: Window & typeof globalThis, targetDocument: Document, runtime: Runtime, retryDelay = 200): () => void {
+function startActiveEmbeddedReview(targetWindow: Window & typeof globalThis, targetDocument: Document, runtime: Runtime, retryDelay = 200, onMounted?: (overlay: ReviewOverlay) => void): () => void {
   let stopped = false;
   let lifecycle: { teardown(): void } | undefined;
   let overlay: ReviewOverlay | undefined;
@@ -398,6 +414,7 @@ function startActiveEmbeddedReview(targetWindow: Window & typeof globalThis, tar
       if (context.page_url === contextSnapshot.page_url) void loadPageComments();
       return saved;
     }, uploadScreenshot: (commentId, dataUrl) => send({ type: "UPLOAD_SCREENSHOT", comment_id: commentId, data_url: dataUrl }), cancelScreenshot: (commentId) => send({ type: "CANCEL_SCREENSHOT", comment_id: commentId }) }, BUILD_DIAGNOSTICS);
+    onMounted?.(overlay);
     const refresh = () => { const next = frameContext(); if (context.page_url !== next.page_url) { commentSequence += 1; overlay?.setPageComments([]); } context = next; overlay?.update(context, "connected"); void loadPageComments(); };
     lifecycle = createLifecycleController(targetWindow, targetDocument, refresh);
     const clearNavigatedPage = () => { const next = frameContext(); if (context.page_url !== next.page_url) { commentSequence += 1; overlay?.setPageComments([]); } };

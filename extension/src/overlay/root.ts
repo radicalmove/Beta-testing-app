@@ -40,7 +40,7 @@ export type UnresolvedAnchor = { id: string; label: string; quote?: string };
 export type AuthenticationOutcome = { status: ConnectionStatus; message?: string };
 export type ReviewerAccessInput = { displayName: string; email: string; role: string; code: string };
 export type ReviewOverlayOptions = { onAuthenticate?: () => Promise<AuthenticationOutcome>; onCheckApproval?: () => Promise<AuthenticationOutcome>; onAccessSubmit?: (input: ReviewerAccessInput) => Promise<AuthenticationOutcome>; getSavedReviewers?: () => Promise<Array<{ email: string; label: string }>>; onUseSavedReviewer?: (email: string) => Promise<AuthenticationOutcome>; useAccessForm?: () => boolean; navigateToComment?: (commentId: string, pageUrl: string) => Promise<void>; submit?: (input: { body: string; category: string; anchor: CommentAnchor; screenshot: boolean; embeddedFrameUnavailable: boolean; contextSnapshot: CourseContext }) => Promise<{ id?: string; screenshot_available?: boolean } | void>; editThread?: (commentId: string, body: string) => Promise<void>; replyThread?: (commentId: string, body: string) => Promise<void>; changeStatus?: (commentId: string, status: string) => Promise<void>; manageSme?: (commentId: string, userIds?: string[]) => Promise<{ available_recipients: Array<{ id: string; display_name: string }>; selected_user_ids: string[] }>; deleteThread?: (commentId: string) => Promise<void>; uploadScreenshot?: (commentId: string, dataUrl: string) => Promise<void>; cancelScreenshot?: (commentId: string) => Promise<void>; captureScreenshot?: () => Promise<string>; onFrameFallback?: () => void; onTakeToContext?: (id: string) => void };
-export type ReviewOverlay = { update(context: CourseContext, status: ConnectionStatus): void; setViewer(viewer?: { display_name: string | null; email: string; role: string }): void; setPageComments(comments: PageComment[]): void; takeToContext(id: string): boolean; showFrameFallback(): void; hideFrameFallback(): void; setUnresolvedAnchors(anchors: UnresolvedAnchor[]): void; destroy(): void };
+export type ReviewOverlay = { update(context: CourseContext, status: ConnectionStatus): void; setViewer(viewer?: { display_name: string | null; email: string; role: string }): void; setPageComments(comments: PageComment[]): void; takeToContext(id: string): boolean; showFrameFallback(): void; hideFrameFallback(): void; setPresentationVisible(visible: boolean): void; setPresentationPosition(position?: { left: number; top: number }): void; presentationSize(): { width: number; height: number }; setUnresolvedAnchors(anchors: UnresolvedAnchor[]): void; destroy(): void };
 
 export function mountReviewOverlay(document: Document, context: CourseContext, status: ConnectionStatus = "connecting", options: ReviewOverlayOptions = {}, buildDiagnostics: BuildDiagnostics = defaultBuildDiagnostics): ReviewOverlay {
   const existing = document.getElementById(OVERLAY_HOST_ID) as HTMLElement | null;
@@ -458,6 +458,15 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     },
     showFrameFallback() { frameUnavailable = true; shadow.querySelector("[data-frame-fallback]")?.remove(); },
     hideFrameFallback() { frameUnavailable = false; fallbackPin = false; const region = shadow.querySelector<HTMLElement>("[data-frame-fallback]"); if (region) region.hidden = true; },
+    setPresentationVisible(visible) { host.hidden = !visible; host.style.setProperty("display", visible ? "block" : "none", "important"); },
+    setPresentationPosition(position) {
+      const shell = shadow.querySelector<HTMLElement>(".shell");
+      if (!shell) return;
+      if (!position) { host.style.removeProperty("left"); host.style.removeProperty("top"); host.style.setProperty("position", "fixed", "important"); shell.style.removeProperty("position"); shell.style.removeProperty("right"); shell.style.removeProperty("bottom"); return; }
+      host.style.setProperty("position", "absolute", "important"); host.style.setProperty("left", `${position.left}px`, "important"); host.style.setProperty("top", `${position.top}px`, "important");
+      shell.style.setProperty("position", "static", "important"); shell.style.setProperty("right", "auto", "important"); shell.style.setProperty("bottom", "auto", "important");
+    },
+    presentationSize() { const shell = shadow.querySelector<HTMLElement>(".shell"); const rect = shell?.getBoundingClientRect(); return { width: rect?.width || shell?.offsetWidth || 600, height: rect?.height || shell?.offsetHeight || 150 }; },
     setUnresolvedAnchors(anchors) {
       let region = shadow.querySelector<HTMLElement>("[data-unresolved]");
       if (!region) {

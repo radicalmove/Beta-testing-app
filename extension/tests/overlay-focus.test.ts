@@ -19,6 +19,24 @@ test("overlay markup is a compact accessible toolbar with course and connection 
   assert.match(createOverlayMarkup({ courseTitle: "Law", pageTitle: "Week 2", status: "pending" }), /Waiting for approval/);
 });
 
+test("embedded presentation can move absolutely and hide without leaving a duplicate toolbar", () => {
+  const window = new Window({ url: "https://rise.example.invalid/lesson" });
+  const context = { course_url: "https://moodle.example.invalid/course/view.php?id=1", page_url: window.location.href, title: "Law", pageTitle: "Lesson", identityConfidence: "confirmed" as const };
+  const overlay = mountReviewOverlay(window.document as unknown as Document, context, "connected");
+  const host = window.document.getElementById(OVERLAY_HOST_ID) as unknown as HTMLElement;
+  const shell = host.shadowRoot!.querySelector<HTMLElement>(".shell")!;
+  overlay.setPresentationPosition({ left: 120, top: 840 });
+  assert.equal(host.style.position, "absolute");
+  assert.equal(host.style.left, "120px");
+  assert.equal(host.style.top, "840px");
+  assert.equal(shell.style.position, "static");
+  overlay.setPresentationVisible(false);
+  assert.equal(host.style.getPropertyValue("display"), "none");
+  overlay.setPresentationVisible(true);
+  assert.equal(host.style.getPropertyValue("display"), "block");
+  overlay.destroy();
+});
+
 const context = { course_url: "https://learn.example/course/view.php?id=1", page_url: "https://learn.example/mod/page/view.php?id=2", title: "Law", pageTitle: "Week 2", moodle_course_id: 1, identityConfidence: "confirmed" as const };
 const storedHighlight = { id: "00000000-0000-4000-8000-000000000001", body: "Clarify this", category: "general", status: "open", author: { display_name: "beta@example.test", role: "beta_tester" }, page_url: context.page_url, page_title: "Week 2", anchor_type: "text_highlight" as const, selected_quote: "important phrase", prefix: "An ", suffix: " here", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [{ id: "00000000-0000-4000-8000-000000000003", body: "LD reply", author: { display_name: "ld@example.test", role: "ld_dcd" } }], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: true } };
 

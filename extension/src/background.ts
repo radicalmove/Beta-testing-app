@@ -367,7 +367,8 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       }
       if (control.type === "ACK_REVIEW_FRAME_DORMANT") return { dormant: true };
       if (control.type === "RENEW_REVIEW_FRAME_LEASE") return { valid: frameCoordination.snapshot(sender.tab!.id!).activeFrameIds.includes(sender.frameId!) };
-      return { ready_count: reviewContexts.readyFrameCount(sender), ready_origins: reviewContexts.readyOrigins(sender) };
+      const activeEmbeddedCount = typeof sender.tab?.id === "number" ? frameCoordination.snapshot(sender.tab.id).activeFrameIds.filter((frameId) => frameId !== 0).length : 0;
+      return { ready_count: reviewContexts.readyFrameCount(sender), ready_origins: reviewContexts.readyOrigins(sender), active_embedded_count: activeEmbeddedCount };
     })();
   }
   if (!operation) return false;
