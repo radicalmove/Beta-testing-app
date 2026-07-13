@@ -464,14 +464,15 @@ test("comment index switches between whole course and current page and renumbers
 test("clicking a comment keeps the list open and scrolls its course content into view", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   document.body.innerHTML = '<section id="target">Course content</section>'; const target = document.querySelector<HTMLElement>("#target")!;
-  target.getBoundingClientRect = () => ({ x: 20, y: 120, left: 20, top: 120, right: 220, bottom: 180, width: 200, height: 60, toJSON: () => ({}) });
-  let contentScrolls = 0; target.scrollIntoView = () => { contentScrolls += 1; };
+  target.getBoundingClientRect = () => ({ x: 20, y: 0, left: 20, top: 0, right: 220, bottom: 2000, width: 200, height: 2000, toJSON: () => ({}) });
+  Object.defineProperty(window, "innerHeight", { value: 600, configurable: true });
+  let scrollDelta: number | undefined; window.scrollBy = ((options: ScrollToOptions) => { scrollDelta = options.top; }) as typeof window.scrollBy;
   const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
-  const comment = { id: "00000000-0000-4000-8000-000000000042", body: "Go here", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: context.pageTitle, anchor_type: "visual_pin" as const, selected_quote: null, prefix: null, suffix: null, css_selector: "#target", dom_selector: null, relative_x: .5, relative_y: .5, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } };
+  const comment = { id: "00000000-0000-4000-8000-000000000042", body: "Go here", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: context.pageTitle, anchor_type: "visual_pin" as const, selected_quote: null, prefix: null, suffix: null, css_selector: "#target", dom_selector: null, relative_x: .5, relative_y: .9, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } };
   overlay.setPageComments([comment]); shadow.querySelector<HTMLElement>('[data-action="panel"]')!.click();
   shadow.querySelector<HTMLElement>("[data-comment-item]")!.click();
   assert.equal(shadow.querySelector<HTMLElement>(".panel")!.hidden, false);
-  assert.equal(contentScrolls, 1);
+  assert.equal(scrollDelta, 1500);
   assert.ok(shadow.querySelector("[data-thread-popover]"));
   overlay.destroy();
 });

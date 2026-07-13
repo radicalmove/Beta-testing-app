@@ -415,15 +415,17 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
         const item = ownerDocument.createElement("button"); item.type = "button"; item.className = "comment-index-link"; item.dataset.commentItem = comment.id; item.dataset.commentGroup = comment.status === "resolved" ? "resolved" : "open"; item.dataset.commentPage = comment.page_url; const initialPage = comment.page_title.replace(/\s+/g, " ").trim().slice(0, 32); const initialBody = comment.body.replace(/\s+/g, " ").trim().slice(0, 56); item.textContent = `#${commentIndex + 1} · ${initialPage} · “${initialBody}${comment.body.length > 56 ? "…" : ""}”`; item.setAttribute("aria-label", `Comment ${commentIndex + 1}. ${comment.page_title}. ${comment.body}. ${comment.author.display_name}. Status ${comment.status}.`);
         item.addEventListener("click", async () => {
           if (comment.page_url !== context.page_url) { if (options.navigateToComment) await options.navigateToComment(comment.id, comment.page_url); else ownerDocument.defaultView?.location.assign(comment.page_url); return; }
-          let contentTarget: HTMLElement | null | undefined;
+          let contentTarget: HTMLElement | null | undefined; let anchorY: number | undefined;
           if (comment.anchor_type === "text_highlight" && comment.selected_quote) {
             const recovered = recoverTextAnchor(ownerDocument, { selected_quote: comment.selected_quote, prefix: comment.prefix ?? "", suffix: comment.suffix ?? "" });
-            if (recovered.status === "resolved") contentTarget = recovered.range.commonAncestorContainer.nodeType === 1 ? recovered.range.commonAncestorContainer as HTMLElement : recovered.range.commonAncestorContainer.parentElement;
+            if (recovered.status === "resolved") { contentTarget = recovered.range.commonAncestorContainer.nodeType === 1 ? recovered.range.commonAncestorContainer as HTMLElement : recovered.range.commonAncestorContainer.parentElement; const rect = recovered.range.getBoundingClientRect(); anchorY = rect.top + rect.height / 2; }
           } else if (comment.anchor_type === "visual_pin" && comment.css_selector && comment.relative_x !== null && comment.relative_y !== null) {
             const recovered = recoverPinAnchor(ownerDocument, { css_selector: comment.css_selector, relative_x: comment.relative_x, relative_y: comment.relative_y });
-            if (recovered.status === "resolved") contentTarget = recovered.element;
+            if (recovered.status === "resolved") { contentTarget = recovered.element; anchorY = recovered.y; }
           }
-          contentTarget?.scrollIntoView?.({ block: "center" });
+          const view = ownerDocument.defaultView;
+          if (anchorY !== undefined && view) view.scrollBy({ top: anchorY - view.innerHeight / 2, behavior: "auto" });
+          else contentTarget?.scrollIntoView?.({ block: "center" });
           const marker = ownerDocument.querySelector<HTMLElement>(`[data-moodle-review-stored-highlight="${comment.id}"],[data-moodle-review-stored-pin="${comment.id}"]`);
           if (marker) { marker.focus({ preventScroll: true }); openThread(marker); }
         });
