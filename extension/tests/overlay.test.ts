@@ -417,3 +417,14 @@ test("course comments default to open and expose resolved separately", () => {
   assert.equal(items.find((item) => item.textContent!.includes("Finished feedback"))!.hidden, false);
   assert.equal(items.find((item) => item.textContent!.includes("Open feedback"))!.hidden, true);
 });
+
+test("comment index switches between whole course and current page and renumbers visible links", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const base = { id: "00000000-0000-4000-8000-000000000031", body: "Here", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Week 2", anchor_type: "text_highlight" as const, selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: true } };
+  overlay.setPageComments([{ ...base, id: "00000000-0000-4000-8000-000000000032", page_url: "https://learn.example/mod/page/view.php?id=1", page_title: "Week 1", body: "Earlier" }, base]);
+  const links = Array.from(shadow.querySelectorAll<HTMLElement>("[data-comment-item]")); assert.equal(links.every((link) => !link.hidden), true);
+  shadow.querySelector<HTMLElement>('[data-comment-scope="page"]')!.click();
+  assert.equal(links[0]!.hidden, true); assert.equal(links[1]!.hidden, false); assert.match(links[1]!.textContent!, /^#1 /);
+  shadow.querySelector<HTMLElement>('[data-comment-scope="course"]')!.click(); assert.equal(links.every((link) => !link.hidden), true); assert.match(links[0]!.textContent!, /^#1 /); assert.match(links[1]!.textContent!, /^#2 /);
+});

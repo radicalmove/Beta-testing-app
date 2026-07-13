@@ -303,13 +303,15 @@ export function startEmbeddedReview(targetWindow: Window & typeof globalThis, ta
   const scheduleRetry = typeof targetWindow.setTimeout === "function" ? targetWindow.setTimeout.bind(targetWindow) : globalThis.setTimeout;
   const cancelRetry = typeof targetWindow.clearTimeout === "function" ? targetWindow.clearTimeout.bind(targetWindow) : globalThis.clearTimeout;
   const send = <T>(message: unknown) => new Promise<T>((resolve, reject) => runtime.sendMessage(message, (response) => response?.ok ? resolve(response.data as T) : reject(new Error(response?.error ?? "Review service unavailable"))));
-  const frameContext = (): CourseContext => ({
-    course_url: targetWindow.location.href,
-    page_url: targetWindow.location.href,
+  const frameContext = (): CourseContext => {
+    const label = pageLabel(targetDocument); const identity = new URL(targetWindow.location.href); identity.hash = `moodle-review-page=${encodeURIComponent(label)}`;
+    return ({
+    course_url: targetWindow.location.href.split("#")[0]!,
+    page_url: identity.href,
     title: courseTitle,
-    pageTitle: `Embedded activity · ${pageLabel(targetDocument)}`,
+    pageTitle: `Embedded activity · ${label}`,
     identityConfidence: "confirmed",
-  });
+  }); };
   const obtain = () => void send<{ course_id: string; course_title: string; parent_activity_url: string }>({ type: "GET_REVIEW_CONTEXT" }).then((trusted) => {
     if (stopped || typeof trusted?.course_id !== "string" || typeof trusted?.course_title !== "string") return;
     courseId = trusted.course_id; courseTitle = trusted.course_title;
