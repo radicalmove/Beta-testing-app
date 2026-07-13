@@ -158,6 +158,25 @@ test("embedded review obtains trusted course context and updates its hash page i
   cleanup();
 });
 
+test("embedded review loads the course comment list for its Comments panel", async () => {
+  const window = new Window({ url: "https://rise.example/activity#/lesson/1" });
+  window.document.title = "Lesson 1"; window.document.body.innerHTML = "<p>Rise content</p>";
+  const comment = { id: "00000000-0000-4000-8000-000000000001", body: "Course feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: "https://rise.example/activity#moodle-review-page=Lesson%201", page_title: "Embedded activity · Lesson 1", anchor_type: "visual_pin", selected_quote: null, prefix: null, suffix: null, css_selector: "p", dom_selector: null, relative_x: 0.5, relative_y: 0.5, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } };
+  const messages: unknown[] = [];
+  const runtime = { sendMessage: (message: any, callback: (response: any) => void) => {
+    messages.push(message);
+    if (message.type === "GET_REVIEW_CONTEXT") callback({ ok: true, data: { course_id: "123e4567-e89b-12d3-a456-426614174000", course_title: "Law", parent_activity_url: "https://learn.example/mod/scorm/player.php?cmid=22" } });
+    else if (message.type === "LIST_COURSE_COMMENTS") callback({ ok: true, data: [comment] });
+    else callback({ ok: true, data: {} });
+  } };
+  const cleanup = startEmbeddedReview(window as any, window.document as any, runtime);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const shadow = window.document.querySelector("#moodle-course-review-overlay")!.shadowRoot!;
+  assert.equal(shadow.querySelector("[data-comment-count]")!.textContent, "1");
+  assert.ok(messages.some((message: any) => message.type === "LIST_COURSE_COMMENTS"));
+  cleanup();
+});
+
 test("embedded review retries while the top frame is still resolving", async () => {
   const window = new Window({ url: "https://moodle.example.invalid/embedded" });
   let attempts = 0;

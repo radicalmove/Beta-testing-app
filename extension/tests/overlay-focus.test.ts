@@ -55,6 +55,20 @@ test("marker placement cancels with Escape and restores Add comment focus", () =
   overlay.destroy();
 });
 
+test("marker placement uses the pointer target when Rise element lookup is unavailable", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  document.body.innerHTML = '<section id="rise-block">Rise content</section>';
+  const target = document.querySelector<HTMLElement>("#rise-block")!;
+  target.getBoundingClientRect = () => ({ x: 10, y: 20, left: 10, top: 20, right: 210, bottom: 120, width: 200, height: 100, toJSON: () => ({}) });
+  Object.defineProperty(document, "elementFromPoint", { value: () => null, configurable: true });
+  const overlay = mountReviewOverlay(document, context, "connected");
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  shadow.querySelector<HTMLElement>('[data-action="add-comment"]')!.click();
+  target.dispatchEvent(new window.PointerEvent("pointerdown", { clientX: 60, clientY: 50, bubbles: true, composed: true }) as unknown as Event);
+  assert.ok(shadow.querySelector(".dialog"));
+  overlay.destroy();
+});
+
 test("keyboard area selection starts from the last focused eligible page target", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   document.body.innerHTML = '<button id="page-action">Course action</button>';

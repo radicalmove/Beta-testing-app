@@ -428,3 +428,15 @@ test("comment index switches between whole course and current page and renumbers
   assert.equal(links[0]!.hidden, true); assert.equal(links[1]!.hidden, false); assert.match(links[1]!.textContent!, /^#1 /);
   shadow.querySelector<HTMLElement>('[data-comment-scope="course"]')!.click(); assert.equal(links.every((link) => !link.hidden), true); assert.match(links[0]!.textContent!, /^#1 /); assert.match(links[1]!.textContent!, /^#2 /);
 });
+
+test("course scope and status filters share one compact row", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  overlay.setPageComments([{ id: "00000000-0000-4000-8000-000000000041", body: "Feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Week 2", anchor_type: "text_highlight", selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } }]);
+  const row = shadow.querySelector<HTMLElement>(".comment-filter-row")!;
+  assert.ok(row);
+  assert.equal(row.querySelectorAll("button").length, 4);
+  assert.match(tealOverlayOverrides, /\.comment-filter-row\{display:flex/);
+  assert.match(tealOverlayOverrides, /\.comment-filters button\[aria-pressed="true"\]\{background:#082f2f;color:#fff;border-color:#082f2f\}/);
+  assert.match(tealOverlayOverrides, /\.comment-filters button:hover\{background:#28c4c2;color:#082f2f;border-color:#082f2f\}/);
+});

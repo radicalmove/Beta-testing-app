@@ -327,7 +327,7 @@ export function startEmbeddedReview(targetWindow: Window & typeof globalThis, ta
     courseId = trusted.course_id; courseTitle = trusted.course_title;
     let context = frameContext();
     let commentSequence = 0;
-    const loadPageComments = async () => { const pageUrl = context.page_url; const sequence = ++commentSequence; overlay?.setPageComments([]); try { const comments = await send<PageComment[]>({ type: "LIST_PAGE_COMMENTS", page_url: pageUrl }); if (sequence === commentSequence && context.page_url === pageUrl) overlay?.setPageComments(comments); } catch { /* connection state remains usable */ } };
+    const loadPageComments = async () => { const pageUrl = context.page_url; const sequence = ++commentSequence; overlay?.setPageComments([]); try { const comments = await send<PageComment[]>({ type: "LIST_COURSE_COMMENTS" }); if (sequence === commentSequence && context.page_url === pageUrl) overlay?.setPageComments(comments); } catch { /* connection state remains usable */ } };
     overlay = mountReviewOverlay(targetDocument, context, "connected", { onTakeToContext: (id) => { overlay?.takeToContext(id); }, submit: async ({ body, category, anchor, screenshot, contextSnapshot }) => {
       const saved = await send<{ id?: string; screenshot_available?: boolean }>({ type: "CREATE_COMMENT", payload: { course_id: courseId, page_url: contextSnapshot.page_url, page_title: contextSnapshot.pageTitle, body, category, ...anchor }, screenshot_requested: screenshot });
       if (context.page_url === contextSnapshot.page_url) void loadPageComments();
