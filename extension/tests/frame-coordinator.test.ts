@@ -108,3 +108,15 @@ test("authoritative frame removal permits a pending replacement", () => {
   assert.equal(replacement.activateFrameId, 3);
   assert.deepEqual(coordinator.snapshot(1).activeFrameIds, []);
 });
+
+test("rebinding the same course preserves frames while tab removal clears them", () => {
+  const coordinator = new FrameCoordinator(0);
+  coordinator.bindCourse(1, "course-a", 0);
+  coordinator.registerNavigation(1, 0, -1, "https://moodle.example/course");
+  coordinator.registerNavigation(1, 3, 0, "https://rise.example/lesson");
+  coordinator.registerCapabilities(1, 3, content(), 0);
+  coordinator.bindCourse(1, "course-a", 0);
+  assert.equal(coordinator.advanceElection(1, 0).candidateFrameId, 3);
+  coordinator.removeTab(1);
+  assert.throws(() => coordinator.snapshot(1), /not bound/);
+});

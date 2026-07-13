@@ -5,6 +5,7 @@ import { reconcileOptionalContentScript } from "./optional-content-scripts";
 import { ReviewContextCache, validateContextMessage, type ReviewSender } from "./review-context.ts";
 import { ScreenshotCapabilities } from "./screenshot-capabilities.ts";
 import { PendingAccessStore, PendingApprovalManager } from "./pending-access.ts";
+import { FrameCoordinatorRuntime } from "./frame-coordination-runtime.ts";
 
 declare const chrome: any;
 declare const __MOODLE_PATTERNS__: string[];
@@ -15,6 +16,14 @@ const DEFAULT_SERVICE_ORIGIN = __REVIEW_SERVICE_ORIGIN__;
 
 let optionalRegistration = Promise.resolve();
 const reviewContexts = new ReviewContextCache();
+const frameCoordination = new FrameCoordinatorRuntime({
+  send: (tabId, frameId, message) => new Promise((resolve, reject) => {
+    chrome.tabs.sendMessage(tabId, message, { frameId }, (response: unknown) => {
+      const error = chrome.runtime.lastError;
+      if (error) reject(new Error(error.message)); else resolve(response as { ok?: boolean; dormant?: boolean } | undefined);
+    });
+  }),
+});
 const screenshotCapabilities = new ScreenshotCapabilities(chrome.storage.session);
 const pendingAccess = new PendingAccessStore(chrome.storage.local);
 const pendingApprovals = new PendingApprovalManager(
@@ -143,7 +152,7 @@ async function deleteComment(commentId: string, _courseId: string): Promise<unkn
   return {};
 }
 
-chrome.tabs?.onRemoved?.addListener((tabId: number) => reviewContexts.removeTab(tabId));
+chrome.tabs?.onRemoved?.addListener((tabId: number) => { reviewContexts.removeTab(tabId); frameCoordination.removeTab(tabId); });
 chrome.tabs?.onRemoved?.addListener((tabId: number) => chrome.storage.session.remove(`commentNavigation:${tabId}`));
 chrome.webNavigation?.onCommitted?.addListener((details: { tabId: number; frameId: number }) => { if (details.frameId === 0) reviewContexts.removeTab(details.tabId); });
 
@@ -224,12 +233,15 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       }),
       resolve: async (payload) => {
         const resolved = await resolveCourse(payload) as { id?: unknown; title?: unknown };
-        if (typeof resolved?.id === "string" && sender.frameId === 0) reviewContexts.register(sender, {
-          id: resolved.id,
-          title: typeof resolved.title === "string" && resolved.title.trim() ? resolved.title : payload.title,
-          course_url: payload.course_url,
-          parent_activity_url: sender.url!,
-        });
+        if (typeof resolved?.id === "string" && sender.frameId === 0) {
+          reviewContexts.register(sender, {
+            id: resolved.id,
+            title: typeof resolved.title === "string" && resolved.title.trim() ? resolved.title : payload.title,
+            course_url: payload.course_url,
+            parent_activity_url: sender.url!,
+          });
+          if (typeof sender.tab?.id === "number") frameCoordination.bindCourse(sender.tab.id, resolved.id);
+        }
         return resolved;
       },
     });
@@ -318,7 +330,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       if (!courseId || !await screenshotCapabilities.cancel(payload.comment_id, sender.tab.id, courseId)) throw new Error("CANCEL_SCREENSHOT comment context mismatch");
       return {};
     })();
-  } else if (message && typeof message === "object" && ["GET_REVIEW_CONTEXT", "REVIEW_FRAME_READY", "GET_REVIEW_FRAME_STATUS"].includes((message as { type?: string }).type ?? "")) {
+  } else if (message && typeof message === "object" && ["GET_REVIEW_CONTEXT", "REVIEW_FRAME_READY", "GET_REVIEW_FRAME_STATUS", "REGISTER_REVIEW_FRAME", "RENEW_REVIEW_FRAME_LEASE", "ACK_REVIEW_FRAME_DORMANT"].includes((message as { type?: string }).type ?? "")) {
     operation = (async () => {
       const control = validateContextMessage(message);
       const authorized = await authorizeResolveSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) });
@@ -332,6 +344,17 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
         if (!reviewContexts.markReady(sender)) throw new Error("Review context unavailable");
         return {};
       }
+      if (control.type === "REGISTER_REVIEW_FRAME") {
+        if (!reviewContexts.obtain(sender) || typeof sender.tab?.id !== "number" || typeof sender.frameId !== "number") throw new Error("Review context unavailable");
+        const navigation = await chrome.webNavigation.getAllFrames({ tabId: sender.tab.id }) as Array<{ frameId: number; parentFrameId: number; url: string }> | null;
+        if (!navigation?.some((frame) => frame.frameId === sender.frameId && frame.url === sender.url)) throw new Error("Review frame navigation mismatch");
+        const now = Date.now();
+        await frameCoordination.registerFrame(sender.tab.id, sender.frameId, control.capabilities, navigation, now);
+        setTimeout(() => void frameCoordination.reevaluate(sender.tab!.id!, Date.now()), 260);
+        return { registered: true };
+      }
+      if (control.type === "ACK_REVIEW_FRAME_DORMANT") return { dormant: true };
+      if (control.type === "RENEW_REVIEW_FRAME_LEASE") return { valid: frameCoordination.snapshot(sender.tab!.id!).activeFrameIds.includes(sender.frameId!) };
       return { ready_count: reviewContexts.readyFrameCount(sender), ready_origins: reviewContexts.readyOrigins(sender) };
     })();
   }

@@ -33,6 +33,18 @@ test("context control messages have strict empty schemas", () => {
   for (const value of [{ type: "GET_REVIEW_CONTEXT", token: "x" }, { type: "REVIEW_FRAME_READY", frameId: 4 }, null]) assert.throws(() => validateContextMessage(value));
 });
 
+test("frame coordination messages have strict typed schemas", () => {
+  const capabilities = { contentBearing: true, wrapper: false, visible: true, area: 400000 };
+  assert.deepEqual(validateContextMessage({ type: "REGISTER_REVIEW_FRAME", capabilities }), { type: "REGISTER_REVIEW_FRAME", capabilities });
+  assert.deepEqual(validateContextMessage({ type: "RENEW_REVIEW_FRAME_LEASE", generation: 4 }), { type: "RENEW_REVIEW_FRAME_LEASE", generation: 4 });
+  assert.deepEqual(validateContextMessage({ type: "ACK_REVIEW_FRAME_DORMANT", generation: 5 }), { type: "ACK_REVIEW_FRAME_DORMANT", generation: 5 });
+  for (const invalid of [
+    { type: "REGISTER_REVIEW_FRAME", capabilities: { ...capabilities, area: -1 } },
+    { type: "RENEW_REVIEW_FRAME_LEASE", generation: "4" },
+    { type: "ACK_REVIEW_FRAME_DORMANT", generation: 5, frameId: 2 },
+  ]) assert.throws(() => validateContextMessage(invalid));
+});
+
 test("ready state is tab-scoped and cleared by tab removal", () => {
   const cache = new ReviewContextCache(); cache.register(top, context);
   assert.equal(cache.markReady(frame), true); assert.equal(cache.readyFrameCount(top), 1);

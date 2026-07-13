@@ -42,8 +42,12 @@ export class FrameCoordinator {
   constructor(stabilityMs = 250) { this.stabilityMs = stabilityMs; }
 
   bindCourse(tabId: number, courseId: string, fallbackFrameId: number): void {
+    const current = this.tabs.get(tabId);
+    if (current?.courseId === courseId) return;
     this.tabs.set(tabId, { courseId, fallbackFrameId, frames: new Map(), ownerReports: new Map(), generation: 0 });
   }
+
+  removeTab(tabId: number): void { this.tabs.delete(tabId); }
 
   registerNavigation(tabId: number, frameId: number, parentFrameId: number, url: string): void {
     const tab = this.requireTab(tabId);

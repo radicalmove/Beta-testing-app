@@ -119,7 +119,7 @@ test("real content-script startup does not require chrome.permissions", async ()
           dispatchEvent: () => { bootstraps += 1; },
         },
       },
-      chrome: { runtime: {} },
+      chrome: { runtime: { sendMessage: (_message: unknown, callback: (response: unknown) => void) => callback({ ok: false, error: "Review context unavailable" }) } },
       __MOODLE_PATTERNS__: ["https://moodle.example.invalid/*"],
       __OPTIONAL_FRAME_PATTERNS__: ["https://rise.example.invalid/*"],
     });
@@ -135,6 +135,26 @@ test("real content-script startup does not require chrome.permissions", async ()
       __OPTIONAL_FRAME_PATTERNS__: originalOptional,
     });
   }
+});
+
+test("embedded review stays dormant until the coordinator activates it", async () => {
+  const window = new Window({ url: "https://rise.example/activity#/lesson/1" });
+  window.document.title = "Lesson 1"; window.document.body.innerHTML = "<main><h1>Lesson 1</h1><p>Meaningful Rise lesson content for review.</p></main>";
+  let listener: ((message: any, sender: unknown, respond: (response: unknown) => void) => void) | undefined;
+  const runtime = {
+    onMessage: { addListener: (candidate: typeof listener) => { listener = candidate; }, removeListener: (candidate: typeof listener) => { if (listener === candidate) listener = undefined; } },
+    sendMessage: (message: any, callback: (response: any) => void) => {
+      if (message.type === "GET_REVIEW_CONTEXT") callback({ ok: true, data: { course_id: "123e4567-e89b-12d3-a456-426614174000", course_title: "Law", parent_activity_url: "https://learn.example/mod/scorm/player.php?cmid=22" } });
+      else callback({ ok: true, data: {} });
+    },
+  };
+  const cleanup = startEmbeddedReview(window as any, window.document as any, runtime as any);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(window.document.querySelector("#moodle-course-review-overlay"), null);
+  listener!({ type: "ACTIVATE_REVIEW_FRAME", generation: 1 }, {}, () => undefined);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.ok(window.document.querySelector("#moodle-course-review-overlay"));
+  cleanup();
 });
 
 test("embedded review obtains trusted course context and updates its hash page identity", async () => {
@@ -186,7 +206,7 @@ test("embedded review retries while the top frame is still resolving", async () 
   } };
   const cleanup = startEmbeddedReview(window as unknown as globalThis.Window & typeof globalThis, window.document as unknown as Document, runtime, 0);
   await new Promise((resolve) => setTimeout(resolve, 10));
-  assert.equal(attempts, 2);
+  assert.equal(attempts, 3);
   assert.ok(window.document.querySelector("#moodle-course-review-overlay"));
   cleanup();
 });

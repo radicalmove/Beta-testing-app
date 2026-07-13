@@ -7,6 +7,7 @@ declare const chrome: any;
 import { canonicalCourseUrlFromDocument, courseTitleFromDocument, detectCourseContext, explicitActivityIdFromDocument, explicitCourseIdFromDocument, type CourseContext } from "./course-context.ts";
 import { mountReviewOverlay, type AuthenticationOutcome, type BuildDiagnostics, type ConnectionStatus, type ReviewOverlay } from "./overlay/root.ts";
 import type { PageComment } from "./background-bridge.ts";
+import { measureFrameCapabilities } from "./frame-capabilities.ts";
 
 const MARKER = "data-moodle-review-extension";
 const BUILD_DIAGNOSTICS = {
@@ -300,9 +301,62 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
   return () => { stopped = true; clearApprovalTimer(); targetDocument.removeEventListener("visibilitychange", onVisibility); cancelTimeout(fallbackTimer); cancelTimeout(poll); cancelTimeout(latePoll); targetWindow.removeEventListener("message", onFrameReady); for (const eventName of ["popstate", "hashchange", "moodle-review:navigate"]) targetWindow.removeEventListener(eventName, clearNavigatedPage); lifecycle.teardown(); overlay.destroy(); };
 }
 
-type Runtime = { sendMessage(message: unknown, callback: (response: { ok?: boolean; status?: ConnectionStatus; error?: string; data?: unknown } | undefined) => void): void };
+type RuntimeResponse = { ok?: boolean; status?: ConnectionStatus; error?: string; data?: unknown } | undefined;
+type RuntimeListener = (message: unknown, sender: unknown, sendResponse: (response: unknown) => void) => boolean | void;
+type Runtime = {
+  sendMessage(message: unknown, callback: (response: RuntimeResponse) => void): void;
+  onMessage?: { addListener(listener: RuntimeListener): void; removeListener(listener: RuntimeListener): void };
+};
 
 export function startEmbeddedReview(targetWindow: Window & typeof globalThis, targetDocument: Document, runtime: Runtime, retryDelay = 200): () => void {
+  let stopped = false;
+  let activeCleanup: (() => void) | undefined;
+  let generation = -1;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  let attempts = 0;
+  const scheduleRetry = typeof targetWindow.setTimeout === "function" ? targetWindow.setTimeout.bind(targetWindow) : globalThis.setTimeout;
+  const cancelRetry = typeof targetWindow.clearTimeout === "function" ? targetWindow.clearTimeout.bind(targetWindow) : globalThis.clearTimeout;
+  const activate = (nextGeneration: number) => {
+    if (stopped || nextGeneration < generation) return;
+    if (nextGeneration === generation && activeCleanup) return;
+    activeCleanup?.();
+    generation = nextGeneration;
+    activeCleanup = startActiveEmbeddedReview(targetWindow, targetDocument, runtime, retryDelay);
+  };
+  const deactivate = () => { activeCleanup?.(); activeCleanup = undefined; };
+  const onCommand: RuntimeListener = (message, _sender, sendResponse) => {
+    const command = message as { type?: unknown; generation?: unknown };
+    if (command.type === "ACTIVATE_REVIEW_FRAME" && Number.isInteger(command.generation)) {
+      activate(command.generation as number); sendResponse({ ok: true }); return;
+    }
+    if (command.type === "DEACTIVATE_REVIEW_FRAME" && Number.isInteger(command.generation)) {
+      generation = Math.max(generation, command.generation as number); deactivate(); sendResponse({ ok: true, dormant: true }); return;
+    }
+  };
+  runtime.onMessage?.addListener(onCommand);
+
+  const register = () => runtime.sendMessage({ type: "GET_REVIEW_CONTEXT" }, (context) => {
+    if (stopped) return;
+    if (!context?.ok) {
+      attempts += 1;
+      if (attempts < 25 && context?.error === "Review context unavailable") retryTimer = scheduleRetry(register, retryDelay);
+      return;
+    }
+    runtime.sendMessage({ type: "REGISTER_REVIEW_FRAME", capabilities: measureFrameCapabilities(targetDocument, targetWindow) }, () => undefined);
+    // Unit-test and legacy runtimes have no command channel. Production Chrome
+    // always supplies runtime.onMessage and therefore remains coordinator-owned.
+    if (!runtime.onMessage) activate(0);
+  });
+  register();
+  return () => {
+    stopped = true;
+    if (retryTimer !== undefined) cancelRetry(retryTimer);
+    runtime.onMessage?.removeListener(onCommand);
+    deactivate();
+  };
+}
+
+function startActiveEmbeddedReview(targetWindow: Window & typeof globalThis, targetDocument: Document, runtime: Runtime, retryDelay = 200): () => void {
   let stopped = false;
   let lifecycle: { teardown(): void } | undefined;
   let overlay: ReviewOverlay | undefined;

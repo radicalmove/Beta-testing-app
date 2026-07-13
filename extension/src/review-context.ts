@@ -1,7 +1,12 @@
 export type ReviewSender = { id?: string; frameId?: number; tab?: { id?: number }; url?: string };
 export type StoredReviewContext = { id: string; title: string; course_url: string; parent_activity_url: string };
 export type FrameReviewContext = { course_id: string; course_title: string; parent_activity_url: string };
-export type ContextMessage = { type: "GET_REVIEW_CONTEXT" | "REVIEW_FRAME_READY" | "GET_REVIEW_FRAME_STATUS" };
+import type { FrameCapabilities } from "./frame-coordinator.ts";
+
+export type ContextMessage =
+  | { type: "GET_REVIEW_CONTEXT" | "REVIEW_FRAME_READY" | "GET_REVIEW_FRAME_STATUS" }
+  | { type: "REGISTER_REVIEW_FRAME"; capabilities: FrameCapabilities }
+  | { type: "RENEW_REVIEW_FRAME_LEASE" | "ACK_REVIEW_FRAME_DORMANT"; generation: number };
 
 type ReadyFrame = { origin: string; readyAt: number };
 type Entry = StoredReviewContext & { extensionId: string; lastActivityAt: number; readyFrames: Map<number, ReadyFrame> };
@@ -9,8 +14,23 @@ type Entry = StoredReviewContext & { extensionId: string; lastActivityAt: number
 export function validateContextMessage(message: unknown): ContextMessage {
   if (!message || typeof message !== "object" || Array.isArray(message)) throw new Error("Invalid review context message");
   const record = message as Record<string, unknown>;
-  if (Object.keys(record).length !== 1 || !["GET_REVIEW_CONTEXT", "REVIEW_FRAME_READY", "GET_REVIEW_FRAME_STATUS"].includes(record.type as string)) throw new Error("Invalid review context message");
-  return { type: record.type as ContextMessage["type"] };
+  if (["GET_REVIEW_CONTEXT", "REVIEW_FRAME_READY", "GET_REVIEW_FRAME_STATUS"].includes(record.type as string)) {
+    if (Object.keys(record).length !== 1) throw new Error("Invalid review context message");
+    return { type: record.type as "GET_REVIEW_CONTEXT" | "REVIEW_FRAME_READY" | "GET_REVIEW_FRAME_STATUS" };
+  }
+  if (record.type === "REGISTER_REVIEW_FRAME") {
+    if (Object.keys(record).sort().join() !== "capabilities,type" || !record.capabilities || typeof record.capabilities !== "object" || Array.isArray(record.capabilities)) throw new Error("Invalid review context message");
+    const capability = record.capabilities as Record<string, unknown>;
+    if (Object.keys(capability).sort().join() !== "area,contentBearing,visible,wrapper"
+      || typeof capability.contentBearing !== "boolean" || typeof capability.wrapper !== "boolean" || typeof capability.visible !== "boolean"
+      || typeof capability.area !== "number" || !Number.isFinite(capability.area) || capability.area < 0) throw new Error("Invalid review context message");
+    return { type: record.type, capabilities: capability as FrameCapabilities };
+  }
+  if (["RENEW_REVIEW_FRAME_LEASE", "ACK_REVIEW_FRAME_DORMANT"].includes(record.type as string)) {
+    if (Object.keys(record).sort().join() !== "generation,type" || !Number.isInteger(record.generation) || (record.generation as number) < 0) throw new Error("Invalid review context message");
+    return { type: record.type as "RENEW_REVIEW_FRAME_LEASE" | "ACK_REVIEW_FRAME_DORMANT", generation: record.generation as number };
+  }
+  throw new Error("Invalid review context message");
 }
 
 export class ReviewContextCache {

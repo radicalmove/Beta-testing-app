@@ -14,5 +14,5 @@ test("generated manifest keeps optional hosts out of static injection", () => {
   ]);
   assert.equal(manifest.content_scripts[0].all_frames, true);
   assert.equal(JSON.stringify(manifest).includes("<all_urls>"), false);
-  assert.deepEqual(manifest.permissions.sort(), ["identity", "scripting", "storage"]);
+  assert.deepEqual(manifest.permissions.sort(), ["identity", "scripting", "storage", "webNavigation"]);
 });
