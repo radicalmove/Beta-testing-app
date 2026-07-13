@@ -18,7 +18,7 @@ class AttachmentTooLargeError(Exception):
     pass
 
 
-_EXTENSIONS = {"image/png": ".png", "image/jpeg": ".jpg"}
+_EXTENSIONS = {"image/png": ".png", "image/jpeg": ".jpg", "application/pdf": ".pdf", "application/msword": ".doc", "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx"}
 _CHUNK_SIZE = 64 * 1024
 _SIGNATURE_BYTES = 8
 
@@ -35,6 +35,12 @@ def _sniff_media_type(header: bytes) -> str | None:
         return "image/png"
     if header.startswith(b"\xff\xd8\xff"):
         return "image/jpeg"
+    if header.startswith(b"%PDF-"):
+        return "application/pdf"
+    if header.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"):
+        return "application/msword"
+    if header.startswith(b"PK\x03\x04"):
+        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     return None
 
 
@@ -45,7 +51,7 @@ def _new_object_name(media_type: str) -> str:
 def store_attachment(db: DbSession, uploader: User, comment: Comment, upload: UploadFile, *, storage_dir: str, max_bytes: int) -> Attachment:
     claimed_type = (upload.content_type or "").lower()
     if claimed_type not in _EXTENSIONS:
-        raise UnsupportedAttachmentError("Only PNG and JPEG screenshots are supported")
+        raise UnsupportedAttachmentError("Only PDF, Word, PNG and JPEG files are supported")
     if max_bytes < 1:
         raise ValueError("attachment_max_bytes must be positive")
 
@@ -71,7 +77,7 @@ def store_attachment(db: DbSession, uploader: User, comment: Comment, upload: Up
 
         detected_type = _sniff_media_type(header)
         if detected_type is None or detected_type != claimed_type:
-            raise UnsupportedAttachmentError("File contents do not match the declared PNG or JPEG type")
+            raise UnsupportedAttachmentError("File contents do not match the declared file type")
 
         # Hard-link publication is atomic and refuses to overwrite. Generate a
         # fresh object name on collision so cleanup can never touch that object.

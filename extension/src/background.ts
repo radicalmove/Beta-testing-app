@@ -303,9 +303,10 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       try {
         const decoded = validateScreenshotDataUrl(payload.data_url);
         const bytes = new Uint8Array(decoded.bytes.length); bytes.set(decoded.bytes);
-        const form = new FormData(); form.append("file", new Blob([bytes.buffer], { type: decoded.mime }), decoded.mime === "image/png" ? "visible-viewport.png" : "visible-viewport.jpg");
+        const extension = decoded.mime === "image/png" ? "png" : decoded.mime === "image/jpeg" ? "jpg" : decoded.mime === "application/pdf" ? "pdf" : decoded.mime === "application/msword" ? "doc" : "docx";
+        const form = new FormData(); form.append("file", new Blob([bytes.buffer], { type: decoded.mime }), `review-attachment.${extension}`);
         const api = await client(); const upload = await api.request(`/api/comments/${payload.comment_id}/attachments`, { method: "POST", body: form });
-        if (!upload.ok) throw new Error(`Screenshot upload failed (${upload.status})`);
+        if (!upload.ok) throw new Error(`Attachment upload failed (${upload.status})`);
         return upload.json();
       } catch (error) { await screenshotCapabilities.restore(payload.comment_id, claimed); throw error; }
     })();

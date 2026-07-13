@@ -33,7 +33,7 @@ def upload_attachment(comment_id: uuid.UUID, file: UploadFile = File(...), user:
         raise HTTPException(status_code=404, detail="Comment not found")
     require_course_access(user, comment.course_id)
     if user.id != comment.author_user_id and user.role is not UserRole.LD_DCD:
-        raise HTTPException(status_code=403, detail="Only the comment author or an LD/DCD can attach a screenshot")
+        raise HTTPException(status_code=403, detail="Only the comment author or an LD/DCD can attach a file")
     try:
         attachment = store_attachment(db, user, comment, file, storage_dir=settings.attachment_storage_dir, max_bytes=settings.attachment_max_bytes)
         return _attachment_json(attachment)

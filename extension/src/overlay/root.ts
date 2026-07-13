@@ -2,7 +2,6 @@ import type { CourseContext } from "../course-context.ts";
 import { captureTextAnchor, type TextAnchor } from "../anchors/text.ts";
 import { recoverTextAnchor, renderTextHighlight } from "../anchors/recover.ts";
 import { capturePinAnchor, recoverPinAnchor, renderPin, type PinAnchor } from "../anchors/pin.ts";
-import { captureDisplayScreenshot } from "../screenshot-capture.ts";
 import type { PageComment } from "../background-bridge.ts";
 
 export const OVERLAY_HOST_ID = "moodle-course-review-overlay";
@@ -265,7 +264,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     const backdrop = ownerDocument.createElement("div");
     backdrop.className = "backdrop";
     const preview = contextLabel(anchor);
-    backdrop.innerHTML = `<div class="dialog" role="dialog" aria-modal="true" aria-labelledby="review-dialog-title"><h2 id="review-dialog-title">${escapeHtml(label)}</h2><div class="preview">${escapeHtml(preview)}</div><label class="field">Comment<textarea data-initial-focus required></textarea></label><label class="field"><span><input type="checkbox" data-screenshot> Include a screenshot of the visible viewport</span><small>Only captured when you save this comment.</small></label><div class="error" role="alert" hidden></div><div class="actions"><button type="button" data-cancel>Cancel</button><button type="button" class="primary" data-save>Save comment</button></div></div>`;
+    backdrop.innerHTML = `<div class="dialog" role="dialog" aria-modal="true" aria-labelledby="review-dialog-title"><h2 id="review-dialog-title">${escapeHtml(label)}</h2><div class="preview">${escapeHtml(preview)}</div><label class="field">Comment<textarea data-initial-focus required></textarea></label><label class="field">Attach a file (optional)<input type="file" data-attachment accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg"><small>PDF, Word, PNG or JPEG; maximum 10 MB.</small></label><div class="error" role="alert" hidden></div><div class="actions"><button type="button" data-cancel>Cancel</button><button type="button" class="primary" data-save>Save comment</button></div></div>`;
     backdrop.addEventListener("keydown", (event) => {
       const focusable = Array.from(backdrop.querySelectorAll<HTMLElement>("textarea,select,input,button"));
       const activeIndex = Math.max(0, focusable.indexOf(shadow.activeElement as HTMLElement));
@@ -280,27 +279,16 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
       if (!textarea.value.trim()) { error.textContent = "Enter a comment before saving."; error.hidden = false; textarea.focus(); return; }
       const save = backdrop.querySelector<HTMLButtonElement>("[data-save]")!; save.disabled = true; error.hidden = true;
       try {
-        const wantsScreenshot = backdrop.querySelector<HTMLInputElement>("[data-screenshot]")!.checked;
+        const file = backdrop.querySelector<HTMLInputElement>("[data-attachment]")!.files?.[0];
+        if (file && file.size > 10 * 1024 * 1024) throw new Error("The attachment must be 10 MB or smaller.");
+        const wantsScreenshot = Boolean(file);
         const saved = await options.submit?.({ body: textarea.value.trim(), category: "general", anchor, screenshot: wantsScreenshot, embeddedFrameUnavailable: fallbackPin, contextSnapshot });
         fallbackPin = false;
-        if (!wantsScreenshot) { closeDialog(); return; }
+        if (!file) { closeDialog(); return; }
         const commentId = saved && typeof saved.id === "string" ? saved.id : undefined;
-        if (!commentId) throw new Error("Comment saved, but screenshot upload is unavailable.");
-        const dialog = backdrop.querySelector<HTMLElement>(".dialog")!;
-        if (saved?.screenshot_available === false) {
-          dialog.innerHTML = `<h2>Comment saved</h2><p role="status">The comment was saved, but screenshot upload is unavailable.</p><div class="actions"><button type="button" data-cancel>Done</button></div>`;
-          dialog.querySelector("[data-cancel]")?.addEventListener("click", closeDialog);
-          return;
-        }
-        pendingScreenshotId = commentId;
-        dialog.innerHTML = `<h2>Comment saved</h2><p>Your comment is saved. To add a screenshot, choose the current tab in the browser prompt.</p><div class="error" role="alert" hidden></div><div class="actions"><button type="button" data-cancel>Done</button><button type="button" class="primary" data-capture>Capture screenshot now</button></div>`;
-        dialog.querySelector("[data-cancel]")?.addEventListener("click", closeDialog);
-        dialog.querySelector("[data-capture]")?.addEventListener("click", async () => {
-          const capture = dialog.querySelector<HTMLButtonElement>("[data-capture]")!; const captureError = dialog.querySelector<HTMLElement>(".error")!;
-          capture.disabled = true; captureError.hidden = true;
-          try { const dataUrl = await (options.captureScreenshot ?? captureDisplayScreenshot)(); if (!options.uploadScreenshot) throw new Error("Screenshot upload is unavailable."); await options.uploadScreenshot(commentId, dataUrl); pendingScreenshotId = undefined; closeDialog(); }
-          catch (caught) { captureError.textContent = caught instanceof Error ? caught.message : "Screenshot capture was cancelled."; captureError.hidden = false; capture.disabled = false; }
-        });
+        if (!commentId || saved?.screenshot_available === false || !options.uploadScreenshot) throw new Error("Comment saved, but attachment upload is unavailable.");
+        const bytes = new Uint8Array(await file.arrayBuffer()); let binary = ""; for (let index = 0; index < bytes.length; index += 0x8000) binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+        await options.uploadScreenshot(commentId, `data:${file.type};base64,${btoa(binary)}`); closeDialog();
       }
       catch (caught) { error.textContent = caught instanceof Error ? caught.message : "Could not save comment."; error.hidden = false; save.disabled = false; }
     });

@@ -197,25 +197,21 @@ test("take to context retries a late text anchor and reports an accessible failu
   assert.match(shadow.querySelector("blockquote")!.textContent!, /important phrase/);
 });
 
-test("saves against the composer snapshot before offering a separate retryable screenshot action", async () => {
+test("saves against the composer snapshot and offers an optional file attachment", async () => {
   const window = new Window(); const document = window.document as unknown as Document;
   window.document.body.innerHTML = "<p>selected phrase</p>";
   const text = window.document.querySelector("p")!.firstChild!; const range = window.document.createRange(); range.selectNodeContents(text); window.getSelection()!.addRange(range);
-  const calls: string[] = []; let submitted: any;
+  let submitted: any;
   const overlay = mountReviewOverlay(document, context, "connected", {
-    submit: async (input) => { calls.push("create"); submitted = input; return { id: "123e4567-e89b-12d3-a456-426614174001" }; },
-    captureScreenshot: async () => { calls.push("media"); return "data:image/png;base64,aA=="; },
-    uploadScreenshot: async () => { calls.push("upload"); },
+    submit: async (input) => { submitted = input; return { id: "123e4567-e89b-12d3-a456-426614174001" }; },
   });
   const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   shadow.querySelector<HTMLElement>('[data-action="add-comment"]')!.click();
   (shadow.querySelector("textarea") as HTMLTextAreaElement).value = "Keep original";
-  (shadow.querySelector("[data-screenshot]") as HTMLInputElement).checked = true;
+  assert.ok(shadow.querySelector("[data-attachment]")); assert.equal(shadow.querySelector("[data-screenshot]"), null);
   overlay.update({ ...context, page_url: "https://learn.example/mod/page/view.php?id=9", pageTitle: "Week 9" }, "connected");
   assert.match(shadow.textContent!, /will stay attached/);
   shadow.querySelector<HTMLElement>("[data-save]")!.click(); await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.deepEqual(calls, ["create"]); assert.equal(submitted.contextSnapshot.page_url, context.page_url);
-  assert.match(shadow.textContent!, /Capture screenshot now/);
-  shadow.querySelector<HTMLElement>("[data-capture]")!.click(); await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.deepEqual(calls, ["create", "media", "upload"]);
+  assert.equal(submitted.contextSnapshot.page_url, context.page_url); assert.equal(submitted.screenshot, false);
+  assert.equal(shadow.querySelector("[role=dialog]"), null);
 });
