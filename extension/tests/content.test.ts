@@ -289,7 +289,7 @@ test("mixed ready and inaccessible frames keep a passive embedded activity notic
   const cleanup = startCourseReview(window as unknown as globalThis.Window & typeof globalThis, window.document as unknown as Document, runtime);
   await new Promise((resolve) => setTimeout(resolve, 280));
   const shadow = window.document.querySelector("#moodle-course-review-overlay")!.shadowRoot! as unknown as ShadowRoot;
-  assert.match(shadow.textContent!, /Embedded activity detected/);
+  assert.doesNotMatch(shadow.textContent!, /Embedded activity detected/);
   assert.doesNotMatch(shadow.textContent!, /Place parent-page pin/);
   cleanup();
 });

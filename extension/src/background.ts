@@ -74,7 +74,9 @@ async function renewStoredDevice(): Promise<string | undefined> {
     await chrome.storage.local.set({ deviceCredential: renewed.deviceCredential });
     return renewed.session.apiToken;
   } catch {
-    await chrome.storage.local.remove(["deviceCredential", "deviceCourseHandle", "reviewerEmail"]);
+    // A suspended laptop or temporary Tailscale/server outage must not forget
+    // the approved reviewer. Terminal revocation is handled by explicit
+    // authenticated renewal outcomes rather than generic connectivity errors.
     return undefined;
   }
 }
@@ -255,6 +257,23 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       courseId: () => reviewContexts.courseId(sender),
       remove: deleteComment,
     });
+  } else if (message && typeof message === "object" && ["EDIT_COMMENT_THREAD", "REPLY_COMMENT_THREAD"].includes((message as { type?: string }).type ?? "")) {
+    operation = (async () => {
+      const record = message as Record<string, unknown>; const keys = Object.keys(record).sort().join();
+      if (keys !== "body,comment_id,type" || typeof record.comment_id !== "string" || !/^[0-9a-f-]{36}$/i.test(record.comment_id) || typeof record.body !== "string" || !record.body.trim() || record.body.trim().length > 10000) throw new Error("Invalid comment mutation message");
+      if (!(await authorizeResolveSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) }))) throw new Error("Unauthorized comment mutation sender");
+      if (!reviewContexts.courseId(sender)) throw new Error("Comment mutation course context unavailable");
+      const api = await client(); const editing = record.type === "EDIT_COMMENT_THREAD"; const response = await api.request(`/api/comments/${record.comment_id}${editing ? "" : "/replies"}`, { method: editing ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ body: record.body.trim() }) });
+      if (!response.ok) throw new Error(`Comment mutation failed (${response.status})`); return response.json();
+    })();
+  } else if (message && typeof message === "object" && ["GET_SME_RECIPIENTS", "SET_SME_RECIPIENTS"].includes((message as { type?: string }).type ?? "")) {
+    operation = (async () => {
+      const record = message as Record<string, unknown>; const setting = record.type === "SET_SME_RECIPIENTS";
+      if (typeof record.comment_id !== "string" || !/^[0-9a-f-]{36}$/i.test(record.comment_id) || Object.keys(record).some((key) => !["type", "comment_id", "user_ids"].includes(key)) || (setting && (!Array.isArray(record.user_ids) || record.user_ids.some((id) => typeof id !== "string")))) throw new Error("Invalid SME recipients message");
+      if (!(await authorizeResolveSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) })) || !reviewContexts.courseId(sender)) throw new Error("SME recipients course context unavailable");
+      const api = await client(); const response = await api.request(`/api/comments/${record.comment_id}/sme-recipients`, setting ? { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_ids: record.user_ids }) } : {});
+      if (!response.ok) throw new Error(`SME recipients failed (${response.status})`); return response.json();
+    })();
   } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "UPLOAD_SCREENSHOT") {
     operation = (async () => {
       const payload = validateUploadScreenshotMessage(message);

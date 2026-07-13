@@ -132,7 +132,7 @@ test("overlay uses a unique shadow host and scoped styles", () => {
   assert.doesNotMatch(overlayStyles, /(?:^|})\s*(?:body|html)\s*\{/);
 });
 
-test("unresolved anchors render an accessible compact list with context hooks and hide when empty", () => {
+test("unresolved anchors stay out of the main overlay", () => {
   const window = new Window();
   const document = window.document as unknown as Document;
   const requested: string[] = [];
@@ -140,12 +140,7 @@ test("unresolved anchors render an accessible compact list with context hooks an
   const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   overlay.setUnresolvedAnchors([{ id: "c1", label: "Comment one", quote: "missing words" }, { id: "c2", label: "Comment two" }]);
   const region = shadow.querySelector<HTMLElement>("[data-unresolved]")!;
-  assert.equal(region.hidden, false);
-  assert.match(region.textContent!, /Unresolved comment anchors/);
-  assert.match(region.textContent!, /missing words/);
-  assert.equal(region.querySelectorAll("li").length, 2);
-  (region.querySelector('[data-comment-id="c1"]') as HTMLElement).click();
-  assert.deepEqual(requested, ["c1"]);
+  assert.equal(region.hidden, true);
   overlay.setUnresolvedAnchors([]);
   assert.equal(region.hidden, true);
 });
@@ -169,10 +164,10 @@ test("frame fallback does not replace loaded comments when shown and hidden", ()
   overlay.setPageComments([storedHighlight]); overlay.showFrameFallback();
   const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   assert.match(shadow.querySelector(".panel")!.textContent!, /Clarify this/);
-  assert.match(shadow.querySelector("[data-frame-fallback]")!.textContent!, /Embedded activity detected/);
+  assert.equal(shadow.querySelector("[data-frame-fallback]"), null);
   overlay.hideFrameFallback();
   assert.match(shadow.querySelector(".panel")!.textContent!, /Clarify this/);
-  assert.equal((shadow.querySelector("[data-frame-fallback]") as HTMLElement).hidden, true);
+  assert.equal(shadow.querySelector("[data-frame-fallback]"), null);
 });
 
 test("stored markers share one overlay scroll and resize scheduler", () => {

@@ -40,14 +40,8 @@ export function inaccessibleFrameFallback() {
 }
 
 export function renderTextHighlight(document: Document, range: Range): () => void {
-  const css = (document.defaultView as unknown as { CSS?: { highlights?: Map<string, unknown> }; Highlight?: new (...ranges: Range[]) => unknown }) ?? {};
-  if (css.CSS?.highlights && css.Highlight) {
-    const key = `moodle-course-review-${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
-    css.CSS.highlights.set(key, new css.Highlight(range));
-    return () => css.CSS?.highlights?.delete(key);
-  }
   const container = document.createElement("div"); container.setAttribute("data-moodle-review-highlight", "true");
-  const place = () => { container.replaceChildren(); const rects = Array.from(range.getClientRects?.() ?? []); const boxes = rects.length ? rects : [range.getBoundingClientRect()]; const first = boxes[0]; container.style.cssText = `position:fixed;pointer-events:none;z-index:2147483646;background:#f5b64255;border:2px solid #f5b642;left:${first.left}px;top:${first.top}px;width:${first.width}px;height:${first.height}px`; for (const rect of boxes.slice(1)) { const box = document.createElement("div"); box.style.cssText = `position:fixed;pointer-events:none;z-index:2147483646;background:#f5b64255;border:2px solid #f5b642;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px`; container.append(box); } };
+  const place = () => { container.replaceChildren(); const rects = Array.from(range.getClientRects?.() ?? []); const boxes = rects.length ? rects : [range.getBoundingClientRect()]; const first = boxes[0]; container.style.cssText = `position:fixed;pointer-events:none;z-index:2147483645;background:#ffe66a99;border-radius:3px;left:${first.left}px;top:${first.top}px;width:${first.width}px;height:${first.height}px`; for (const rect of boxes.slice(1)) { const box = document.createElement("div"); box.style.cssText = `position:fixed;pointer-events:none;z-index:2147483645;background:#ffe66a99;border-radius:3px;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px`; container.append(box); } };
   document.documentElement.append(container); place();
   document.defaultView?.addEventListener("resize", place);
   document.defaultView?.addEventListener("scroll", place, true);

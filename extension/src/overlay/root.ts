@@ -40,7 +40,7 @@ export type CommentAnchor = ({ anchor_type: "text_highlight" } & TextAnchor) | (
 export type UnresolvedAnchor = { id: string; label: string; quote?: string };
 export type AuthenticationOutcome = { status: ConnectionStatus; message?: string };
 export type ReviewerAccessInput = { displayName: string; email: string; role: string; code: string };
-export type ReviewOverlayOptions = { onAuthenticate?: () => Promise<AuthenticationOutcome>; onCheckApproval?: () => Promise<AuthenticationOutcome>; onAccessSubmit?: (input: ReviewerAccessInput) => Promise<AuthenticationOutcome>; getSavedReviewers?: () => Promise<Array<{ email: string; label: string }>>; onUseSavedReviewer?: (email: string) => Promise<AuthenticationOutcome>; useAccessForm?: () => boolean; submit?: (input: { body: string; category: string; anchor: CommentAnchor; screenshot: boolean; embeddedFrameUnavailable: boolean; contextSnapshot: CourseContext }) => Promise<{ id?: string; screenshot_available?: boolean } | void>; deleteThread?: (commentId: string) => Promise<void>; uploadScreenshot?: (commentId: string, dataUrl: string) => Promise<void>; cancelScreenshot?: (commentId: string) => Promise<void>; captureScreenshot?: () => Promise<string>; onFrameFallback?: () => void; onTakeToContext?: (id: string) => void };
+export type ReviewOverlayOptions = { onAuthenticate?: () => Promise<AuthenticationOutcome>; onCheckApproval?: () => Promise<AuthenticationOutcome>; onAccessSubmit?: (input: ReviewerAccessInput) => Promise<AuthenticationOutcome>; getSavedReviewers?: () => Promise<Array<{ email: string; label: string }>>; onUseSavedReviewer?: (email: string) => Promise<AuthenticationOutcome>; useAccessForm?: () => boolean; submit?: (input: { body: string; category: string; anchor: CommentAnchor; screenshot: boolean; embeddedFrameUnavailable: boolean; contextSnapshot: CourseContext }) => Promise<{ id?: string; screenshot_available?: boolean } | void>; editThread?: (commentId: string, body: string) => Promise<void>; replyThread?: (commentId: string, body: string) => Promise<void>; manageSme?: (commentId: string, userIds?: string[]) => Promise<{ available_recipients: Array<{ id: string; display_name: string }>; selected_user_ids: string[] }>; deleteThread?: (commentId: string) => Promise<void>; uploadScreenshot?: (commentId: string, dataUrl: string) => Promise<void>; cancelScreenshot?: (commentId: string) => Promise<void>; captureScreenshot?: () => Promise<string>; onFrameFallback?: () => void; onTakeToContext?: (id: string) => void };
 export type ReviewOverlay = { update(context: CourseContext, status: ConnectionStatus): void; setViewer(viewer?: { display_name: string | null; email: string; role: string }): void; setPageComments(comments: PageComment[]): void; takeToContext(id: string): boolean; showFrameFallback(): void; hideFrameFallback(): void; setUnresolvedAnchors(anchors: UnresolvedAnchor[]): void; destroy(): void };
 
 export function mountReviewOverlay(document: Document, context: CourseContext, status: ConnectionStatus = "connecting", options: ReviewOverlayOptions = {}, buildDiagnostics: BuildDiagnostics = defaultBuildDiagnostics): ReviewOverlay {
@@ -82,6 +82,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   let storedAnchorCleanups: Array<() => void> = [];
   let loadedComments = new Map<string, PageComment>();
   let openThreads = new Map<string, () => void>();
+  let activeThreadId: string | undefined;
   const repositioners = new Set<() => void>();
   let repositionFrame: number | undefined;
   const repositionAll = () => { repositionFrame = undefined; for (const reposition of repositioners) reposition(); };
@@ -249,7 +250,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     const backdrop = ownerDocument.createElement("div");
     backdrop.className = "backdrop";
     const preview = anchor.anchor_type === "text_highlight" ? `“${anchor.selected_quote}”` : `Pin: ${anchor.css_selector}`;
-    backdrop.innerHTML = `<div class="dialog" role="dialog" aria-modal="true" aria-labelledby="review-dialog-title"><h2 id="review-dialog-title">${escapeHtml(label)}</h2><div class="preview">${escapeHtml(preview)}</div><label class="field">Comment<textarea data-initial-focus required></textarea></label><label class="field">Category (optional)<select><option value="general">General</option><option value="language_grammar">Language / grammar</option><option value="learning_design_content_flow">Learning design / content flow</option><option value="accessibility">Accessibility</option><option value="technical_link_media_interaction">Technical / link / media / interaction</option><option value="assessment">Assessment</option></select></label><label class="field"><span><input type="checkbox" data-screenshot> Include a screenshot of the visible viewport</span><small>Only captured when you save this comment.</small></label><div class="error" role="alert" hidden></div><div class="actions"><button type="button" data-cancel>Cancel</button><button type="button" class="primary" data-save>Save comment</button></div></div>`;
+    backdrop.innerHTML = `<div class="dialog" role="dialog" aria-modal="true" aria-labelledby="review-dialog-title"><h2 id="review-dialog-title">${escapeHtml(label)}</h2><div class="preview">${escapeHtml(preview)}</div><label class="field">Comment<textarea data-initial-focus required></textarea></label><label class="field"><span><input type="checkbox" data-screenshot> Include a screenshot of the visible viewport</span><small>Only captured when you save this comment.</small></label><div class="error" role="alert" hidden></div><div class="actions"><button type="button" data-cancel>Cancel</button><button type="button" class="primary" data-save>Save comment</button></div></div>`;
     backdrop.addEventListener("keydown", (event) => {
       const focusable = Array.from(backdrop.querySelectorAll<HTMLElement>("textarea,select,input,button"));
       const activeIndex = Math.max(0, focusable.indexOf(shadow.activeElement as HTMLElement));
@@ -265,7 +266,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
       const save = backdrop.querySelector<HTMLButtonElement>("[data-save]")!; save.disabled = true; error.hidden = true;
       try {
         const wantsScreenshot = backdrop.querySelector<HTMLInputElement>("[data-screenshot]")!.checked;
-        const saved = await options.submit?.({ body: textarea.value.trim(), category: backdrop.querySelector<HTMLSelectElement>("select")!.value, anchor, screenshot: wantsScreenshot, embeddedFrameUnavailable: fallbackPin, contextSnapshot });
+        const saved = await options.submit?.({ body: textarea.value.trim(), category: "general", anchor, screenshot: wantsScreenshot, embeddedFrameUnavailable: fallbackPin, contextSnapshot });
         fallbackPin = false;
         if (!wantsScreenshot) { closeDialog(); return; }
         const commentId = saved && typeof saved.id === "string" ? saved.id : undefined;
@@ -331,15 +332,21 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
       const panel = shadow.querySelector<HTMLElement>(".panel")!;
       const panelContent = panel.querySelector<HTMLElement>("[data-panel-content]")!;
       panelContent.replaceChildren();
-      for (const comment of comments) {
+      for (const [commentIndex, comment] of comments.entries()) {
         const openThread = (marker?: HTMLElement) => {
           shadow.querySelector("[data-thread-popover]")?.remove();
+          if (marker && activeThreadId === comment.id) { activeThreadId = undefined; marker.setAttribute("aria-expanded", "false"); marker.focus(); return; }
+          ownerDocument.querySelectorAll<HTMLElement>("[data-moodle-review-stored-highlight],[data-moodle-review-stored-pin]").forEach((node) => node.setAttribute("aria-expanded", "false"));
+          activeThreadId = marker ? comment.id : undefined; if (marker) marker.setAttribute("aria-expanded", "true");
           const article = ownerDocument.createElement("article"); article.dataset.threadPopover = "true"; article.tabIndex = -1;
-          const heading = ownerDocument.createElement("h2"); heading.textContent = `${comment.category.replaceAll("_", " ")} · ${comment.status.replaceAll("_", " ")}`;
-          const byline = ownerDocument.createElement("p"); byline.textContent = `${comment.author.display_name} (${comment.author.role.replaceAll("_", " ")})`;
-          const body = ownerDocument.createElement("p"); body.textContent = comment.body; article.append(heading, byline, body);
-          for (const reply of comment.replies) { const node = ownerDocument.createElement("p"); node.textContent = `${reply.author.display_name} (${reply.author.role.replaceAll("_", " ")}): ${reply.body}`; article.append(node); }
-          if (comment.capabilities.can_delete && options.deleteThread) { const remove = ownerDocument.createElement("button"); remove.type = "button"; remove.textContent = "Delete thread"; remove.addEventListener("click", async () => { if (!ownerDocument.defaultView?.confirm("Delete this entire thread, including all replies and screenshots?")) return; remove.disabled = true; try { await options.deleteThread!(comment.id); article.remove(); } catch (error) { remove.disabled = false; const alert = ownerDocument.createElement("p"); alert.setAttribute("role", "alert"); alert.textContent = error instanceof Error ? error.message : "Could not delete thread"; article.append(alert); } }); article.append(remove); }
+          const contextLine = ownerDocument.createElement("p"); contextLine.textContent = `Comment ${commentIndex + 1} of ${comments.length}`; contextLine.style.cssText = "margin:0 44px 4px 0;font-size:12px;color:#52666c";
+          const byline = ownerDocument.createElement("p"); byline.textContent = `${comment.author.display_name} · ${comment.author.role.replaceAll("_", " ")}`; byline.style.cssText = "margin:0 44px 10px 0;font-size:13px;font-weight:650";
+          const body = ownerDocument.createElement("div"); body.textContent = comment.body; body.style.cssText = "padding:12px;border:1px solid #8ad9d8;border-radius:8px;background:#effafa"; article.append(contextLine, byline, body);
+          if (comment.capabilities.can_edit && options.editThread) { const edit = ownerDocument.createElement("button"); edit.type = "button"; edit.textContent = "✎"; edit.setAttribute("aria-label", "Edit original comment"); edit.addEventListener("click", () => { const input = ownerDocument.createElement("textarea"); input.value = comment.body; input.style.cssText = "width:100%;min-height:90px"; const save = ownerDocument.createElement("button"); save.type = "button"; save.textContent = "Save edit"; save.addEventListener("click", async () => { if (!input.value.trim()) return; save.disabled = true; try { await options.editThread!(comment.id, input.value.trim()); body.textContent = input.value.trim(); input.remove(); save.remove(); } finally { save.disabled = false; } }); body.after(input, save); input.focus(); }); byline.append(" ", edit); }
+          for (const reply of comment.replies) { const node = ownerDocument.createElement("div"); node.textContent = `${reply.author.display_name} (${reply.author.role.replaceAll("_", " ")}): ${reply.body}`; node.style.cssText = "margin-top:8px;padding:10px;border:1px solid #d7e6e6;border-radius:8px"; article.append(node); }
+          if (comment.capabilities.can_reply && options.replyThread) { const replyBox = ownerDocument.createElement("textarea"); replyBox.placeholder = "Add a reply"; replyBox.setAttribute("aria-label", "Add a reply"); replyBox.style.cssText = "width:100%;min-height:72px;margin-top:10px"; const replyButton = ownerDocument.createElement("button"); replyButton.type = "button"; replyButton.textContent = "Add reply"; replyButton.addEventListener("click", async () => { if (!replyBox.value.trim()) return; replyButton.disabled = true; try { await options.replyThread!(comment.id, replyBox.value.trim()); } finally { replyButton.disabled = false; } }); article.append(replyBox, replyButton); }
+          if (comment.capabilities.can_share_with_sme && options.manageSme) { const ask = ownerDocument.createElement("button"); ask.type = "button"; ask.textContent = "Ask SME"; ask.addEventListener("click", async () => { ask.disabled = true; try { const state = await options.manageSme!(comment.id); const chooser = ownerDocument.createElement("div"); chooser.style.cssText = "margin-top:10px;padding:10px;border:1px solid #8ad9d8;border-radius:8px"; const boxes: HTMLInputElement[] = []; for (const sme of state.available_recipients) { const label = ownerDocument.createElement("label"); label.style.display = "block"; const box = ownerDocument.createElement("input"); box.type = "checkbox"; box.value = sme.id; box.checked = state.selected_user_ids.includes(sme.id); boxes.push(box); label.append(box, ` ${sme.display_name}`); chooser.append(label); } const save = ownerDocument.createElement("button"); save.type = "button"; save.textContent = "Save SME access"; save.addEventListener("click", async () => { save.disabled = true; await options.manageSme!(comment.id, boxes.filter((box) => box.checked).map((box) => box.value)); chooser.remove(); ask.disabled = false; }); chooser.append(save); ask.after(chooser); } catch { ask.disabled = false; } }); article.append(ask); }
+          if (comment.capabilities.can_delete && options.deleteThread) { const remove = ownerDocument.createElement("button"); remove.type = "button"; remove.textContent = "🗑"; remove.setAttribute("aria-label", "Delete thread"); remove.style.cssText = "position:absolute;right:8px;top:8px;width:44px;height:44px;padding:0"; remove.addEventListener("click", async () => { if (!ownerDocument.defaultView?.confirm("Delete this entire thread, including all replies and screenshots?")) return; remove.disabled = true; try { await options.deleteThread!(comment.id); article.remove(); } catch (error) { remove.disabled = false; const alert = ownerDocument.createElement("p"); alert.setAttribute("role", "alert"); alert.textContent = error instanceof Error ? error.message : "Could not delete thread"; article.append(alert); } }); article.append(remove); }
           if (marker) { const rect = marker.getBoundingClientRect(); article.style.cssText = `position:fixed;z-index:2147483647;width:min(360px,calc(100vw - 16px));max-height:min(480px,calc(100vh - 16px));overflow:auto;left:${Math.max(8, Math.min((ownerDocument.defaultView?.innerWidth ?? 800) - 368, rect.right + 8))}px;top:${Math.max(8, Math.min((ownerDocument.defaultView?.innerHeight ?? 600) - 300, rect.top))}px;background:white;border:4px solid #28c4c2;border-radius:10px;padding:14px;box-shadow:0 8px 28px #0006`; shadow.append(article); article.focus(); }
           else { panel.hidden = false; panelContent.replaceChildren(article); }
         };
@@ -363,7 +370,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
             ownerDocument.documentElement.append(marker); trackReposition(place, marker);
           }
         }
-        const item = ownerDocument.createElement("button"); item.type = "button"; item.textContent = comment.body; item.addEventListener("click", () => openThread()); panelContent.append(item);
+        const item = ownerDocument.createElement("button"); item.type = "button"; item.textContent = `${commentIndex + 1}. ${comment.author.display_name} — ${comment.body.slice(0, 90)}${comment.body.length > 90 ? "…" : ""}`; item.style.cssText = "display:block;width:100%;margin-top:8px;text-align:left"; item.addEventListener("click", () => { const marker = ownerDocument.querySelector<HTMLElement>(`[data-moodle-review-stored-highlight="${comment.id}"],[data-moodle-review-stored-pin="${comment.id}"]`); if (marker) { marker.scrollIntoView?.({ block: "center" }); marker.focus(); openThread(marker); } else openThread(); }); panelContent.append(item);
       }
       if (!comments.length) panelContent.replaceChildren("No comments on this page yet.");
       this.setUnresolvedAnchors(unresolved);
@@ -387,12 +394,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
       if (region) { region.querySelectorAll(`[data-recovery-status="${id}"], [data-recovery-quote="${id}"]`).forEach((node) => node.remove()); const status = ownerDocument.createElement("p"); status.dataset.recoveryStatus = id; status.setAttribute("role", "status"); status.textContent = "The original content could not be found on this page"; const quote = ownerDocument.createElement("blockquote"); quote.dataset.recoveryQuote = id; quote.textContent = comment.selected_quote || `${comment.page_title} · ${comment.body}`; region.append(status, quote); }
       return false;
     },
-    showFrameFallback() {
-      frameUnavailable = true;
-      let region = shadow.querySelector<HTMLElement>("[data-frame-fallback]");
-      if (!region) { region = ownerDocument.createElement("section"); region.dataset.frameFallback = "true"; region.setAttribute("role", "status"); region.setAttribute("aria-live", "polite"); region.setAttribute("aria-labelledby", "frame-fallback-heading"); shadow.querySelector(".shell")?.append(region); }
-      region.hidden = false; region.innerHTML = `<strong id="frame-fallback-heading">Embedded activity detected</strong><p>Use Add comment and choose Comment on embedded content.</p>`;
-    },
+    showFrameFallback() { frameUnavailable = true; shadow.querySelector("[data-frame-fallback]")?.remove(); },
     hideFrameFallback() { frameUnavailable = false; fallbackPin = false; const region = shadow.querySelector<HTMLElement>("[data-frame-fallback]"); if (region) region.hidden = true; },
     setUnresolvedAnchors(anchors) {
       let region = shadow.querySelector<HTMLElement>("[data-unresolved]");
@@ -402,7 +404,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
         region.setAttribute("aria-labelledby", "unresolved-anchor-heading");
         shadow.querySelector(".shell")?.append(region);
       }
-      region.hidden = anchors.length === 0;
+      region.hidden = true;
       if (!anchors.length) { region.replaceChildren(); return; }
       const heading = ownerDocument.createElement("h2"); heading.id = "unresolved-anchor-heading"; heading.textContent = "Unresolved comment anchors";
       const list = ownerDocument.createElement("ul");
