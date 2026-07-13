@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from app.models import Comment, CommentStatusEvent, User, UserRole
+from app.models import Comment, CommentStatus, CommentStatusEvent, User, UserRole
 import pytest
 
 from app.services.comments import AuthorizationError, create_comment, update_comment_status
@@ -38,7 +38,7 @@ def test_non_owner_cannot_change_status_but_ld_can(db_session):
     assert comment.status == "resolved"
 
 
-@pytest.mark.parametrize("target", ["open", "awaiting_sme", "resolved"])
+@pytest.mark.parametrize("target", ["open", "awaiting_sme"])
 def test_open_rejects_skipped_or_noop_status_transitions(db_session, target):
     owner = User(email="owner@example.test", password_hash="hash", approved_at=datetime.now(UTC), created_at=datetime.now(UTC))
     lead = User(email="lead@example.test", password_hash="hash", role=UserRole.LD_DCD, approved_at=datetime.now(UTC), created_at=datetime.now(UTC))
@@ -48,6 +48,15 @@ def test_open_rejects_skipped_or_noop_status_transitions(db_session, target):
 
     with pytest.raises(ValueError, match="Invalid status transition"):
         update_comment_status(db_session, lead, comment, target)
+
+
+def test_ld_can_resolve_open_feedback_and_reopen_it(db_session):
+    owner = User(email="owner-reopen@example.test", password_hash="hash", approved_at=datetime.now(UTC), created_at=datetime.now(UTC))
+    lead = User(email="lead-reopen@example.test", password_hash="hash", role=UserRole.LD_DCD, approved_at=datetime.now(UTC), created_at=datetime.now(UTC))
+    db_session.add_all([owner, lead]); course = resolve_course(db_session, moodle_course_id=15, course_url="https://moodle.example/course/view.php?id=15", title="Law")
+    comment = create_comment(db_session, owner, course_id=course.id, page_url="https://moodle.example/page/15", page_title="Unit", body="Fix", anchor_type="text_highlight", selected_quote="Fix", css_selector="#content")
+    update_comment_status(db_session, lead, comment, "resolved"); assert comment.status is CommentStatus.RESOLVED
+    update_comment_status(db_session, lead, comment, "open"); assert comment.status is CommentStatus.OPEN
 
 
 @pytest.mark.parametrize("terminal", ["resolved", "deferred"])

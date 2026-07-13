@@ -95,7 +95,7 @@ def test_thread_is_readable_replyable_and_status_actions_are_csrf_protected(dash
     [
         ("in_progress", {"in_progress", "awaiting_sme", "resolved", "deferred"}, False),
         ("awaiting_sme", {"awaiting_sme", "in_progress", "resolved", "deferred"}, False),
-        ("resolved", {"resolved"}, True),
+        ("resolved", {"resolved", "open"}, False),
         ("deferred", {"deferred"}, True),
     ],
 )

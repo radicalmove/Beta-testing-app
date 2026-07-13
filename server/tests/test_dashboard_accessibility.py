@@ -108,7 +108,7 @@ def test_rendered_dashboard_and_thread_have_structural_accessibility_contract(da
     assert placeholder.attrs.get("value") == "" and "disabled" in placeholder.attrs
 
 
-def test_terminal_status_controls_are_disabled_and_keyboard_focus_contract_is_explicit(dashboard_client):
+def test_resolved_status_control_can_be_reopened_and_keyboard_focus_contract_is_explicit(dashboard_client):
     comment_id, _ = seed(dashboard_client)
     db = dashboard_client.db_factory()
     db.get(Comment, comment_id).status = CommentStatus.RESOLVED
@@ -119,9 +119,10 @@ def test_terminal_status_controls_are_disabled_and_keyboard_focus_contract_is_ex
     status_form = status.parent
     while status_form.tag != "form":
         status_form = status_form.parent
-    assert "disabled" in status.attrs and status.attrs.get("aria-disabled") == "true"
+    assert "disabled" not in status.attrs
+    assert any(node.tag == "option" and node.attrs.get("value") == "open" for node in status.children)
     button = next(node for node in status_form.descendants() if node.tag == "button")
-    assert "disabled" in button.attrs and button.attrs.get("aria-disabled") == "true"
+    assert "disabled" not in button.attrs
     assert not any(int(node.attrs.get("tabindex", "0")) > 0 for node in document.nodes)
 
     css = (Path(__file__).parents[1] / "app/static/app.css").read_text()

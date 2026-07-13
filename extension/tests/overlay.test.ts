@@ -402,3 +402,17 @@ test("marker placement has an obvious active button and comment cursor", () => {
   assert.equal(button.getAttribute("aria-pressed"), "false");
   assert.equal(document.documentElement.style.cursor, "");
 });
+
+test("course comments default to open and expose resolved separately", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const base = { id: "00000000-0000-4000-8000-000000000021", body: "Open feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Week 2", anchor_type: "text_highlight" as const, selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: true, can_share_with_sme: false, can_delete: true, allowed_statuses: ["open", "resolved"] } };
+  overlay.setPageComments([base, { ...base, id: "00000000-0000-4000-8000-000000000022", body: "Finished feedback", status: "resolved" }]);
+  shadow.querySelector<HTMLElement>('[data-action="panel"]')!.click();
+  const items = Array.from(shadow.querySelectorAll<HTMLElement>("[data-comment-item]"));
+  assert.equal(items.find((item) => item.textContent!.includes("Open feedback"))!.hidden, false);
+  assert.equal(items.find((item) => item.textContent!.includes("Finished feedback"))!.hidden, true);
+  shadow.querySelector<HTMLElement>('[data-comment-filter="resolved"]')!.click();
+  assert.equal(items.find((item) => item.textContent!.includes("Finished feedback"))!.hidden, false);
+  assert.equal(items.find((item) => item.textContent!.includes("Open feedback"))!.hidden, true);
+});

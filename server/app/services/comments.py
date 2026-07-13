@@ -19,7 +19,7 @@ STATUS_TRANSITIONS = {
     CommentStatus.OPEN: (CommentStatus.IN_PROGRESS, CommentStatus.DEFERRED),
     CommentStatus.IN_PROGRESS: (CommentStatus.AWAITING_SME, CommentStatus.RESOLVED, CommentStatus.DEFERRED),
     CommentStatus.AWAITING_SME: (CommentStatus.IN_PROGRESS, CommentStatus.RESOLVED, CommentStatus.DEFERRED),
-    CommentStatus.RESOLVED: (),
+    CommentStatus.RESOLVED: (CommentStatus.OPEN,),
     CommentStatus.DEFERRED: (),
 }
 
@@ -248,7 +248,7 @@ def replace_sme_recipients(db: DbSession, actor: User, comment_id: uuid.UUID, us
     comment = db.scalar(select(Comment).where(Comment.id == comment_id).with_for_update())
     if comment is None:
         return None
-    if actor.role is not UserRole.LD_DCD:
+    if actor.role not in {UserRole.LD_DCD, UserRole.ADMIN}:
         raise AuthorizationError("Only an LD/DCD can ask SMEs")
     valid = set(db.scalars(select(CourseMembership.user_id).where(
         CourseMembership.course_id == comment.course_id,
@@ -311,7 +311,9 @@ def update_comment_status(db: DbSession, actor: User, comment: Comment, status: 
     if actor.role is not UserRole.LD_DCD:
         raise AuthorizationError("Only an LD/DCD can change comment status")
     new_status = CommentStatus(status)
-    if new_status not in STATUS_TRANSITIONS[comment.status]:
+    if new_status is CommentStatus.RESOLVED and comment.status is not CommentStatus.RESOLVED:
+        pass
+    elif new_status not in STATUS_TRANSITIONS[comment.status]:
         raise ValueError(f"Invalid status transition: {comment.status.value} -> {new_status.value}")
     instant = utc_now()
     comment.status, comment.updated_at = new_status, instant
