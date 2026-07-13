@@ -7,9 +7,9 @@ from app.db import get_session
 from app.config import Settings, get_settings
 from app.dependencies import current_api_user, require_course_access
 from app.models import Comment, CommentReply, CommentStatusEvent, Course, CourseMembership, MembershipState, User, UserRole
-from app.schemas import CommentCreateRequest, CommentReplyRequest, CommentShareRequest, CommentStatusRequest
+from app.schemas import CommentCreateRequest, CommentReplyRequest, CommentShareRequest, CommentSmeRecipientsRequest, CommentStatusRequest, CommentUpdateRequest
 from app.services.attachments import delete_attachment_objects
-from app.services.comments import AuthorizationError, PageComment, comment_capabilities, create_comment, create_reply, delete_comment_thread, share_comment_with_user, update_comment_status, visible_comment_for, visible_comments_for, visible_page_comments_for
+from app.services.comments import AuthorizationError, PageComment, comment_capabilities, create_comment, create_reply, delete_comment_thread, replace_sme_recipients, share_comment_with_user, sme_recipient_state, update_comment_body, update_comment_status, visible_comment_for, visible_comments_for, visible_page_comments_for
 
 router = APIRouter(prefix="/api/comments", tags=["comments"])
 
@@ -38,16 +38,24 @@ def _page_comment_json(projected: PageComment, viewer: User) -> dict:
     }
 
 
+def _sme_recipients_json(db: DbSession, comment: Comment) -> dict:
+    available, selected = sme_recipient_state(db, comment)
+    return {
+        "available_recipients": [{"id": str(user.id), "display_name": user.display_name} for user in available],
+        "selected_user_ids": [str(user_id) for user_id in selected],
+    }
+
+
 def _comment_json(comment: Comment, db: DbSession | None = None, viewer: User | None = None) -> dict:
     result = {"id": str(comment.id), "course_id": str(comment.course_id), "location_id": str(comment.location_id), "author_user_id": str(comment.author_user_id), "category": comment.category.value, "status": comment.status.value, "body": comment.body}
     if db is not None and viewer is not None:
-        replies = list(db.query(CommentReply).filter_by(comment_id=comment.id).order_by(CommentReply.created_at))
+        replies = list(db.query(CommentReply).filter_by(comment_id=comment.id).order_by(CommentReply.created_at, CommentReply.id))
         if viewer.role is UserRole.BETA_TESTER:
             allowed = {viewer.id}
             allowed.update(user.id for user in db.query(User).filter(User.role == UserRole.LD_DCD))
             replies = [reply for reply in replies if reply.author_user_id in allowed]
         result["replies"] = [_reply_json(reply) for reply in replies]
-        events = list(db.query(CommentStatusEvent).filter_by(comment_id=comment.id).order_by(CommentStatusEvent.created_at))
+        events = list(db.query(CommentStatusEvent).filter_by(comment_id=comment.id).order_by(CommentStatusEvent.created_at, CommentStatusEvent.id))
         result["status_history"] = [{"status": event.status.value, "created_at": event.created_at.isoformat()} for event in events]
     return result
 
@@ -97,6 +105,49 @@ def get_comment(comment_id: uuid.UUID, user: User = Depends(current_api_user), d
         raise HTTPException(status_code=404, detail="Comment not found")
     require_course_access(user, comment.course_id)
     return _comment_json(comment, db, user)
+
+
+@router.patch("/{comment_id}")
+def edit_comment(comment_id: uuid.UUID, payload: CommentUpdateRequest, user: User = Depends(current_api_user), db: DbSession = Depends(get_session)) -> dict:
+    visible = visible_comment_for(db, user, comment_id)
+    if visible is None:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    require_course_access(user, visible.course_id)
+    try:
+        comment = update_comment_body(db, user, comment_id, payload.body)
+    except AuthorizationError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    if comment is None:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    return _comment_json(comment)
+
+
+@router.get("/{comment_id}/sme-recipients")
+def get_sme_recipients(comment_id: uuid.UUID, user: User = Depends(current_api_user), db: DbSession = Depends(get_session)) -> dict:
+    comment = visible_comment_for(db, user, comment_id)
+    if comment is None:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    require_course_access(user, comment.course_id)
+    if user.role is not UserRole.LD_DCD:
+        raise HTTPException(status_code=403, detail="Only an LD/DCD can ask SMEs")
+    return _sme_recipients_json(db, comment)
+
+
+@router.put("/{comment_id}/sme-recipients")
+def put_sme_recipients(comment_id: uuid.UUID, payload: CommentSmeRecipientsRequest, user: User = Depends(current_api_user), db: DbSession = Depends(get_session)) -> dict:
+    visible = visible_comment_for(db, user, comment_id)
+    if visible is None:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    require_course_access(user, visible.course_id)
+    try:
+        comment = replace_sme_recipients(db, user, comment_id, payload.user_ids)
+    except AuthorizationError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if comment is None:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    return _sme_recipients_json(db, comment)
 
 
 @router.delete("/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)

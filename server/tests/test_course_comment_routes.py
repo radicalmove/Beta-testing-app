@@ -162,3 +162,44 @@ def test_bound_session_cannot_list_or_create_comments_in_another_course(client):
 
     assert listed.status_code == 404
     assert created.status_code == 404
+
+
+def test_comment_author_can_patch_only_the_body(client):
+    session = client.db_factory()
+    course = resolve_course(session, moodle_course_id=901, course_url="https://moodle.example/course/view.php?id=901", title="Editing")
+    session.close()
+    headers = bound_extension_headers(client, course)
+    created = client.post("/api/comments", headers=headers, json={
+        "course_id": str(course.id), "page_url": "https://moodle.example/page/1", "page_title": "Page",
+        "body": "Before", "anchor_type": "text_highlight", "selected_quote": "Before", "css_selector": "#main",
+    })
+
+    response = client.patch(f"/api/comments/{created.json()['id']}", headers=headers, json={"body": "  After  "})
+
+    assert response.status_code == 200
+    assert response.json()["body"] == "After"
+    assert client.patch(f"/api/comments/{created.json()['id']}", headers=headers, json={"body": "   "}).status_code == 422
+
+
+def test_ask_sme_get_and_put_replace_current_recipients(client):
+    session = client.db_factory()
+    course = resolve_course(session, moodle_course_id=902, course_url="https://moodle.example/course/view.php?id=902", title="SMEs")
+    course_id = course.id
+    for email, name in (("z@example.test", "Zulu"), ("a@example.test", "Alpha")):
+        user = User(email=email, display_name=name, password_hash="hash", role=UserRole.BETA_TESTER, approved_at=utc_now(), created_at=utc_now())
+        session.add(user); session.flush()
+        session.add(CourseMembership(user_id=user.id, course_id=course_id, role=UserRole.SME, state=MembershipState.APPROVED, approved_at=utc_now(), created_at=utc_now(), updated_at=utc_now()))
+    session.commit()
+    recipients = session.query(User).filter(User.email.in_(["z@example.test", "a@example.test"])).all()
+    session.close()
+    course = Course(id=course_id, moodle_course_id="902")
+    lead = bound_extension_headers(client, course, UserRole.LD_DCD)
+    created = client.post("/api/comments", headers=lead, json={"course_id": str(course_id), "page_url": "https://moodle.example/page/2", "page_title": "Page", "body": "Ask", "anchor_type": "text_highlight", "selected_quote": "Ask", "css_selector": "#main"})
+    url = f"/api/comments/{created.json()['id']}/sme-recipients"
+
+    initial = client.get(url, headers=lead)
+    assert [item["display_name"] for item in initial.json()["available_recipients"]] == ["Alpha", "Zulu"]
+    replaced = client.put(url, headers=lead, json={"user_ids": [str(recipients[0].id)]})
+    assert replaced.status_code == 200
+    assert replaced.json()["selected_user_ids"] == [str(recipients[0].id)]
+    assert client.put(url, headers=lead, json={"user_ids": []}).json()["selected_user_ids"] == []

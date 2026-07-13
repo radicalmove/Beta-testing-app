@@ -167,6 +167,28 @@ class CommentStatusRequest(BaseModel):
         return value
 
 
+class CommentUpdateRequest(BaseModel):
+    body: str = Field(min_length=1, max_length=10000)
+
+    @field_validator("body")
+    @classmethod
+    def body_is_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("body is required")
+        return value
+
+
+class CommentSmeRecipientsRequest(BaseModel):
+    user_ids: list[uuid.UUID] = Field(max_length=50)
+
+    @field_validator("user_ids")
+    @classmethod
+    def recipient_ids_are_unique(cls, value: list[uuid.UUID]) -> list[uuid.UUID]:
+        if len(value) != len(set(value)):
+            raise ValueError("user_ids must be unique")
+        return value
+
+
 class CommentReplyRequest(BaseModel):
     body: str = Field(min_length=1, max_length=10000)
 

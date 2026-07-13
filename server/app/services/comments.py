@@ -7,7 +7,7 @@ from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.orm import aliased
 from sqlalchemy.orm import Session as DbSession
 
-from app.models import AnchorType, Attachment, Comment, CommentCategory, CommentReadState, CommentReply, CommentShare, CommentStatus, CommentStatusEvent, PageLocation, User, UserRole
+from app.models import AnchorType, Attachment, Comment, CommentCategory, CommentReadState, CommentReply, CommentShare, CommentStatus, CommentStatusEvent, CourseMembership, MembershipState, PageLocation, User, UserRole
 from app.security import utc_now
 
 
@@ -66,7 +66,7 @@ class PageComment:
     status_events: tuple[tuple[CommentStatusEvent, User], ...]
 
 
-def comment_capabilities(viewer: User, comment: Comment) -> dict[str, bool]:
+def comment_capabilities(viewer: User, comment: Comment) -> dict:
     is_author = viewer.id == comment.author_user_id
     is_lead = viewer.role is UserRole.LD_DCD
     is_admin = viewer.role is UserRole.ADMIN
@@ -79,6 +79,8 @@ def comment_capabilities(viewer: User, comment: Comment) -> dict[str, bool]:
         "can_change_status": is_lead,
         "can_share_with_sme": is_lead,
         "can_delete": is_author or is_lead or is_admin,
+        "can_edit": is_author,
+        "allowed_statuses": [item.value for item in allowed_status_choices(comment.status)] if is_lead else [comment.status.value],
     }
 
 
@@ -137,7 +139,7 @@ def dashboard_comments_for(db: DbSession, user: User) -> list[DashboardComment]:
         .outerjoin(PageLocation, PageLocation.id == Comment.location_id)
         .outerjoin(CommentReadState, and_(CommentReadState.comment_id == Comment.id, CommentReadState.user_id == user.id))
         .where(_visibility_clause(user))
-        .order_by(Comment.created_at)
+        .order_by(Comment.created_at, Comment.id)
     ).all()
     return [DashboardComment(comment, location, author_display, reply_at, reply_by, read_at) for comment, location, author_display, reply_at, reply_by, read_at in rows]
 
@@ -146,7 +148,7 @@ def visible_comments_for(db: DbSession, user: User, course_id: uuid.UUID) -> lis
     """Return exactly the course threads this user is allowed to discover."""
     query = select(Comment).where(Comment.course_id == course_id)
     query = query.where(_visibility_clause(user))
-    return list(db.scalars(query.order_by(Comment.created_at)))
+    return list(db.scalars(query.order_by(Comment.created_at, Comment.id)))
 
 
 def visible_page_comments_for(db: DbSession, user: User, course_id: uuid.UUID, page_url: str) -> list[PageComment]:
@@ -158,7 +160,7 @@ def visible_page_comments_for(db: DbSession, user: User, course_id: uuid.UUID, p
         .join(PageLocation, PageLocation.id == Comment.location_id)
         .join(author, author.id == Comment.author_user_id)
         .where(Comment.course_id == course_id, PageLocation.page_url == normalized, _visibility_clause(user))
-        .order_by(Comment.created_at)
+        .order_by(Comment.created_at, Comment.id)
     ).all()
     if not rows:
         return []
@@ -194,6 +196,9 @@ def visible_comment_for(db: DbSession, user: User, comment_id: uuid.UUID) -> Com
 
 
 def delete_comment_thread(db: DbSession, actor: User, comment: Comment) -> tuple[str, ...]:
+    comment = db.scalar(select(Comment).where(Comment.id == comment.id).with_for_update())
+    if comment is None:
+        return ()
     if actor.id != comment.author_user_id and actor.role not in {UserRole.LD_DCD, UserRole.ADMIN}:
         raise AuthorizationError("Only the author or an LD/DCD can delete this thread")
     location_id = comment.location_id
@@ -209,6 +214,53 @@ def delete_comment_thread(db: DbSession, actor: User, comment: Comment) -> tuple
             db.delete(location)
     db.commit()
     return object_names
+
+
+def update_comment_body(db: DbSession, actor: User, comment_id: uuid.UUID, body: str) -> Comment | None:
+    comment = db.scalar(select(Comment).where(Comment.id == comment_id).with_for_update())
+    if comment is None:
+        return None
+    if actor.id != comment.author_user_id:
+        raise AuthorizationError("Only the author can edit this observation")
+    comment.body = body.strip()
+    comment.updated_at = utc_now()
+    db.commit()
+    db.refresh(comment)
+    return comment
+
+
+def sme_recipient_state(db: DbSession, comment: Comment) -> tuple[list[User], list[uuid.UUID]]:
+    available = list(db.scalars(
+        select(User).join(CourseMembership, CourseMembership.user_id == User.id).where(
+            CourseMembership.course_id == comment.course_id,
+            CourseMembership.role == UserRole.SME,
+            CourseMembership.state == MembershipState.APPROVED,
+        ).order_by(User.display_name, User.email, User.id)
+    ))
+    selected = list(db.scalars(select(CommentShare.shared_with_user_id).where(CommentShare.comment_id == comment.id).order_by(CommentShare.created_at, CommentShare.id)))
+    return available, selected
+
+
+def replace_sme_recipients(db: DbSession, actor: User, comment_id: uuid.UUID, user_ids: list[uuid.UUID]) -> Comment | None:
+    comment = db.scalar(select(Comment).where(Comment.id == comment_id).with_for_update())
+    if comment is None:
+        return None
+    if actor.role is not UserRole.LD_DCD:
+        raise AuthorizationError("Only an LD/DCD can ask SMEs")
+    valid = set(db.scalars(select(CourseMembership.user_id).where(
+        CourseMembership.course_id == comment.course_id,
+        CourseMembership.role == UserRole.SME,
+        CourseMembership.state == MembershipState.APPROVED,
+        CourseMembership.user_id.in_(user_ids),
+    ))) if user_ids else set()
+    if valid != set(user_ids):
+        raise ValueError("Recipients must be approved SMEs in this course")
+    db.execute(delete(CommentShare).where(CommentShare.comment_id == comment.id))
+    instant = utc_now()
+    for user_id in user_ids:
+        db.add(CommentShare(comment_id=comment.id, shared_with_user_id=user_id, shared_by_user_id=actor.id, created_at=instant))
+    db.commit()
+    return comment
 
 
 def create_comment(db: DbSession, author: User, *, course_id: uuid.UUID, page_url: str, page_title: str, body: str, category: str = "general", anchor_type: str = "", selected_quote: str | None = None, prefix: str | None = None, suffix: str | None = None, css_selector: str | None = None, dom_selector: str | None = None, relative_x: float | None = None, relative_y: float | None = None) -> Comment:
@@ -250,6 +302,9 @@ def create_comment(db: DbSession, author: User, *, course_id: uuid.UUID, page_ur
 
 
 def update_comment_status(db: DbSession, actor: User, comment: Comment, status: str) -> Comment:
+    comment = db.scalar(select(Comment).where(Comment.id == comment.id).with_for_update())
+    if comment is None:
+        raise ValueError("Comment no longer exists")
     if actor.role is not UserRole.LD_DCD:
         raise AuthorizationError("Only an LD/DCD can change comment status")
     new_status = CommentStatus(status)
