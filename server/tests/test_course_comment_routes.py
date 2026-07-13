@@ -112,6 +112,20 @@ def test_extension_comment_route_defaults_omitted_category_to_general(client):
     check.close()
 
 
+def test_course_comment_list_includes_locations_and_excludes_other_courses(client):
+    headers = extension_headers(client, UserRole.LD_DCD)
+    first = client.post("/api/courses/resolve", headers=headers, json={"course_url": "https://moodle.example/course/view.php?id=12", "title": "Law", "moodle_course_id": 12}).json()["id"]
+    second = client.post("/api/courses/resolve", headers=headers, json={"course_url": "https://moodle.example/course/view.php?id=13", "title": "Other", "moodle_course_id": 13}).json()["id"]
+    for course_id, page_id in [(first, 91), (first, 92), (second, 93)]:
+        client.post("/api/comments", headers=headers, json={"course_id": course_id, "page_url": f"https://moodle.example/mod/page/view.php?id={page_id}", "page_title": f"Page {page_id}", "body": f"Comment {page_id}", "anchor_type": "text_highlight", "selected_quote": "Comment", "css_selector": "#main"})
+
+    response = client.get(f"/api/comments?course_id={first}", headers=headers)
+
+    assert response.status_code == 200
+    assert {item["page_title"] for item in response.json()} == {"Page 91", "Page 92"}
+    assert all(item["page_url"].endswith(("91", "92")) for item in response.json())
+
+
 def test_extension_course_confirmation_rejects_a_confirmed_source_without_deleting_it(client):
     headers = extension_headers(client, UserRole.LD_DCD)
     session = client.db_factory()

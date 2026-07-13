@@ -151,17 +151,20 @@ def visible_comments_for(db: DbSession, user: User, course_id: uuid.UUID) -> lis
     return list(db.scalars(query.order_by(Comment.created_at, Comment.id)))
 
 
-def visible_page_comments_for(db: DbSession, user: User, course_id: uuid.UUID, page_url: str) -> list[PageComment]:
-    """Load one exact page's visible threads and conversation data in bounded queries."""
-    normalized = normalized_page_url(page_url)
+def visible_page_comments_for(db: DbSession, user: User, course_id: uuid.UUID, page_url: str | None = None) -> list[PageComment]:
+    """Load visible course threads, optionally restricted to one exact page."""
+    normalized = normalized_page_url(page_url) if page_url is not None else None
     author = aliased(User)
-    rows = db.execute(
+    query = (
         select(Comment, PageLocation, author)
         .join(PageLocation, PageLocation.id == Comment.location_id)
         .join(author, author.id == Comment.author_user_id)
-        .where(Comment.course_id == course_id, PageLocation.page_url == normalized, _visibility_clause(user))
+        .where(Comment.course_id == course_id, _visibility_clause(user))
         .order_by(Comment.created_at, Comment.id)
-    ).all()
+    )
+    if normalized is not None:
+        query = query.where(PageLocation.page_url == normalized)
+    rows = db.execute(query).all()
     if not rows:
         return []
     comments = [row[0] for row in rows]

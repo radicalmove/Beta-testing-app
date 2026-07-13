@@ -179,7 +179,7 @@ test("top navigation immediately removes stored markers before delayed responses
   const comment = { id: "00000000-0000-4000-8000-000000000001", body: "Stored feedback", category: "general", status: "open", author: { display_name: "beta@example.test", role: "beta_tester" }, page_url: window.location.href, page_title: "Page one", anchor_type: "text_highlight", selected_quote: "important phrase", prefix: "An ", suffix: " here", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [] };
   const runtime = { sendMessage: (message: any, callback: (response: any) => void) => {
     if (message.type === "RESOLVE_COURSE") callback({ ok: true, data: { id: "123e4567-e89b-12d3-a456-426614174000" } });
-    else if (message.type === "LIST_PAGE_COMMENTS") lists.push(callback);
+    else if (message.type === "LIST_COURSE_COMMENTS") lists.push(callback);
     else callback({ ok: true, data: {} });
   } };
   const cleanup = startCourseReview(window as unknown as globalThis.Window & typeof globalThis, window.document as unknown as Document, runtime);
@@ -201,7 +201,7 @@ test("sign in sends one authenticate per activation and refreshes course and com
     messages.push(message);
     if (message.type === "RESOLVE_COURSE") callback(signedIn ? { ok: true, data: { id: "123e4567-e89b-12d3-a456-426614174000" } } : { ok: false, status: "signed-out", error: "Signed out" });
     else if (message.type === "AUTHENTICATE") { signedIn = true; callback({ ok: true, data: {} }); }
-    else if (message.type === "LIST_PAGE_COMMENTS") callback({ ok: true, data: [] });
+    else if (message.type === "LIST_COURSE_COMMENTS") callback({ ok: true, data: [] });
     else callback({ ok: true, data: {} });
   } };
   const cleanup = startCourseReview(window as unknown as globalThis.Window & typeof globalThis, window.document as unknown as Document, runtime);
@@ -213,7 +213,7 @@ test("sign in sends one authenticate per activation and refreshes course and com
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(messages.filter((message) => message.type === "AUTHENTICATE").length, 1);
   assert.equal(messages.filter((message) => message.type === "RESOLVE_COURSE").length, 2);
-  assert.equal(messages.filter((message) => message.type === "LIST_PAGE_COMMENTS").length, 1);
+  assert.equal(messages.filter((message) => message.type === "LIST_COURSE_COMMENTS").length, 1);
   assert.match(shadow.textContent!, /Connected/);
   cleanup();
 });

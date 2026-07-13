@@ -1,5 +1,5 @@
 import { ApiClient, authenticate, getActiveToken, lookupReviewCourse, redeemReviewerInvitation, renewReviewerDevice, resumeReviewerMembership, type SessionToken } from "./api";
-import { authorizeAuthenticateSender, authorizeResolveSender, handleCreateCommentBridge, handleDeleteCommentBridge, handleListPageCommentsBridge, handleResolveCourseBridge, normalizeErrorMessage, validateAuthenticateMessage, validateCancelScreenshotMessage, validateUploadScreenshotMessage, validateViewerResponse, type CreateCommentPayload, type ResolveCoursePayload } from "./background-bridge.ts";
+import { authorizeAuthenticateSender, authorizeResolveSender, handleCreateCommentBridge, handleDeleteCommentBridge, handleListCourseCommentsBridge, handleListPageCommentsBridge, handleResolveCourseBridge, normalizeErrorMessage, validateAuthenticateMessage, validateCancelScreenshotMessage, validateUploadScreenshotMessage, validateViewerResponse, type CreateCommentPayload, type ResolveCoursePayload } from "./background-bridge.ts";
 import { validateScreenshotDataUrl } from "./screenshot-validation.ts";
 import { reconcileOptionalContentScript } from "./optional-content-scripts";
 import { ReviewContextCache, validateContextMessage, type ReviewSender } from "./review-context.ts";
@@ -117,6 +117,10 @@ async function listPageComments(courseId: string, pageUrl: string): Promise<unkn
   if (response.status === 403) throw new Error("Account pending approval");
   if (!response.ok) throw new Error(`Comment list failed (${response.status})`);
   return response.json();
+}
+async function listCourseComments(courseId: string): Promise<unknown> {
+  const api = await client(); const response = await api.request(`/api/comments?${new URLSearchParams({ course_id: courseId })}`);
+  if (!response.ok) throw new Error(`Course comment list failed (${response.status})`); return response.json();
 }
 
 async function currentViewer(courseId: string): Promise<unknown> {
@@ -242,6 +246,11 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       authorize: (candidate) => authorizeResolveSender(candidate, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) }),
       courseId: () => reviewContexts.courseId(sender),
       list: listPageComments,
+    });
+  } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "LIST_COURSE_COMMENTS") {
+    operation = handleListCourseCommentsBridge(message, sender, {
+      authorize: (candidate) => authorizeResolveSender(candidate, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) }),
+      courseId: () => reviewContexts.courseId(sender), list: listCourseComments,
     });
   } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "GET_CURRENT_VIEWER") {
     operation = (async () => {

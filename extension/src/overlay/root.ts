@@ -376,9 +376,9 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
             ownerDocument.documentElement.append(marker); trackReposition(place, marker);
           }
         }
-        const item = ownerDocument.createElement("button"); item.type = "button"; item.textContent = `${commentIndex + 1}. ${comment.author.display_name} — ${comment.body.slice(0, 90)}${comment.body.length > 90 ? "…" : ""}`; item.style.cssText = "display:block;width:100%;margin-top:8px;text-align:left"; item.addEventListener("click", () => { const marker = ownerDocument.querySelector<HTMLElement>(`[data-moodle-review-stored-highlight="${comment.id}"],[data-moodle-review-stored-pin="${comment.id}"]`); if (marker) { marker.scrollIntoView?.({ block: "center" }); marker.focus(); openThread(marker); } else openThread(); }); panelContent.append(item);
+        const item = ownerDocument.createElement("button"); item.type = "button"; item.textContent = `${comment.page_title} — ${comment.author.display_name}: ${comment.body.slice(0, 90)}${comment.body.length > 90 ? "…" : ""}`; item.style.cssText = "display:block;width:100%;margin-top:8px;text-align:left"; item.addEventListener("click", () => { if (comment.page_url !== context.page_url) { ownerDocument.defaultView?.location.assign(comment.page_url); return; } const marker = ownerDocument.querySelector<HTMLElement>(`[data-moodle-review-stored-highlight="${comment.id}"],[data-moodle-review-stored-pin="${comment.id}"]`); if (marker) { marker.scrollIntoView?.({ block: "center" }); marker.focus(); openThread(marker); } else openThread(); }); panelContent.append(item);
       }
-      if (!comments.length) panelContent.replaceChildren("No comments on this page yet.");
+      if (!comments.length) panelContent.replaceChildren("No comments in this course yet.");
       this.setUnresolvedAnchors(unresolved);
     },
     takeToContext(id) {

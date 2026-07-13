@@ -90,8 +90,6 @@ def list_comments(course_id: uuid.UUID, page_url: str | None = Query(default=Non
     require_course_access(user, course_id)
     if db.get(Course, course_id) is None:
         raise HTTPException(status_code=404, detail="Course not found")
-    if page_url is None:
-        return [_comment_json(comment) for comment in visible_comments_for(db, user, course_id)]
     try:
         return [_page_comment_json(comment, user) for comment in visible_page_comments_for(db, user, course_id, page_url)]
     except ValueError as exc:

@@ -38,7 +38,7 @@ export function validateListPageCommentsMessage(message: unknown): { page_url: s
 const bounded = (value: unknown, max: number, nullable = false): boolean => (nullable && value === null) || (typeof value === "string" && value.length <= max);
 const exactKeys = (value: Record<string, unknown>, keys: string[]) => Object.keys(value).sort().join() === [...keys].sort().join();
 
-export function validatePageCommentsResponse(value: unknown, requestedPageUrl: string): PageComment[] {
+export function validatePageCommentsResponse(value: unknown, requestedPageUrl?: string): PageComment[] {
   const invalid = (): never => { throw new Error("Invalid page comments response"); };
   if (!Array.isArray(value) || value.length > 500) return invalid();
   const commentKeys = ["id", "body", "category", "status", "author", "page_url", "page_title", "anchor_type", "selected_quote", "prefix", "suffix", "css_selector", "dom_selector", "relative_x", "relative_y", "replies", "status_history", "capabilities"];
@@ -49,7 +49,7 @@ export function validatePageCommentsResponse(value: unknown, requestedPageUrl: s
     const row = entry as Record<string, unknown>;
     const author = row.author as Record<string, unknown>;
     const capabilities = row.capabilities as Record<string, unknown>;
-    if (!exactKeys(row, commentKeys) || !uuid.test(row.id as string) || !author || !exactKeys(author, ["display_name", "role"]) || !bounded(author.display_name, 100) || !(author.display_name as string).trim() || !roles.includes(author.role as string) || row.page_url !== requestedPageUrl || !exactHttpUrl(row.page_url) || !bounded(row.body, 10000) || !(row.body as string).trim() || !bounded(row.page_title, 512) || !(row.page_title as string).trim() || !statuses.includes(row.status as string) || !bounded(row.category, 64)) return invalid();
+    if (!exactKeys(row, commentKeys) || !uuid.test(row.id as string) || !author || !exactKeys(author, ["display_name", "role"]) || !bounded(author.display_name, 100) || !(author.display_name as string).trim() || !roles.includes(author.role as string) || (requestedPageUrl !== undefined && row.page_url !== requestedPageUrl) || !exactHttpUrl(row.page_url) || !bounded(row.body, 10000) || !(row.body as string).trim() || !bounded(row.page_title, 512) || !(row.page_title as string).trim() || !statuses.includes(row.status as string) || !bounded(row.category, 64)) return invalid();
     if (!capabilities || ["can_reply", "can_change_status", "can_share_with_sme", "can_delete"].some((key) => typeof capabilities[key] !== "boolean") || (capabilities.can_edit !== undefined && typeof capabilities.can_edit !== "boolean") || (capabilities.allowed_statuses !== undefined && (!Array.isArray(capabilities.allowed_statuses) || capabilities.allowed_statuses.some((value) => !statuses.includes(value as string))))) return invalid();
     if (!["text_highlight", "visual_pin"].includes(row.anchor_type as string) || !bounded(row.selected_quote, 20000, true) || !bounded(row.prefix, 2000, true) || !bounded(row.suffix, 2000, true) || !bounded(row.css_selector, 4000, true) || !bounded(row.dom_selector, 4000, true)) return invalid();
     for (const coordinate of [row.relative_x, row.relative_y]) if (coordinate !== null && (typeof coordinate !== "number" || !Number.isFinite(coordinate) || coordinate < 0 || coordinate > 1)) return invalid();
@@ -65,6 +65,14 @@ export function validatePageCommentsResponse(value: unknown, requestedPageUrl: s
     }
     return row as PageComment;
   });
+}
+
+export async function handleListCourseCommentsBridge(message: unknown, sender: { id?: string; url?: string }, dependencies: { authorize(sender: { id?: string; url?: string }): Promise<boolean>; courseId(sender: { id?: string; url?: string }): string | undefined; list(courseId: string): Promise<unknown> }): Promise<PageComment[]> {
+  if (!message || typeof message !== "object" || Array.isArray(message) || Object.keys(message).length !== 1 || (message as { type?: unknown }).type !== "LIST_COURSE_COMMENTS") throw new Error("Invalid LIST_COURSE_COMMENTS message");
+  if (!await dependencies.authorize(sender)) throw new Error("Unauthorized LIST_COURSE_COMMENTS sender");
+  const courseId = dependencies.courseId(sender);
+  if (!courseId) throw new Error("LIST_COURSE_COMMENTS course context unavailable");
+  return validatePageCommentsResponse(await dependencies.list(courseId));
 }
 
 export function validateDeleteCommentMessage(message: unknown): { comment_id: string } {
