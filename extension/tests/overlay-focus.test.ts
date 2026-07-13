@@ -188,7 +188,9 @@ test("take to context retries a late text anchor and reports an accessible failu
   overlay.setPageComments([storedHighlight]);
   assert.equal(document.querySelector("[data-moodle-review-stored-highlight]"), null);
   document.body.insertAdjacentHTML("afterbegin", "<p>An important phrase here</p>");
+  let contentScrolls = 0; (document.querySelector("p") as any).scrollIntoView = () => { contentScrolls += 1; };
   assert.equal(overlay.takeToContext(storedHighlight.id), true);
+  assert.equal(contentScrolls, 1, "navigation must scroll the underlying course content, not the fixed marker");
   assert.ok(document.querySelector("[data-moodle-review-stored-highlight]"));
   document.querySelector("p")!.remove(); overlay.setPageComments([storedHighlight]);
   assert.equal(overlay.takeToContext(storedHighlight.id), false);

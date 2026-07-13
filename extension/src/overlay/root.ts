@@ -392,10 +392,13 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
       if (comment.anchor_type === "text_highlight" && comment.selected_quote) {
         const recovered = recoverTextAnchor(ownerDocument, { selected_quote: comment.selected_quote, prefix: comment.prefix ?? "", suffix: comment.suffix ?? "" });
         if (recovered.status === "resolved") {
+          const contentTarget = recovered.range.commonAncestorContainer.nodeType === 1 ? recovered.range.commonAncestorContainer as HTMLElement : recovered.range.commonAncestorContainer.parentElement;
+          contentTarget?.scrollIntoView?.({ block: "center", behavior: "smooth" });
           this.setPageComments([...loadedComments.values()]);
           target = Array.from(ownerDocument.querySelectorAll<HTMLElement>("[data-moodle-review-stored-highlight]")).find((node) => node.dataset.moodleReviewStoredHighlight === id);
         }
       } else if (comment.anchor_type === "visual_pin") {
+        if (comment.css_selector) ownerDocument.querySelector<HTMLElement>(comment.css_selector)?.scrollIntoView?.({ block: "center", behavior: "smooth" });
         this.setPageComments([...loadedComments.values()]);
         target = Array.from(ownerDocument.querySelectorAll<HTMLElement>("[data-moodle-review-stored-pin]")).find((node) => node.dataset.moodleReviewStoredPin === id);
       }
