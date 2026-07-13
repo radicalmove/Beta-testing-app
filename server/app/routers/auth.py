@@ -32,7 +32,7 @@ router = APIRouter()
 @router.get("/api/me")
 def extension_identity(course_id: uuid.UUID, user: ExtensionAccess = Depends(current_api_user)) -> dict:
     require_course_access(user, course_id)
-    if user.course_id != course_id or user.membership_id is None:
+    if user.role is not UserRole.ADMIN and (user.course_id != course_id or user.membership_id is None):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
     return {
         "course_id": str(course_id),
