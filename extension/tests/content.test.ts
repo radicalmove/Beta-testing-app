@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Window } from "happy-dom";
 
-import { bootstrapContentScript, countInaccessibleFrames, createLifecycleController, isConfiguredFrame, refreshCourseBindingBeforeComment, startCourseReview, startEmbeddedReview } from "../src/content.ts";
+import { bootstrapContentScript, countInaccessibleFrames, createLifecycleController, isConfiguredFrame, refreshCourseBindingBeforeComment, sendRuntimeMessage, startCourseReview, startEmbeddedReview } from "../src/content.ts";
+
+test("invalidated extension contexts fail quietly instead of throwing from a stale page timer", () => {
+  let response: unknown;
+  const sent = sendRuntimeMessage({ sendMessage: () => { throw new Error("Extension context invalidated."); } }, { type: "HEARTBEAT" }, (value) => { response = value; });
+  assert.equal(sent, false);
+  assert.deepEqual(response, { ok: false, status: "offline", error: "Extension context invalidated" });
+});
 
 test("comment submission refreshes the trusted course binding after a worker restart", async () => {
   const messages: unknown[] = [];

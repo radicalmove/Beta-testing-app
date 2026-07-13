@@ -23,6 +23,15 @@ type MarkerRoot = {
 };
 type OwnedRoot = MarkerRoot & { [OWNER]?: { cleanup(): void } };
 
+export function sendRuntimeMessage(
+  runtime: { sendMessage(message: unknown, callback: (response: any) => void): void },
+  message: unknown,
+  callback: (response: any) => void,
+): boolean {
+  try { runtime.sendMessage(message, callback); return true; }
+  catch { callback({ ok: false, status: "offline", error: "Extension context invalidated" }); return false; }
+}
+
 export async function refreshCourseBindingBeforeComment(
   send: (message: unknown) => Promise<{ id?: unknown }>,
   context: Pick<CourseContext, "course_url" | "title" | "moodle_course_id">,
@@ -176,7 +185,7 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
   let courseId: string | undefined;
   let courseHandle: string | undefined;
   const courseIds = new Map<string, string>();
-  const send = <T>(message: unknown) => new Promise<T>((resolve, reject) => runtime.sendMessage(message, (response) => response?.ok ? resolve(response.data as T) : reject(new Error(response?.error ?? "Review service unavailable"))));
+  const send = <T>(message: unknown) => new Promise<T>((resolve, reject) => sendRuntimeMessage(runtime, message, (response) => response?.ok ? resolve(response.data as T) : reject(new Error(response?.error ?? "Review service unavailable"))));
   let lastSignature = "";
   let approvalCheck: Promise<AuthenticationOutcome> | undefined;
   let approvalTimer: number | undefined;
@@ -206,7 +215,7 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
     lastSignature = ""; refresh();
     return { status: "connected" };
   }, getSavedReviewers: () => courseHandle ? send<Array<{ email: string; label: string }>>({ type: "LIST_SAVED_REVIEWERS", course_handle: courseHandle }) : Promise.resolve([]), onUseSavedReviewer: () => checkPendingApproval(), onCheckApproval: checkPendingApproval, onAuthenticate: () => new Promise((resolve) => {
-    runtime.sendMessage({ type: "AUTHENTICATE" }, (response) => {
+    sendRuntimeMessage(runtime, { type: "AUTHENTICATE" }, (response) => {
       if (!response?.ok) {
         if ((response?.status as string | undefined) === "cancelled") resolve({ status: "signed-out", message: "Sign-in cancelled" });
         else if (response?.status === "pending") resolve({ status: "pending", message: waitingForApproval });
@@ -243,14 +252,14 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
     const sequence = ++requestSequence;
     const requestedCourseUrl = context.course_url;
     const payload = { course_url: context.course_url, title: context.title, ...(context.moodle_course_id ? { moodle_course_id: context.moodle_course_id } : {}) };
-    runtime.sendMessage({ type: "RESOLVE_COURSE", payload }, (response) => {
+    sendRuntimeMessage(runtime, { type: "RESOLVE_COURSE", payload }, (response) => {
       if (sequence !== requestSequence) return;
       const resolved = response?.data as { id?: unknown } | undefined;
       courseId = response?.ok && typeof resolved?.id === "string" ? resolved.id : undefined;
       if (courseId) courseIds.set(requestedCourseUrl, courseId);
       const status: ConnectionStatus = response?.ok ? "connected" : response?.status === "signed-out" ? "signed-out" : response?.status === "pending" ? "pending" : "offline";
       overlay.update(context, status);
-      if (courseId && status === "connected") runtime.sendMessage({ type: "GET_CURRENT_VIEWER" }, (viewerResponse) => {
+      if (courseId && status === "connected") sendRuntimeMessage(runtime, { type: "GET_CURRENT_VIEWER" }, (viewerResponse) => {
         const identity = (viewerResponse?.data as { user?: { display_name: string | null; email: string; role: string } } | undefined)?.user;
         if (viewerResponse?.ok && identity && typeof identity.email === "string" && typeof identity.role === "string") overlay.setViewer(identity);
       }); else overlay.setViewer(undefined);
@@ -261,7 +270,7 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
       if (courseId) void loadPageComments(context.page_url); else overlay.setPageComments([]);
       if (!response?.ok && context.moodle_course_id) {
         let moodleOrigin = ""; try { moodleOrigin = new URL(context.course_url).origin; } catch { /* invalid contexts are already rejected */ }
-        if (moodleOrigin) runtime.sendMessage({ type: "LOOKUP_REVIEW_COURSE", moodle_origin: moodleOrigin, moodle_course_id: context.moodle_course_id }, (lookup) => {
+        if (moodleOrigin) sendRuntimeMessage(runtime, { type: "LOOKUP_REVIEW_COURSE", moodle_origin: moodleOrigin, moodle_course_id: context.moodle_course_id }, (lookup) => {
           const found = lookup?.data as { course_handle?: unknown } | undefined;
           courseHandle = lookup?.ok && typeof found?.course_handle === "string" ? found.course_handle : undefined;
           if (courseHandle) void checkPendingApproval().then((outcome) => { if (outcome.status !== "signed-out") { overlay.update(context, outcome.status); if (outcome.status === "pending") scheduleApprovalCheck(); } });
@@ -281,7 +290,7 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
   };
   const checkFrames = () => {
     const inaccessible = inaccessibleFrameOrigins(targetDocument);
-    runtime.sendMessage({ type: "GET_REVIEW_FRAME_STATUS" }, (response) => {
+    sendRuntimeMessage(runtime, { type: "GET_REVIEW_FRAME_STATUS" }, (response) => {
       const status = response?.data as { ready_origins?: unknown; active_embedded_count?: unknown } | undefined;
       if (response?.ok && typeof status?.active_embedded_count === "number" && status.active_embedded_count > 0) {
         overlay.hideFrameFallback();
@@ -357,7 +366,7 @@ export function startEmbeddedReview(targetWindow: Window & typeof globalThis, ta
   };
   runtime.onMessage?.addListener(onCommand);
 
-  const register = () => runtime.sendMessage({ type: "GET_REVIEW_CONTEXT" }, (context) => {
+  const register = () => sendRuntimeMessage(runtime, { type: "GET_REVIEW_CONTEXT" }, (context) => {
     if (stopped) return;
     if (!context?.ok) {
       attempts += 1;
@@ -365,7 +374,7 @@ export function startEmbeddedReview(targetWindow: Window & typeof globalThis, ta
       return;
     }
     attempts = 0;
-    runtime.sendMessage({ type: "REGISTER_REVIEW_FRAME", capabilities: measureFrameCapabilities(targetDocument, targetWindow) }, () => undefined);
+    sendRuntimeMessage(runtime, { type: "REGISTER_REVIEW_FRAME", capabilities: measureFrameCapabilities(targetDocument, targetWindow) }, () => undefined);
     // Unit-test and legacy runtimes have no command channel. Production Chrome
     // always supplies runtime.onMessage and therefore remains coordinator-owned.
     if (!runtime.onMessage) activate(0);
@@ -393,7 +402,7 @@ function startActiveEmbeddedReview(targetWindow: Window & typeof globalThis, tar
   let attempts = 0;
   const scheduleRetry = typeof targetWindow.setTimeout === "function" ? targetWindow.setTimeout.bind(targetWindow) : globalThis.setTimeout;
   const cancelRetry = typeof targetWindow.clearTimeout === "function" ? targetWindow.clearTimeout.bind(targetWindow) : globalThis.clearTimeout;
-  const send = <T>(message: unknown) => new Promise<T>((resolve, reject) => runtime.sendMessage(message, (response) => response?.ok ? resolve(response.data as T) : reject(new Error(response?.error ?? "Review service unavailable"))));
+  const send = <T>(message: unknown) => new Promise<T>((resolve, reject) => sendRuntimeMessage(runtime, message, (response) => response?.ok ? resolve(response.data as T) : reject(new Error(response?.error ?? "Review service unavailable"))));
   const frameContext = (): CourseContext => {
     const label = pageLabel(targetDocument); const identity = new URL(targetWindow.location.href); identity.hash = `moodle-review-page=${encodeURIComponent(label)}`;
     return ({
@@ -422,7 +431,7 @@ function startActiveEmbeddedReview(targetWindow: Window & typeof globalThis, tar
     const previousTeardown = lifecycle.teardown.bind(lifecycle);
     lifecycle.teardown = () => { for (const eventName of ["popstate", "hashchange", "moodle-review:navigate"]) targetWindow.removeEventListener(eventName, clearNavigatedPage); previousTeardown(); };
     void loadPageComments();
-    runtime.sendMessage({ type: "REVIEW_FRAME_READY" }, () => undefined);
+    sendRuntimeMessage(runtime, { type: "REVIEW_FRAME_READY" }, () => undefined);
     try { targetWindow.parent.postMessage({ type: "MOODLE_REVIEW_FRAME_READY" }, "*"); } catch { /* trigger only */ }
   }).catch((error: unknown) => {
     attempts += 1;
