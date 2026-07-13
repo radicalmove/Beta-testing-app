@@ -171,6 +171,19 @@ test("stored highlight has a mounted keyboard button that opens its thread and c
   overlay.destroy(); assert.equal(document.querySelector("[data-moodle-review-stored-highlight]"), null);
 });
 
+test("page annotations stay below Moodle sticky navigation", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  document.body.innerHTML = "<p>An important phrase here</p>";
+  const overlay = mountReviewOverlay(document, context, "connected");
+  overlay.setPageComments([storedHighlight]);
+  const marker = document.querySelector<HTMLElement>("[data-moodle-review-stored-highlight]")!;
+  const highlight = document.querySelector<HTMLElement>("[data-moodle-review-highlight]")!;
+  assert.equal(marker.style.zIndex, "900");
+  assert.equal(highlight.style.zIndex, "899");
+  assert.equal(document.getElementById(OVERLAY_HOST_ID)!.style.zIndex, "2147483647");
+  overlay.destroy();
+});
+
 test("frame fallback does not replace loaded comments when shown and hidden", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   document.body.innerHTML = "<p>An important phrase here</p>";
