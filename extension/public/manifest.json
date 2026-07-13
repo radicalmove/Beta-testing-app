@@ -12,6 +12,8 @@
     "matches": ["https://moodle.example.invalid/*"],
     "js": ["content.js"],
     "all_frames": true,
+    "match_about_blank": true,
+    "match_origin_as_fallback": true,
     "run_at": "document_idle"
   }],
   "content_security_policy": { "extension_pages": "script-src 'self'; object-src 'none'" }

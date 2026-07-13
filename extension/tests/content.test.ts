@@ -26,6 +26,12 @@ test("content activates on configured Moodle patterns", () => {
   assert.equal(isConfiguredFrame("https://unrelated.example/course/view.php?id=1", ["https://moodle.example.invalid/*"], []), false);
 });
 
+test("authorised Moodle descendants activate when Rise uses an about:blank child frame", () => {
+  assert.equal(isConfiguredFrame("about:blank", ["https://moodle.example.invalid/*"], [], () => false, "https://moodle.example.invalid/pluginfile.php/1/index.html"), true);
+  assert.equal(isConfiguredFrame("about:blank", ["https://moodle.example.invalid/*"], [], () => false, "https://unrelated.example/activity"), false);
+  assert.equal(isConfiguredFrame("blob:https://moodle.example.invalid/lesson-id", ["https://moodle.example.invalid/*"], []), true);
+});
+
 test("lifecycle teardown restores history and permits a clean restart without duplicate listeners", () => {
   const window = new Window({ url: "https://moodle.example.invalid/course/view.php?id=1" });
   const originalPush = window.history.pushState;

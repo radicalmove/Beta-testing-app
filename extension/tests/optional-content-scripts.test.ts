@@ -34,6 +34,7 @@ test("optional frames are unreachable before permission and registered after per
     matches: ["https://rise.example.invalid/*"],
     js: ["content.js"],
     allFrames: true,
+    matchOriginAsFallback: true,
     runAt: "document_idle",
     persistAcrossSessions: true,
   }]]);
@@ -68,6 +69,7 @@ test("unchanged registration is left in place without an unregister gap", async 
       matches: ["https://rise.example.invalid/*"],
       js: ["content.js"],
       allFrames: true,
+      matchOriginAsFallback: true,
       runAt: "document_idle" as const,
       persistAcrossSessions: true,
     }],
@@ -89,12 +91,14 @@ test("registration is replaced when any execution setting drifts", async () => {
     matches: ["https://rise.example.invalid/*"],
     js: ["content.js"],
     allFrames: true,
+    matchOriginAsFallback: true,
     runAt: "document_idle" as const,
     persistAcrossSessions: true,
   };
   const drifts = [
     { js: ["old-content.js"] },
     { allFrames: false },
+    { matchOriginAsFallback: false },
     { runAt: "document_start" as const },
     { persistAcrossSessions: false },
   ];

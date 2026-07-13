@@ -5,6 +5,7 @@ type RegisteredContentScript = {
   matches?: string[];
   js?: string[];
   allFrames?: boolean;
+  matchOriginAsFallback?: boolean;
   runAt?: string;
   persistAcrossSessions?: boolean;
 };
@@ -14,6 +15,7 @@ const desiredRegistration = (matches: string[]) => ({
   matches,
   js: ["content.js"],
   allFrames: true,
+  matchOriginAsFallback: true,
   runAt: "document_idle",
   persistAcrossSessions: true,
 });
@@ -39,6 +41,7 @@ export async function reconcileOptionalContentScript(options: {
     const unchanged = JSON.stringify(current.matches) === JSON.stringify(desired.matches)
       && JSON.stringify(current.js) === JSON.stringify(desired.js)
       && current.allFrames === desired.allFrames
+      && current.matchOriginAsFallback === desired.matchOriginAsFallback
       && current.runAt === desired.runAt
       && current.persistAcrossSessions === desired.persistAcrossSessions;
     if (unchanged) return;

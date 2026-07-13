@@ -62,9 +62,12 @@ export function isConfiguredFrame(
   moodlePatterns: string[],
   optionalFramePatterns: string[],
   hasOptionalPermission: (pattern: string) => boolean = () => false,
+  parentUrl = "",
 ): boolean {
-  if (moodlePatterns.some((pattern) => matchPattern(url, pattern))) return true;
-  return optionalFramePatterns.some((pattern) => matchPattern(url, pattern) && hasOptionalPermission(pattern));
+  const inheritedUrl = parentUrl || (url.startsWith("blob:") ? url.slice(5) : "");
+  const candidate = /^(?:about:blank|about:srcdoc|blob:)/.test(url) && inheritedUrl ? inheritedUrl : url;
+  if (moodlePatterns.some((pattern) => matchPattern(candidate, pattern))) return true;
+  return optionalFramePatterns.some((pattern) => matchPattern(candidate, pattern) && hasOptionalPermission(pattern));
 }
 
 export async function bootstrapContentScript(options: {
@@ -72,11 +75,12 @@ export async function bootstrapContentScript(options: {
   document: { documentElement: MarkerRoot };
   moodlePatterns: string[];
   optionalFramePatterns: string[];
+  parentUrl?: string;
   inject: () => void | (() => void);
 }): Promise<boolean> {
   // Chrome gates static Moodle matches and background registration gates optional
   // frames, so a running content script is already authorized for this URL.
-  if (!isConfiguredFrame(options.url, [...options.moodlePatterns, ...options.optionalFramePatterns], [])) return false;
+  if (!isConfiguredFrame(options.url, [...options.moodlePatterns, ...options.optionalFramePatterns], [], () => false, options.parentUrl)) return false;
   const root = options.document.documentElement as OwnedRoot;
   root[OWNER]?.cleanup();
   if (root.hasAttribute(MARKER) && !root[OWNER]) root.removeAttribute(MARKER);
@@ -103,6 +107,7 @@ if (typeof window !== "undefined" && typeof document !== "undefined") {
     document,
     moodlePatterns: __MOODLE_PATTERNS__,
     optionalFramePatterns: __OPTIONAL_FRAME_PATTERNS__,
+    parentUrl: document.referrer,
     inject: () => {
       document.documentElement.dispatchEvent(new CustomEvent("moodle-review:bootstrap"));
       if (window.top === window) return startCourseReview(window, document, chrome.runtime);
