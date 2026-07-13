@@ -273,13 +273,23 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
   const scheduleTimeout = typeof targetWindow.setTimeout === "function" ? targetWindow.setTimeout.bind(targetWindow) : globalThis.setTimeout;
   const cancelTimeout = typeof targetWindow.clearTimeout === "function" ? targetWindow.clearTimeout.bind(targetWindow) : globalThis.clearTimeout;
   let fallbackTimer: ReturnType<typeof setTimeout>;
+  const setParentOverlayVisible = (visible: boolean) => {
+    const host = targetDocument.getElementById("moodle-course-review-overlay");
+    if (host) host.hidden = !visible;
+  };
   const checkFrames = () => {
     const inaccessible = inaccessibleFrameOrigins(targetDocument);
-    if (!inaccessible.length) { overlay.hideFrameFallback(); return; }
+    if (!inaccessible.length) { setParentOverlayVisible(true); overlay.hideFrameFallback(); return; }
     runtime.sendMessage({ type: "GET_REVIEW_FRAME_STATUS" }, (response) => {
       const ready = (response?.data as { ready_origins?: unknown } | undefined)?.ready_origins;
       const trusted = response?.ok && Array.isArray(ready) ? new Set(ready.filter((value): value is string => typeof value === "string")) : new Set<string>();
-      if (inaccessible.some((origin) => !trusted.has(origin))) overlay.showFrameFallback(); else overlay.hideFrameFallback();
+      if (inaccessible.some((origin) => !trusted.has(origin))) {
+        setParentOverlayVisible(true);
+        overlay.showFrameFallback();
+      } else {
+        overlay.hideFrameFallback();
+        setParentOverlayVisible(false);
+      }
     });
   };
   fallbackTimer = scheduleTimeout(checkFrames, 250);

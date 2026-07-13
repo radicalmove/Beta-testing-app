@@ -293,3 +293,18 @@ test("mixed ready and inaccessible frames keep a passive embedded activity notic
   assert.doesNotMatch(shadow.textContent!, /Place parent-page pin/);
   cleanup();
 });
+
+test("ready embedded activity hides the duplicate parent overlay", async () => {
+  const window = new Window({ url: "https://moodle.example.invalid/mod/scorm/player.php?id=22" });
+  window.document.body.innerHTML = '<h1>SCORM activity</h1><iframe id="rise" src="https://rise.example.invalid/activity"></iframe>';
+  Object.defineProperty(window.document.querySelector("#rise")!, "contentDocument", { value: null });
+  const runtime = { sendMessage: (message: any, callback: (response: any) => void) => {
+    if (message.type === "RESOLVE_COURSE") callback({ ok: true, data: { id: "123e4567-e89b-12d3-a456-426614174000" } });
+    else if (message.type === "GET_REVIEW_FRAME_STATUS") callback({ ok: true, data: { ready_origins: ["https://rise.example.invalid"] } });
+    else callback({ ok: true, data: {} });
+  } };
+  const cleanup = startCourseReview(window as any, window.document as any, runtime);
+  await new Promise((resolve) => setTimeout(resolve, 280));
+  assert.equal((window.document.querySelector("#moodle-course-review-overlay") as unknown as HTMLElement).hidden, true);
+  cleanup();
+});
