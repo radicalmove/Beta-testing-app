@@ -152,6 +152,8 @@ test("real content-script startup does not require chrome.permissions", async ()
 
 test("embedded review stays dormant until the coordinator activates it", async () => {
   const window = new Window({ url: "https://rise.example/activity#/lesson/1" });
+  const parent = { postMessage: () => undefined };
+  Object.defineProperty(window, "top", { value: parent }); Object.defineProperty(window, "parent", { value: parent });
   window.document.title = "Lesson 1"; window.document.body.innerHTML = "<main><h1>Lesson 1</h1><p>Meaningful Rise lesson content for review.</p></main>";
   let listener: ((message: any, sender: unknown, respond: (response: unknown) => void) => void) | undefined;
   const runtime = {
@@ -166,7 +168,9 @@ test("embedded review stays dormant until the coordinator activates it", async (
   assert.equal(window.document.querySelector("#moodle-course-review-overlay"), null);
   listener!({ type: "ACTIVATE_REVIEW_FRAME", generation: 1 }, {}, () => undefined);
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.ok(window.document.querySelector("#moodle-course-review-overlay"));
+  const activeHost = window.document.querySelector("#moodle-course-review-overlay") as unknown as HTMLElement;
+  assert.ok(activeHost);
+  assert.notEqual(activeHost.style.getPropertyValue("display"), "none", "the elected Rise frame must own a visible controller even without viewport bridge messages");
   cleanup();
 });
 
