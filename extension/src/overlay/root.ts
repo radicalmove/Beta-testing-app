@@ -95,6 +95,9 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     ownerDocument.removeEventListener("keydown", cancelPin, true);
     if (areaKeyListener) ownerDocument.removeEventListener("keydown", areaKeyListener, true);
     pinListener = undefined; areaKeyListener = undefined;
+    ownerDocument.documentElement.style.removeProperty("cursor");
+    const action = shadow.querySelector<HTMLElement>('[data-action="add-comment"]');
+    if (action) { action.setAttribute("aria-pressed", "false"); action.textContent = "Add comment marker"; }
     for (const candidate of areaCandidates) { candidate.style.removeProperty("outline"); candidate.style.removeProperty("outline-offset"); }
     areaCandidates = []; areaCandidateIndex = -1;
   };
@@ -190,6 +193,9 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     closeChoice(false);
     if (pinListener) clearAreaSelection();
     returnFocus = trigger;
+    trigger.setAttribute("aria-pressed", "true");
+    trigger.textContent = "💬 Cancel marker";
+    ownerDocument.documentElement.style.cursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Cpath fill='%2328c4c2' stroke='%230b6261' stroke-width='2' d='M3 3h24v18H13l-7 6v-6H3z'/%3E%3C/svg%3E") 4 4, crosshair`;
     const panel = shadow.querySelector<HTMLElement>(".panel")!; panel.hidden = false;
     const instruction = shadow.querySelector<HTMLElement>("[data-panel-content]")!;
     instruction.tabIndex = -1;

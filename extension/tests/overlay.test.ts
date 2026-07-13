@@ -387,3 +387,18 @@ test("thread popover remains positioned from its marker and markers have no whit
   assert.equal(popover.style.left, before); assert.equal(marker.getAttribute("aria-expanded"), "true");
   marker.click(); assert.equal(shadow.querySelector("[data-thread-popover]"), null);
 });
+
+test("marker placement has an obvious active button and comment cursor", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  document.body.innerHTML = '<main style="width:300px;height:200px"><p>Place here</p></main>';
+  mountReviewOverlay(document, context, "connected");
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const button = shadow.querySelector<HTMLButtonElement>('[data-action="add-comment"]')!;
+  button.click();
+  assert.equal(button.getAttribute("aria-pressed"), "true");
+  assert.match(button.textContent!, /Cancel marker/);
+  assert.match(document.documentElement.style.cursor, /url\(/);
+  document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }) as unknown as Event);
+  assert.equal(button.getAttribute("aria-pressed"), "false");
+  assert.equal(document.documentElement.style.cursor, "");
+});
