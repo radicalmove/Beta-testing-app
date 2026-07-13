@@ -142,3 +142,34 @@
 - [ ] **Step 8: Run the signed release exactly:** `PRIVATE_KEY_PATH='/Users/rcd58/.config/moodle-review/pilot-extension.pem' REVIEW_SERVICE_ORIGIN='https://fld-mini.tail4ccaba.ts.net' deploy/scripts/release-pilot-extension.sh`.
 - [ ] **Step 9: Verify the immutable versioned release, `current` copy, ZIP and unpacked-artifact checksums, embedded service origin, manifest permissions, and matching version. The release script must not modify the clean Git tree.**
 - [ ] **Step 10: Manually test CRJU150 in Chrome**: one overlay, marker and highlight inside Rise, comment restore, multi-lesson switch, no wrapper click leak, and permission wording if prompted.
+
+### Task 8: Single visible SCORM viewport controller
+
+**Files:**
+- Create: `extension/src/frame-viewport.ts`
+- Create: `extension/tests/frame-viewport.test.ts`
+- Modify: `extension/src/content.ts`
+- Modify: `extension/tests/content.test.ts`
+- Modify: `extension/src/overlay/root.ts`
+- Modify: `extension/tests/overlay.test.ts`
+- Modify: `extension/src/background.ts`
+- Modify: `extension/src/frame-coordination-runtime.ts`
+- Modify: `extension/tests/background-frame-coordination.test.ts`
+- Create: `extension/e2e/scorm-viewport-controller.spec.ts`
+- Create: `extension/e2e/scorm-viewport-fixtures.ts`
+
+- [ ] **Step 1: Write failing pure coordinate tests** named `maps_bordered_scaled_iframe_content_box`, `clips_partially_visible_iframe`, `adds_child_scroll_offsets_for_absolute_position`, and `rejects_rotated_skewed_or_noninvertible_transform` against wished-for `mapVisibleRectToChild()` and `toolbarDocumentPosition()` APIs.
+- [ ] **Step 2: Run `cd extension && node --test tests/frame-viewport.test.ts`**; expect FAIL because `frame-viewport.ts` does not exist.
+- [ ] **Step 3: Implement minimal typed rectangle, content-box scale, transform validation, intersection, and absolute-position helpers** without DOM or Chrome globals; rerun the focused test to PASS.
+- [ ] **Step 4: Add failing protocol tests** `accepts_current_parent_envelope`, `rejects_wrong_source_origin_version_nonce_and_generation`, `ignores_stale_reordered_rectangles`, `parent_accepts_only_immediate_iframe_source`, `parent_derives_origin_without_trusting_payload`, `parent_replies_with_exact_known_target_origin`, and `rejects_opaque_origin_and_never_uses_wildcard` for a `ViewportProtocol` state object; run the focused test and confirm expected failures.
+- [ ] **Step 5: Implement the versioned generation/nonce protocol and last-valid-rectangle state**, then rerun to PASS.
+- [ ] **Step 6: Add failing content tests** `top_propagates_visual_viewport_to_immediate_iframe`, `intermediate_frame_transforms_and_forwards`, `child_positions_toolbar_in_visible_lower_right`, `outer_scroll_updates_child_position`, `retains_last_rect_during_transient_loss`, and `teardown_removes_message_pagehide_scroll_resize_visualviewport_observers_timer_and_raf`. The teardown test dispatches an otherwise-valid viewport envelope afterward and proves no state or DOM change occurs.
+- [ ] **Step 7: Run `cd extension && node --test tests/content.test.ts`**; expect failures at the missing viewport lifecycle.
+- [ ] **Step 8: Implement rAF-coalesced propagation and active-child positioning** with capture scroll, window/visualViewport scroll+resize, ResizeObserver for immediate iframes and toolbar, mutation/layout invalidation, and low-frequency active geometry checks. Rerun content and frame-viewport tests to PASS.
+- [ ] **Step 9: Add failing handoff tests** `top_recovery_shell_survives_child_functional_activation`, `moodle_remains_visible_until_child_ready`, `child_reveals_only_after_moodle_hides_and_acks`, `child_hides_and_acks_before_moodle_reveals`, and `never_exposes_two_visible_toolbars` in content/background coordination tests.
+- [ ] **Step 10: Separate functional and presentation ownership.** The elected child mounts its full review behavior with its toolbar hidden. The existing top overlay remains mounted as a presentation-only recovery shell instead of being functionally torn down. Implement coordinator-issued presentation nonce and the ordered state machine: child hidden/functionally ready → `PRESENTATION_READY` → hide Moodle shell → Moodle `PRESENTATION_DORMANT` acknowledgement → reveal child; reverse: hide child → child dormant acknowledgement → reveal Moodle shell. Make `GET_REVIEW_FRAME_STATUS` expose this current presentation state rather than stale ready-origin history. Rerun focused tests to PASS.
+- [ ] **Step 11: Add overlay tests** for presentation-hidden shell, absolute lower-right positioning within an assigned rectangle, panel-height repositioning, and preservation of in-Rise markers/highlights/popovers. Run `node --test tests/overlay.test.ts`, implement the minimal overlay presentation API, and rerun to PASS.
+- [ ] **Step 12: Add Playwright nested-frame fixtures** covering full-height Rise, two wrapper levels, cross-origin child, iframe borders, CSS scale, partial visibility, nested scroll/layout shift, down-then-up outer scrolling, and exactly one visible toolbar at every sampled transition.
+- [ ] **Step 13: Run `cd extension && npm run test:e2e`**, fix only defects revealed by the approved design, and require PASS.
+- [ ] **Step 14: Increment the pilot version in `extension/package.json`, `extension/package-lock.json`, and `extension/tests/build-config.test.ts`; run `npm test && npm run typecheck && npm run build`, `cd ../server && python3 -m pytest -q`, and root release suites.
+- [ ] **Step 15: Commit a clean tree, run the signed pilot release script, verify ZIP/unpacked checksums and matching current/release versions, then manually test CRJU150 down-scroll/up-scroll marker placement.**
