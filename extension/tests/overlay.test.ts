@@ -350,3 +350,40 @@ test("a disconnected state closes an open review panel when its toggle is remove
     assert.equal(shadow.querySelector('[data-action="panel"]'), null);
   }
 });
+
+test("thread edit and reply controls toggle without duplicating composers", async () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  document.body.innerHTML = '<main><p id="copy">Anchor words here</p></main>';
+  let edits = 0; let replies = 0;
+  const overlay = mountReviewOverlay(document, context, "connected", { editThread: async () => { edits += 1; }, replyThread: async () => { replies += 1; } });
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const comment = { id: "00000000-0000-4000-8000-000000000010", body: "Original", category: "general", status: "open", author: { display_name: "Richard Davies", role: "ld_dcd" }, page_url: context.page_url, page_title: context.pageTitle, anchor_type: "visual_pin" as const, selected_quote: null, prefix: null, suffix: null, css_selector: "#copy", dom_selector: null, relative_x: .5, relative_y: .5, replies: [], status_history: [], capabilities: { can_reply: true, can_edit: true, can_change_status: true, can_share_with_sme: false, can_delete: true } };
+  overlay.setPageComments([comment]);
+  document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")!.click();
+  const popover = shadow.querySelector<HTMLElement>("[data-thread-popover]")!;
+  const edit = popover.querySelector<HTMLButtonElement>('[aria-label="Edit original comment"]')!;
+  edit.click(); edit.click();
+  assert.equal(popover.querySelectorAll("[data-edit-composer]").length, 0);
+  edit.click(); assert.equal(popover.querySelectorAll("[data-edit-composer]").length, 1);
+  const reply = popover.querySelector<HTMLButtonElement>("[data-reply-toggle]")!;
+  reply.click(); reply.click(); assert.equal(popover.querySelectorAll("[data-reply-composer]").length, 0);
+  reply.click(); const box = popover.querySelector<HTMLTextAreaElement>("[data-reply-composer] textarea")!; box.value = "A reply";
+  popover.querySelector<HTMLButtonElement>("[data-save-reply]")!.click(); await tick();
+  assert.equal(replies, 1); assert.match(popover.textContent!, /A reply/);
+  assert.equal(edits, 0);
+});
+
+test("thread popover remains positioned from its marker and markers have no white border", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  document.body.innerHTML = '<main><div id="target">Target</div></main>';
+  const overlay = mountReviewOverlay(document, context, "connected");
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const comment = { id: "00000000-0000-4000-8000-000000000011", body: "Pinned", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: context.pageTitle, anchor_type: "visual_pin" as const, selected_quote: null, prefix: null, suffix: null, css_selector: "#target", dom_selector: null, relative_x: .5, relative_y: .5, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: true } };
+  overlay.setPageComments([comment]);
+  const marker = document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")!;
+  assert.doesNotMatch(marker.style.border, /white/i);
+  marker.click(); const popover = shadow.querySelector<HTMLElement>("[data-thread-popover]")!;
+  const before = popover.style.left; window.dispatchEvent(new window.Event("scroll"));
+  assert.equal(popover.style.left, before); assert.equal(marker.getAttribute("aria-expanded"), "true");
+  marker.click(); assert.equal(shadow.querySelector("[data-thread-popover]"), null);
+});
