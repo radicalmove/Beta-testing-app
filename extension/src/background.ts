@@ -144,6 +144,7 @@ async function deleteComment(commentId: string, _courseId: string): Promise<unkn
 }
 
 chrome.tabs?.onRemoved?.addListener((tabId: number) => reviewContexts.removeTab(tabId));
+chrome.tabs?.onRemoved?.addListener((tabId: number) => chrome.storage.session.remove(`commentNavigation:${tabId}`));
 chrome.webNavigation?.onCommitted?.addListener((details: { tabId: number; frameId: number }) => { if (details.frameId === 0) reviewContexts.removeTab(details.tabId); });
 
 chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & { tab?: { id?: number; windowId?: number } }, sendResponse: (value: unknown) => void) => {
@@ -256,6 +257,8 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       authorize: (candidate) => authorizeResolveSender(candidate, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) }),
       courseId: () => reviewContexts.courseId(sender), list: listCourseComments,
     });
+  } else if (message && typeof message === "object" && ["PREPARE_COMMENT_NAVIGATION", "CONSUME_COMMENT_NAVIGATION"].includes((message as { type?: string }).type ?? "")) {
+    operation = (async () => { if (typeof sender.tab?.id !== "number" || !(await authorizeResolveSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) }))) throw new Error("Unauthorized comment navigation"); const key = `commentNavigation:${sender.tab.id}`; const courseId = reviewContexts.courseId(sender); if (!courseId) throw new Error("Comment navigation course unavailable"); if ((message as { type: string }).type === "PREPARE_COMMENT_NAVIGATION") { const record = message as Record<string, unknown>; if (Object.keys(record).sort().join() !== "comment_id,page_url,type" || typeof record.comment_id !== "string" || !/^[0-9a-f-]{36}$/i.test(record.comment_id) || typeof record.page_url !== "string") throw new Error("Invalid comment navigation"); const url = new URL(record.page_url); const senderUrl = new URL(sender.url!); if (url.protocol !== "https:" || url.origin !== senderUrl.origin) throw new Error("Invalid comment destination"); await chrome.storage.session.set({ [key]: { comment_id: record.comment_id, course_id: courseId, page_url: url.href, created_at: Date.now() } }); return {}; } const stored = (await chrome.storage.session.get(key))[key]; if (!stored || stored.course_id !== courseId || stored.page_url !== sender.url || Date.now() - stored.created_at > 300000) { if (stored) await chrome.storage.session.remove(key); return {}; } await chrome.storage.session.remove(key); return { comment_id: stored.comment_id }; })();
   } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "GET_CURRENT_VIEWER") {
     operation = (async () => {
       if (Object.keys(message as object).length !== 1) throw new Error("Invalid GET_CURRENT_VIEWER message");
