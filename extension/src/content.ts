@@ -184,7 +184,7 @@ export function createLifecycleController(targetWindow: Window & typeof globalTh
   } };
 }
 
-export function startCourseReview(targetWindow: Window & typeof globalThis = window, targetDocument: Document = document, runtime: { sendMessage(message: unknown, callback: (response: { ok?: boolean; status?: ConnectionStatus; error?: string; data?: unknown } | undefined) => void): void } = chrome.runtime, buildDiagnostics: BuildDiagnostics = BUILD_DIAGNOSTICS): () => void {
+export function startCourseReview(targetWindow: Window & typeof globalThis = window, targetDocument: Document = document, runtime: { sendMessage(message: unknown, callback: (response: { ok?: boolean; status?: ConnectionStatus; error?: string; data?: unknown } | undefined) => void): void } = chrome.runtime, buildDiagnostics: BuildDiagnostics = BUILD_DIAGNOSTICS, framePollDelay = 1_000): () => void {
   let context = currentContext(targetWindow, targetDocument);
   let courseId: string | undefined;
   let courseHandle: string | undefined;
@@ -312,12 +312,19 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
       }
     });
   };
-  fallbackTimer = scheduleTimeout(checkFrames, 250);
-  const poll = scheduleTimeout(() => checkFrames(), 1000); const latePoll = scheduleTimeout(() => checkFrames(), 5000);
+  fallbackTimer = scheduleTimeout(checkFrames, Math.min(250, framePollDelay));
+  const scheduleFramePoll: (handler: () => void, delay: number) => ReturnType<typeof globalThis.setInterval> = typeof targetWindow.setInterval === "function"
+    ? ((handler, delay) => targetWindow.setInterval(handler, delay) as unknown as ReturnType<typeof globalThis.setInterval>)
+    : ((handler, delay) => globalThis.setInterval(handler, delay));
+  const cancelFramePoll: (timer: ReturnType<typeof globalThis.setInterval>) => void = typeof targetWindow.clearInterval === "function"
+    ? ((timer) => targetWindow.clearInterval(timer as unknown as number))
+    : ((timer) => globalThis.clearInterval(timer));
+  const framePoll = scheduleFramePoll(checkFrames, framePollDelay);
+  (framePoll as unknown as { unref?: () => void }).unref?.();
   const onFrameReady = (event: MessageEvent) => { if (event.data?.type === "MOODLE_REVIEW_FRAME_READY") checkFrames(); };
   targetWindow.addEventListener("message", onFrameReady);
   refresh();
-  return () => { stopped = true; clearApprovalTimer(); targetDocument.removeEventListener("visibilitychange", onVisibility); cancelTimeout(fallbackTimer); cancelTimeout(poll); cancelTimeout(latePoll); targetWindow.removeEventListener("message", onFrameReady); for (const eventName of ["popstate", "hashchange", "moodle-review:navigate"]) targetWindow.removeEventListener(eventName, clearNavigatedPage); lifecycle.teardown(); overlay.destroy(); };
+  return () => { stopped = true; clearApprovalTimer(); targetDocument.removeEventListener("visibilitychange", onVisibility); cancelTimeout(fallbackTimer); cancelFramePoll(framePoll); targetWindow.removeEventListener("message", onFrameReady); for (const eventName of ["popstate", "hashchange", "moodle-review:navigate"]) targetWindow.removeEventListener(eventName, clearNavigatedPage); lifecycle.teardown(); overlay.destroy(); };
 }
 
 type RuntimeResponse = { ok?: boolean; status?: ConnectionStatus; error?: string; data?: unknown } | undefined;

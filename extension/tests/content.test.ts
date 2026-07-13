@@ -400,3 +400,20 @@ test("active embedded activity hides the parent overlay even through an accessib
   assert.equal((window.document.querySelector("#moodle-course-review-overlay") as unknown as HTMLElement).hidden, true);
   cleanup();
 });
+
+test("late SCORM ownership still hides the duplicate Moodle controller", async () => {
+  const window = new Window({ url: "https://moodle.example.invalid/mod/scorm/player.php?id=22" });
+  window.document.body.innerHTML = '<h1>SCORM activity</h1><iframe id="wrapper"></iframe>';
+  Object.defineProperty(window.document.querySelector("#wrapper")!, "contentDocument", { value: window.document });
+  let checks = 0;
+  const runtime = { sendMessage: (message: any, callback: (response: any) => void) => {
+    if (message.type === "RESOLVE_COURSE") callback({ ok: true, data: { id: "123e4567-e89b-12d3-a456-426614174000" } });
+    else if (message.type === "GET_REVIEW_FRAME_STATUS") { checks += 1; callback({ ok: true, data: { active_embedded_count: checks >= 4 ? 1 : 0 } }); }
+    else callback({ ok: true, data: {} });
+  } };
+  const cleanup = startCourseReview(window as any, window.document as any, runtime, undefined, 5);
+  await new Promise((resolve) => setTimeout(resolve, 35));
+  assert.ok(checks >= 4);
+  assert.equal((window.document.querySelector("#moodle-course-review-overlay") as unknown as HTMLElement).style.getPropertyValue("display"), "none");
+  cleanup();
+});
