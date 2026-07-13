@@ -186,7 +186,7 @@ def create_extension_login_code(db: DbSession, user: User, redirect_uri: str, *,
     return code
 
 
-def exchange_extension_login_code(db: DbSession, code: str, redirect_uri: str, *, now=None, session_ttl=timedelta(hours=8)) -> str:
+def exchange_extension_login_code(db: DbSession, code: str, redirect_uri: str, *, now=None, session_ttl=timedelta(days=7)) -> str:
     instant = _now(now)
     code_hash = token_hash(code)
     claim = db.execute(

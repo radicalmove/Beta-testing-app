@@ -168,7 +168,7 @@ def test_extension_authorization_requires_an_allowlisted_redirect_and_exchanges_
     token = client.post("/extension/token", json={"code": code, "redirect_uri": "https://abcdefghijklmnop.chromiumapp.org/"})
     assert token.status_code == 200
     assert token.json()["access_token"]
-    assert token.json()["expires_in"] == 8 * 60 * 60
+    assert token.json()["expires_in"] == 7 * 24 * 60 * 60
     assert client.post("/extension/token", json={"code": code, "redirect_uri": "https://abcdefghijklmnop.chromiumapp.org/"}).status_code == 401
 
 

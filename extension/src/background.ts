@@ -52,10 +52,14 @@ async function serviceOrigin(): Promise<string> {
 }
 
 async function activeToken(): Promise<string | undefined> {
-  const stored = await chrome.storage.session.get(["apiToken", "expiresAt"]) as Partial<SessionToken>;
+  let stored = await chrome.storage.session.get(["apiToken", "expiresAt"]) as Partial<SessionToken>;
+  if (typeof stored.apiToken !== "string" || typeof stored.expiresAt !== "number") {
+    const durable = await chrome.storage.local.get(["courseTeamSession"]); const candidate = durable.courseTeamSession;
+    if (candidate && typeof candidate.apiToken === "string" && typeof candidate.expiresAt === "number" && candidate.expiresAt > Date.now()) { stored = candidate; await chrome.storage.session.set(candidate); }
+  }
   const session = typeof stored.apiToken === "string" && typeof stored.expiresAt === "number" ? stored as SessionToken : undefined;
   const active = await getActiveToken(session, {
-    clearToken: () => chrome.storage.session.remove(["apiToken", "expiresAt"]),
+    clearToken: async () => { await chrome.storage.session.remove(["apiToken", "expiresAt"]); await chrome.storage.local.remove(["courseTeamSession"]); },
     onSignedOut: () => undefined,
   });
   if (active) return active;
@@ -206,7 +210,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
         serviceOrigin: await serviceOrigin(),
         getRedirectUrl: () => chrome.identity.getRedirectURL(),
         launchWebAuthFlow: (details) => chrome.identity.launchWebAuthFlow(details),
-        setSession: (session: SessionToken) => chrome.storage.session.set(session),
+        setSession: async (session: SessionToken) => { await chrome.storage.session.set(session); await chrome.storage.local.set({ courseTeamSession: session }); },
       });
     })();
   } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "RESOLVE_COURSE") {

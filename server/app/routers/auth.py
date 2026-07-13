@@ -197,4 +197,4 @@ def extension_token(payload: ExtensionTokenRequest, db: DbSession = Depends(get_
         token = exchange_extension_login_code(db, payload.code, payload.redirect_uri)
     except AuthenticationError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid extension authorization code") from exc
-    return {"access_token": token, "token_type": "Bearer", "expires_in": 8 * 60 * 60}
+    return {"access_token": token, "token_type": "Bearer", "expires_in": 7 * 24 * 60 * 60}
