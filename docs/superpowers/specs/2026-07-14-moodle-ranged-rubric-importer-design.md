@@ -38,7 +38,7 @@ When a supported Ranged Rubric definition page loads, the extension adds an **Im
 
 Selecting a workbook opens an extension-owned dialog. The dialog displays:
 
-- The workbook and selected worksheet name.
+- The workbook and first worksheet name.
 - A header-row offset control.
 - The number of detected criteria and levels.
 - A preview table containing criterion descriptions, level descriptions, and score ranges.
@@ -133,6 +133,7 @@ The adapter is the only component that knows Moodle's page structure. It:
 
 - Detects a supported `gradingform_rubric_ranges` definition editor.
 - Distinguishes Moodle's automatic blank starter controls from user-created content.
+- Snapshots any verified blank starter controls before reusing them.
 - Adds and removes criteria and levels using Moodle's visible controls.
 - Fills criterion descriptions, level descriptions, and upper scores.
 - Waits for each dynamic field to exist before continuing.
@@ -162,7 +163,7 @@ No workbook data is transmitted, persisted in extension storage, or retained aft
 
 All parsing errors leave Moodle untouched. Import-time failures may occur when Moodle's markup changes, a dynamic control does not appear, or the user changes the editor during import.
 
-The adapter records every criterion and level it creates. If an import-time operation fails, it attempts to remove only those recorded additions in reverse order. It must not remove pre-existing controls other than Moodle's verified blank starter row. The dialog then reports:
+The adapter records every criterion and level it creates and snapshots the values and structure of any verified blank starter controls that it reuses. If an import-time operation fails, it attempts to remove recorded additions in reverse order and restore the starter controls to their original blank state. It must not alter any other pre-existing controls. Rollback is complete only when both removal and starter-state restoration are confirmed. The dialog then reports:
 
 - The criterion and level being processed.
 - A plain-language reason for the failure.
