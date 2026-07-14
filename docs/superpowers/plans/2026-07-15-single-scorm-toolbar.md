@@ -16,6 +16,7 @@
 - Create `extension/src/embedded-anchor-capabilities.ts`: short-lived, single-use capabilities bound to elected worker anchors.
 - Create `extension/src/comment-renderer.ts`: document-local markers, highlights, contextual threads, and anchor navigation without a toolbar.
 - Create `extension/src/scorm-worker.ts`: embedded selection cache, marker mode, renderer projection, and protocol handling.
+- Create `extension/tests/background.test.ts`: Chrome background message-routing harness.
 - Modify `extension/src/content.ts`: top-only toolbar; local-versus-delegated orchestration.
 - Modify `extension/src/frame-coordinator.ts`: worker-instance-aware election and pruning.
 - Modify `extension/src/frame-coordination-runtime.ts`: correlated command routing, timeouts, replay, and recovery.
@@ -33,7 +34,7 @@
 
 - [ ] **Step 1: Write failing protocol-validation tests**
 
-Cover exact keys and bounds for `SCORM_WORKER_REGISTERED`, `SCORM_SELECTION_CHANGED`, `SCORM_START_MARKER`, `SCORM_CANCEL_MARKER`, `SCORM_ANCHOR_CAPTURED`, `SCORM_SET_COMMENTS`, and `SCORM_TAKE_TO_CONTEXT`. Require `protocol: 1`, UUID request/worker IDs, integer generation, course ID, exact page identity, and explicit acknowledgement envelopes. Assert extra keys and stale/malformed identifiers are rejected.
+Cover exact keys and bounds for `SCORM_WORKER_REGISTERED`, `SCORM_SELECTION_CHANGED`, `SCORM_START_SELECTION`, `SCORM_START_MARKER`, `SCORM_CANCEL_MARKER`, `SCORM_ANCHOR_CAPTURED`, `SCORM_PAGE_IDENTITY_CHANGED`, `SCORM_SET_COMMENTS`, `SCORM_COMMENTS_CHANGED`, `SCORM_APPLY_LOCATOR`, and `SCORM_TAKE_TO_CONTEXT`. Require `protocol: 1`, UUID request/worker IDs, integer generation, course ID, exact page identity, and explicit `{ ok: true, request_id, type: "..._ACK" }` or bounded `{ ok: false, request_id, type: "..._ACK", error_code }` acknowledgements. Assert extra keys and malformed identifiers are rejected; stateful stale/duplicate checks belong to the runtime in Tasks 2 and 7.
 
 - [ ] **Step 2: Verify red**
 
@@ -53,7 +54,7 @@ export type ScormEnvelope<T extends string, P> = {
 export function validateScormMessage(value: unknown): ScormMessage;
 ```
 
-Use exact-key checks; do not accept client-supplied tab/frame IDs.
+Use exact-key checks; do not accept client-supplied tab/frame IDs. Include type-to-acknowledgement mapping so a validly shaped but wrong acknowledgement type is rejected by callers.
 
 - [ ] **Step 4: Verify green and commit**
 
@@ -67,25 +68,28 @@ Commit: `feat(review): define trusted SCORM worker protocol`
 - Modify: `extension/src/frame-coordinator.ts`
 - Modify: `extension/src/frame-coordination-runtime.ts`
 - Modify: `extension/tests/frame-coordinator.test.ts`
-- Modify: `extension/tests/frame-coordination-runtime.test.ts`
+- Modify: `extension/tests/background-frame-coordination.test.ts`
+- Modify: `extension/src/review-context.ts`
+- Modify: `extension/src/background.ts`
+- Modify: `extension/tests/review-context.test.ts`
 
 - [ ] **Step 1: Write failing lifecycle tests**
 
-Add cases for a new worker instance on the same frame ID, authoritative navigation pruning departed frames, timeout/removal after failed deactivation, stale acknowledgement rejection, and replay callback invocation after replacement activation.
+Add cases for a new worker instance on the same frame ID, exact `REGISTER_REVIEW_FRAME` validation, authoritative navigation pruning departed frames, timeout/removal after failed or hanging deactivation, stale acknowledgement rejection, service-worker restart, and replay callback invocation after replacement activation. Use an injected clock/timer so timeout behavior is deterministic.
 
 - [ ] **Step 2: Verify red**
 
-Run: `cd extension && node --test tests/frame-coordinator.test.ts tests/frame-coordination-runtime.test.ts`
+Run: `cd extension && node --test tests/frame-coordinator.test.ts tests/background-frame-coordination.test.ts tests/review-context.test.ts`
 
 Expected: FAIL because records do not track `workerInstanceId`, stale same-frame registrations retain state, and handover can remain stuck.
 
 - [ ] **Step 3: Implement instance-aware state and bounded handover**
 
-Store `{ frameId, workerInstanceId, generation }` as active ownership. A changed instance clears old capabilities/active state. Replace the full navigation set per registration and prune missing frames. On deactivation delivery failure or timeout, remove the stale frame and continue election. Add a runtime replay hook for desired marker state and comment projection.
+Store `{ frameId, workerInstanceId, generation }` as active ownership. A changed instance clears old capabilities/active state. Extend the exact review-context and background registration envelopes with `worker_instance_id`. Replace the full navigation set per registration and prune missing frames. On deactivation delivery failure or a bounded injected timeout, remove the stale frame and continue election. The coordinator emits worker-ready/replaced notifications; desired marker state, queued intent, and current projection remain top-controller state and are replayed from there, including after service-worker restart.
 
 - [ ] **Step 4: Verify green and commit**
 
-Run: `cd extension && node --test tests/frame-coordinator.test.ts tests/frame-coordination-runtime.test.ts && npm run typecheck`
+Run: `cd extension && node --test tests/frame-coordinator.test.ts tests/background-frame-coordination.test.ts tests/review-context.test.ts && npm run typecheck`
 
 Commit: `fix(review): recover SCORM worker election by instance`
 
@@ -119,7 +123,7 @@ Expected: FAIL because list and renderer behavior are coupled inside `ReviewOver
 
 - [ ] **Step 3: Move marker/highlight/thread behavior into the renderer**
 
-Keep toolbar panels, filters, numbering, authentication, help, and composition in `overlay/root.ts`. Add separate `setCommentList` and local `setRendererComments` calls. Preserve existing marker CSS classes and thread mutation callbacks so stored anchors remain compatible.
+Keep toolbar panels, filters, numbering, authentication, help, and composition in `overlay/root.ts`. Add separate `setCommentList` and local `setRendererComments` calls, while retaining `setPageComments` temporarily as a compatibility wrapper so `content.ts` continues to compile until Task 7. Preserve existing marker CSS classes and thread mutation callbacks so stored anchors remain compatible.
 
 - [ ] **Step 4: Verify green and commit**
 
@@ -163,11 +167,13 @@ Commit: `feat(review): run SCORM interactions without a second toolbar`
 - Modify: `extension/src/background-bridge.ts`
 - Modify: `extension/src/background.ts`
 - Modify: `extension/tests/background-bridge.test.ts`
-- Modify: `extension/tests/background.test.ts`
+- Create: `extension/tests/background.test.ts`
+- Modify: `extension/src/review-context.ts`
+- Modify: `extension/tests/review-context.test.ts`
 
 - [ ] **Step 1: Write failing security tests**
 
-Assert only the elected worker can issue an anchor; capabilities bind tab, course, frame, worker instance, generation, page identity, anchor digest, and expiry; capabilities are single-use; tampering/replay/stale workers fail; direct top-frame creation of a cross-origin Rise page still fails; and valid top composition succeeds only with the issued capability.
+Assert only the elected worker can issue an anchor; unguessable capabilities bind tab, course, frame, worker instance, generation, page identity/title, canonical anchor digest, trusted parent Moodle activity, embedded locator, and expiry; direct top-frame creation of a cross-origin Rise page still fails; and `CREATE_EMBEDDED_COMMENT` accepts only this extension's frame-0 sender on a configured Moodle origin. Recheck current election/context on claim. Test tampering, replay, expiry, service-worker restart, concurrent claims, API failure/restoration/retry, and screenshot requests.
 
 - [ ] **Step 2: Verify red**
 
@@ -177,7 +183,7 @@ Expected: FAIL because no embedded capability exists and cross-origin create is 
 
 - [ ] **Step 3: Implement bounded in-memory/session capability storage**
 
-Follow the existing screenshot-capability pattern. Hash the normalized anchor and embedded metadata, store no comment body in the capability, expire after five minutes, and consume atomically. Add `CREATE_EMBEDDED_COMMENT` as a separate exact bridge path; retain existing `CREATE_COMMENT` origin checks unchanged.
+Follow the existing screenshot-capability pattern but persist tokens in `chrome.storage.session`. Generate an unguessable token, hash the canonical anchor/page/title/parent/locator payload, store no comment body, expire after five minutes, and serialize claims so only one concurrent caller succeeds. Source the parent activity from the trusted stored Moodle review context and enforce its course origin here. A failed API call restores an unexpired claimed capability; successful creation consumes it permanently. Add `CREATE_EMBEDDED_COMMENT` as a separate exact bridge path and retain existing `CREATE_COMMENT` origin checks and screenshot flow unchanged.
 
 - [ ] **Step 4: Verify green and commit**
 
@@ -195,10 +201,14 @@ Commit: `feat(review): secure delegated SCORM comment creation`
 - Modify: `server/app/routers/comments.py`
 - Modify: `server/tests/test_comment_creation.py`
 - Modify: `server/tests/test_course_comment_routes.py`
+- Modify: `extension/src/background-bridge.ts`
+- Modify: `extension/tests/background-bridge.test.ts`
+- Modify: `extension/tests/overlay.test.ts`
+- Modify: `extension/tests/comment-renderer.test.ts`
 
 - [ ] **Step 1: Write failing schema/service/route tests**
 
-Add nullable `parent_activity_url` (absolute HTTPS Moodle URL, max 4096) and `embedded_locator` (bounded validated Rise hash/route, max 2048). Test create/list round-trip, invalid schemes/credentials/whitespace, ordinary comments with null metadata, and legacy rows with both fields null.
+Add nullable `parent_activity_url` (absolute HTTPS Moodle URL, max 4096) and `embedded_locator` (bounded validated Rise hash/route, max 2048). Test create/list round-trip, invalid schemes/credentials/whitespace, ordinary comments with null metadata, legacy rows with both fields null, and a database constraint requiring both fields null or both non-null. Update the extension's exact `PageComment` contract and every affected fixture to require both nullable response keys, otherwise valid new server responses would be rejected.
 
 - [ ] **Step 2: Verify red**
 
@@ -208,13 +218,13 @@ Expected: FAIL because the request/model/JSON response omit the fields.
 
 - [ ] **Step 3: Add the nullable columns and validation**
 
-Add both columns to `PageLocation`. Require both-or-neither for new embedded metadata, and require the parent origin to match the bound Moodle course origin at the extension bridge before API submission. Return both nullable fields in page/course comment JSON.
+Add both columns to `PageLocation` with a PostgreSQL check constraint enforcing both-or-neither. Require both-or-neither in Pydantic/service validation. Return both nullable keys in every page/course comment JSON response. Extend `validatePageCommentsResponse` and renderer/list fixtures in the same commit. The trusted parent-origin enforcement is already implemented at the extension bridge in Task 5.
 
 - [ ] **Step 4: Verify migration and tests, then commit**
 
 Run: `cd server && python3 -m pytest -q tests/test_comment_creation.py tests/test_course_comment_routes.py`
 
-Run: `cd server && alembic upgrade head && alembic downgrade 20260713_10 && alembic upgrade head` against a disposable SQLite test database.
+Run the migration against disposable PostgreSQL 16 (never SQLite): clean `alembic upgrade head`; insert/preserve a legacy row with null metadata; create and round-trip a row with both values; `alembic downgrade 20260713_10`; then re-upgrade to head. Expected: all operations pass and the both-or-neither constraint rejects partial metadata.
 
 Commit: `feat(review): persist embedded comment navigation metadata`
 
@@ -225,13 +235,23 @@ Commit: `feat(review): persist embedded comment navigation metadata`
 - Modify: `extension/src/background.ts`
 - Modify: `extension/src/overlay/root.ts`
 - Modify: `extension/src/scorm-worker.ts`
+- Modify: `extension/src/frame-coordination-runtime.ts`
+- Modify: `extension/src/optional-content-scripts.ts`
+- Modify: `extension/src/build-config.ts`
+- Modify: `extension/vite.config.ts`
 - Modify: `extension/tests/content.test.ts`
 - Modify: `extension/tests/overlay.test.ts`
 - Modify: `extension/tests/scorm-worker.test.ts`
+- Modify: `extension/tests/background-frame-coordination.test.ts`
+- Modify: `extension/tests/build-config.test.ts`
+- Create: `extension/tests/optional-permissions.test.ts`
+- Create: `deploy/config/pilot-optional-frame-patterns.txt`
+- Modify: `deploy/scripts/release-pilot-extension.sh`
+- Modify: `tests/test_deployment_package.py`
 
 - [ ] **Step 1: Write failing orchestration tests**
 
-Cover local Moodle interaction versus delegated SCORM interaction, cached-selection button labels, queued marker intent while loading, cancel propagation, replay after worker replacement, course-list versus worker projection partitioning, mutation refresh, and a bounded loading/permission/fallback state.
+Cover local Moodle interaction versus delegated SCORM interaction, cached-selection button labels, queued marker intent while loading, cancel propagation, cancellation before replacement, replay after worker replacement/service-worker restart, course-list versus worker projection partitioning, and mutation refresh through `SCORM_COMMENTS_CHANGED`. Add stateful request tracking tests for duplicate request IDs, nonzero-frame top commands, non-elected worker events, mismatched ack type/page/course/instance/generation, stale async acknowledgements, and command timeout. Add permission tests for a manifest-declared candidate, frame-0-only request, synchronous user-gesture `chrome.permissions.request` before any `await`, denial/retry, revocation cleanup/capability invalidation, and injection into already-loaded frames or an explicit reload-required state.
 
 - [ ] **Step 2: Verify red**
 
@@ -241,7 +261,9 @@ Expected: FAIL because the top overlay cannot yet delegate or maintain desired i
 
 - [ ] **Step 3: Implement the top orchestrator**
 
-Add an interaction target state (`local | loading | embedded | permission-required | unavailable`), one queued intent, and one current embedded projection. Route ordinary Moodle pages locally. Route SCORM commands through the background coordinator. Add **Allow SCORM review access** using the existing optional-permission flow and provide parent-page fallback only for unavailable frames.
+Add an interaction target state (`local | loading | embedded | permission-required | unavailable`), one queued intent, and one current embedded projection owned by the top controller. Route ordinary Moodle pages locally and SCORM commands through bounded, correlated runtime requests. Maintain a bounded replay/pending-request map in the runtime/background; reject duplicate/stale events and require exact acknowledgements. On worker-ready/replaced, replay desired marker mode and the current exact-page projection unless cancellation cleared the intent. Renderer mutations emit `SCORM_COMMENTS_CHANGED`; the top list and worker projection both refresh.
+
+Implement **Allow SCORM review access** rather than assuming it exists. Offer only origins matching build-time optional patterns; accept requests only from frame 0; call `chrome.permissions.request` synchronously in the click handler; register/inject `content.js` after grant or show a precise reload-required state. On revocation, remove dynamic registrations, invalidate related workers/capabilities, and fall back safely. Determine the approved UC pilot cross-origin iframe origins from representative course iframe `src` values, record only those concrete Chrome match patterns in `deploy/config/pilot-optional-frame-patterns.txt`, make the release script pass that exact comma-separated value to the build, and never request undeclared origins. Deployment tests must fail if the release omits the configured patterns.
 
 - [ ] **Step 4: Verify green and commit**
 
@@ -261,7 +283,7 @@ Commit: `feat(review): orchestrate one toolbar across Moodle and SCORM`
 
 - [ ] **Step 1: Write failing navigation tests**
 
-Test current-worker scrolling/opening, top navigation to persisted `parent_activity_url`, replaying `embedded_locator` after worker election, exact comment/page matching, legacy comment best-effort behavior, and a clear “open the original SCORM activity first” state without guessing.
+Test a recoverable navigation record bound to tab, course, comment ID, exact embedded page identity, validated parent activity, locator, and expiry. Cover current-worker scrolling/opening; parent navigation; worker replacement caused by navigation; locator application; waiting for the expected worker page identity and projection; final take-to-context acknowledgement; timeout/retry until expiry; exact comment/page matching; and legacy comments navigating only when the current worker already matches their exact identity. Otherwise require “open the original SCORM activity first” without guessing.
 
 - [ ] **Step 2: Verify red**
 
@@ -271,7 +293,7 @@ Expected: FAIL because `PREPARE_COMMENT_NAVIGATION` only supports same-origin to
 
 - [ ] **Step 3: Add validated embedded navigation preparation/consumption**
 
-Store a short-lived tab/course-bound navigation record, navigate only to the validated Moodle parent activity, wait for an elected worker, apply the stored locator, then send `SCORM_TAKE_TO_CONTEXT`. Consume the record only after an acknowledgement.
+Implement the navigation flow as a stored state machine: `prepared -> parent-loading -> worker-loading -> locator-applying -> identity-waiting -> projection-waiting -> context-opening -> complete`. Navigate only to the validated Moodle parent activity; tolerate worker instance replacement; apply the locator; wait for the newly elected worker to announce the expected identity and receive its exact projection; then send `SCORM_TAKE_TO_CONTEXT`. Consume only after its final acknowledgement. On timeout retain/retry while unexpired.
 
 - [ ] **Step 4: Verify green and commit**
 
@@ -285,11 +307,15 @@ Commit: `feat(review): navigate course lists into SCORM context`
 - Modify: `extension/package.json`
 - Modify: `extension/package-lock.json`
 - Modify: `extension/tests/build-config.test.ts`
-- Modify: `docs/pilot-runbook.md` if present, otherwise create it.
+- Create: `extension/e2e/nested-scorm-single-toolbar.spec.ts`
+- Modify: `extension/e2e/stateful-comment-backend.ts`
+- Modify: `docs/pilot-test-script.md`
+- Modify: `tests/test_release_artifacts.py`
+- Modify: `tests/test_deployment_package.py`
 
 - [ ] **Step 1: Add/update the pilot runbook and bump the patch version**
 
-Document one installed path, extension version verification, Chrome/Edge reload, SCORM permission recovery, expected single-toolbar behavior, and how to clear historical Chrome extension warnings.
+Before bumping, add a nested Moodle -> SCORM wrapper -> Rise fixture test. It must exercise continuously single-toolbar ownership, selection preservation across toolbar focus, marker start/cancel, highlight/marker restoration, contextual thread opening, course-list navigation, late/replaced workers, internal Rise navigation, permission denial/retry/revocation, and stale-worker rejection. Update the existing pilot script with one installed path, extension version verification, Chrome/Edge reload, SCORM permission recovery, expected single-toolbar behavior, and how to clear historical Chrome extension warnings.
 
 - [ ] **Step 2: Run complete verification**
 
@@ -297,9 +323,17 @@ Run: `cd extension && npm test && npm run typecheck`
 
 Expected: all extension tests pass.
 
+Run: `cd extension && npm run test:e2e`
+
+Expected: all browser fixtures, including nested SCORM, pass.
+
 Run: `cd server && python3 -m pytest -q`
 
 Expected: all server tests pass.
+
+Run: `python3 -m unittest tests/test_release_artifacts.py tests/test_deployment_package.py`
+
+Expected: both root packaging suites pass.
 
 Run: `git diff --check && git status --short`
 
@@ -316,10 +350,11 @@ Run:
 ```bash
 PRIVATE_KEY_PATH='/Users/rcd58/.config/moodle-review/pilot-extension.pem' \
 REVIEW_SERVICE_ORIGIN='https://fld-mini.tail4ccaba.ts.net' \
+OPTIONAL_FRAME_PATTERNS="$(paste -sd, deploy/config/pilot-optional-frame-patterns.txt)" \
 deploy/scripts/release-pilot-extension.sh
 ```
 
-Expected: extension, server, and packaging suites pass; release metadata and checksums validate.
+Expected: extension, E2E, server, and packaging suites pass; production manifest contains the exact configured optional patterns; release version, commit, artifact digest, permissions, metadata, and checksums validate.
 
 - [ ] **Step 5: Verify the installed compatibility path**
 
@@ -330,9 +365,8 @@ cmp '/Users/rcd58/OpenAI Projects/Beta Testing App/pilot-builds/moodle-review-ex
     '/Users/rcd58/OpenAI Projects/Beta Testing App-pilot-builds/moodle-review-extension/content.js'
 ```
 
-Expected: exit 0 and installed manifest shows the new version.
+Expected: exit 0; installed manifest shows the new version, required `webNavigation`/optional host permissions, and configured patterns; installed `RELEASE.json` matches the verified release metadata.
 
 - [ ] **Step 6: Manual Chrome acceptance**
 
 Reload the extension, close/reopen the SCORM tab, and verify: exactly one toolbar; marker mode places inside Rise; text highlight persists; comment marker opens its thread; whole-course list navigates back to the marker; Rise internal navigation does not duplicate or lose the toolbar; extension errors remain empty after clearing old entries.
-
