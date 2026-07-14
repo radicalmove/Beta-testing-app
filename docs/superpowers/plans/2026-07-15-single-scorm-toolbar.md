@@ -75,21 +75,21 @@ Commit: `feat(review): define trusted SCORM worker protocol`
 - Modify: `extension/src/content.ts`
 - Modify: `extension/tests/content.test.ts`
 
-- [ ] **Step 1: Write failing lifecycle tests**
+- [x] **Step 1: Write failing lifecycle tests**
 
 Add cases for a new worker instance on the same frame ID, exact `REGISTER_REVIEW_FRAME` validation, authoritative navigation pruning departed frames, timeout/removal after failed or hanging deactivation, stale acknowledgement rejection, service-worker restart, and replay callback invocation after replacement activation. Use an injected clock/timer so timeout behavior is deterministic.
 
-- [ ] **Step 2: Verify red**
+- [x] **Step 2: Verify red**
 
 Run: `cd extension && node --test tests/frame-coordinator.test.ts tests/background-frame-coordination.test.ts tests/review-context.test.ts`
 
 Expected: FAIL because records do not track `workerInstanceId`, stale same-frame registrations retain state, and handover can remain stuck.
 
-- [ ] **Step 3: Implement instance-aware state and bounded handover**
+- [x] **Step 3: Implement instance-aware state and bounded handover**
 
 Store `{ frameId, workerInstanceId, generation }` as active ownership. Generate one stable UUID per content-script instance and send it on every pre-election `REGISTER_REVIEW_FRAME` registration/lease. A changed instance clears old capabilities/active state. Extend the exact review-context and background registration envelopes with `worker_instance_id` in this same task so no intermediate build breaks. Replace the full navigation set per registration and prune missing frames. On deactivation delivery failure or a bounded injected timeout, remove the stale frame and continue election. The coordinator emits worker-ready/replaced notifications; desired marker state, queued intent, and current projection remain top-controller state and are replayed from there, including after service-worker restart.
 
-- [ ] **Step 4: Verify green and commit**
+- [x] **Step 4: Verify green and commit**
 
 Run: `cd extension && node --test tests/frame-coordinator.test.ts tests/background-frame-coordination.test.ts tests/review-context.test.ts tests/content.test.ts && npm run typecheck`
 
