@@ -66,6 +66,13 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
   const runMutation = async <T>(operation: () => Promise<T>): Promise<T> => { mutationDepth += 1; try { return await operation(); } finally { mutationDepth -= 1; } };
 
   const openThread = (comment: PageComment, index: number, marker: HTMLElement) => {
+    if (activeThreadId && activeThreadId !== comment.id && pendingProjection) {
+      const requestedId = comment.id; const next = pendingProjection; pendingProjection = undefined;
+      applyComments(next);
+      const refreshedComment = comments.get(requestedId); const refreshedMarker = markers.get(requestedId);
+      if (refreshedComment && refreshedMarker) openThread(refreshedComment, Array.from(comments.keys()).indexOf(requestedId), refreshedMarker);
+      return;
+    }
     if (activeThreadId === comment.id && root.querySelector("[data-thread-popover]")) { closeThread(); marker.focus(); return; }
     closeThread(false);
     activeThreadId = comment.id; marker.setAttribute("aria-expanded", "true");

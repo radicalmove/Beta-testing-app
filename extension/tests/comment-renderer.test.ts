@@ -130,6 +130,33 @@ test("projection refreshes inside edit and reply callbacks keep the active threa
   assert.match(root.querySelector<HTMLElement>("[data-thread-popover]")!.textContent!, /Reply/);
 });
 
+test("switching threads flushes a queued mutation projection before opening the requested thread", async () => {
+  const { document } = setup();
+  const first = comment({ body: "First" });
+  const second = comment({ id: "00000000-0000-4000-8000-000000000012", body: "Old second" });
+  const freshSecond = { ...second, body: "Fresh second" };
+  let renderer: ReturnType<typeof createCommentRenderer>;
+  renderer = createCommentRenderer(document, pageUrl, {
+    editThread: async () => { renderer.setComments([{ ...first, body: "First updated" }, freshSecond]); },
+  });
+  renderer.setComments([first, second]);
+  document.querySelector<HTMLElement>(`[data-moodle-review-stored-pin="${first.id}"]`)!.click();
+  const root = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!;
+  root.querySelector<HTMLElement>('[aria-label="Edit original comment"]')!.click();
+  root.querySelector<HTMLTextAreaElement>("[data-edit-composer] textarea")!.value = "First updated";
+  root.querySelector<HTMLElement>("[data-edit-composer] button")!.click();
+  await settle();
+
+  const staleSecondMarker = document.querySelector<HTMLElement>(`[data-moodle-review-stored-pin="${second.id}"]`)!;
+  staleSecondMarker.click();
+
+  assert.equal(staleSecondMarker.isConnected, false, "switching threads must replace stale markers from the queued projection");
+  assert.match(root.querySelector<HTMLElement>("[data-thread-popover]")!.textContent!, /Fresh second/);
+  const freshMarker = document.querySelector<HTMLElement>(`[data-moodle-review-stored-pin="${second.id}"]`)!;
+  assert.match(freshMarker.getAttribute("aria-label")!, /Fresh second/);
+  assert.equal(freshMarker.getAttribute("aria-expanded"), "true");
+});
+
 test("resolved confirmation survives a callback projection refresh until its three-second timeout", async () => {
   const { window, document } = setup();
   let delayed: (() => void) | undefined;
