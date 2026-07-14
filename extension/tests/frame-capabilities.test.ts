@@ -30,6 +30,21 @@ test("ignores review overlay content", () => {
   assert.equal(measureFrameCapabilities(window.document as unknown as Document, window as unknown as globalThis.Window).contentBearing, false);
 });
 
+test("measures content without cloning course web components", () => {
+  const window = new Window({ url: "https://rise.example/lesson" });
+  sized(window);
+  let constructed = 0;
+  class CourseComponent extends window.HTMLElement {
+    constructor() { super(); constructed += 1; }
+  }
+  window.customElements.define("course-component", CourseComponent);
+  window.document.body.innerHTML = "<course-component>This is meaningful course content for a reviewer.</course-component>";
+  const beforeMeasurement = constructed;
+
+  assert.equal(measureFrameCapabilities(window.document as unknown as Document, window as unknown as globalThis.Window).contentBearing, true);
+  assert.equal(constructed, beforeMeasurement);
+});
+
 test("rejects a small or hidden document", () => {
   const window = new Window({ url: "https://rise.example/lesson" });
   sized(window, 150, 100);

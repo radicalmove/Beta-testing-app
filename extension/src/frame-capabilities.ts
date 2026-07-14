@@ -2,6 +2,17 @@ import type { ChildOwnerReport, FrameCapabilities } from "./frame-coordinator.ts
 
 const OVERLAY_SELECTOR = "#moodle-course-review-overlay,[data-moodle-review-extension],[data-review-marker],[data-review-highlight]";
 const INTERACTIVE_SELECTOR = "a[href],button,input,select,textarea,[role='button'],[tabindex]";
+const EXCLUDED_TEXT_SELECTOR = `${OVERLAY_SELECTOR},script,style,noscript,iframe,frame`;
+
+function readableText(body: HTMLElement): string {
+  const walker = body.ownerDocument.createTreeWalker(body, 4); // NodeFilter.SHOW_TEXT
+  const chunks: string[] = [];
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    if (!node.parentElement?.closest(EXCLUDED_TEXT_SELECTOR)) chunks.push(node.textContent ?? "");
+  }
+  return chunks.join(" ").replace(/\s+/g, " ").trim();
+}
 
 export function measureFrameCapabilities(document: Document, window: Window): FrameCapabilities {
   const rect = document.documentElement.getBoundingClientRect();
@@ -10,9 +21,7 @@ export function measureFrameCapabilities(document: Document, window: Window): Fr
   const body = document.body;
   if (!body) return { contentBearing: false, wrapper: false, visible, area };
 
-  const copy = body.cloneNode(true) as HTMLElement;
-  for (const element of Array.from(copy.querySelectorAll(`${OVERLAY_SELECTOR},script,style,noscript,iframe`))) element.remove();
-  const text = (copy.textContent ?? "").replace(/\s+/g, " ").trim();
+  const text = readableText(body);
   const interactive = Array.from(body.querySelectorAll(INTERACTIVE_SELECTOR)).some((element) => !element.closest(OVERLAY_SELECTOR));
   const childFrames = body.querySelectorAll("iframe,frame").length;
   const contentBearing = text.length >= 20 || interactive;
