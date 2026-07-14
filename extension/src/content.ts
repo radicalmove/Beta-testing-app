@@ -8,6 +8,7 @@ import { canonicalCourseUrlFromDocument, courseTitleFromDocument, detectCourseCo
 import { mountReviewOverlay, type AuthenticationOutcome, type BuildDiagnostics, type ConnectionStatus, type ReviewOverlay } from "./overlay/root.ts";
 import type { PageComment } from "./background-bridge.ts";
 import { measureFrameCapabilities } from "./frame-capabilities.ts";
+import { createScormWorker, type ScormWorker } from "./scorm-worker.ts";
 
 const MARKER = "data-moodle-review-extension";
 const BUILD_DIAGNOSTICS = {
@@ -198,7 +199,6 @@ export function createLifecycleController(targetWindow: Window & typeof globalTh
 }
 
 export function startCourseReview(targetWindow: Window & typeof globalThis = window, targetDocument: Document = document, runtime: { sendMessage(message: unknown, callback: (response: { ok?: boolean; status?: ConnectionStatus; error?: string; data?: unknown } | undefined) => void): void } = chrome.runtime, buildDiagnostics: BuildDiagnostics = BUILD_DIAGNOSTICS, framePollDelay = 1_000): () => void {
-  const isScormPlayer = (() => { try { return new URL(targetWindow.location.href).pathname === "/mod/scorm/player.php"; } catch { return false; } })();
   let context = currentContext(targetWindow, targetDocument);
   let courseId: string | undefined;
   let courseHandle: string | undefined;
@@ -255,7 +255,6 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
     if (context.page_url === contextSnapshot.page_url) void loadPageComments(context.page_url);
     return saved;
   }, editThread: async (commentId, body) => { if (!courseId) throw new Error("Course connection unavailable"); await refreshCourseBindingBeforeComment(send, context, courseId); await send({ type: "EDIT_COMMENT_THREAD", comment_id: commentId, body }); await loadPageComments(context.page_url); }, replyThread: async (commentId, body) => { if (!courseId) throw new Error("Course connection unavailable"); await refreshCourseBindingBeforeComment(send, context, courseId); await send({ type: "REPLY_COMMENT_THREAD", comment_id: commentId, body }); await loadPageComments(context.page_url); }, changeStatus: async (commentId, nextStatus) => { if (!courseId) throw new Error("Course connection unavailable"); await refreshCourseBindingBeforeComment(send, context, courseId); await send({ type: "UPDATE_COMMENT_STATUS", comment_id: commentId, status: nextStatus }); await loadPageComments(context.page_url); }, manageSme: async (commentId, userIds) => { if (!courseId) throw new Error("Course connection unavailable"); await refreshCourseBindingBeforeComment(send, context, courseId); return send({ type: userIds ? "SET_SME_RECIPIENTS" : "GET_SME_RECIPIENTS", comment_id: commentId, ...(userIds ? { user_ids: userIds } : {}) }); }, deleteThread: async (commentId) => { if (!courseId) throw new Error("Course connection unavailable"); await refreshCourseBindingBeforeComment(send, context, courseId); await send({ type: "DELETE_COMMENT_THREAD", comment_id: commentId }); await loadPageComments(context.page_url); }, uploadScreenshot: (commentId, dataUrl) => send({ type: "UPLOAD_SCREENSHOT", comment_id: commentId, data_url: dataUrl }), cancelScreenshot: (commentId) => send({ type: "CANCEL_SCREENSHOT", comment_id: commentId }) }, buildDiagnostics);
-  if (isScormPlayer) overlay.setPresentationVisible(false);
   let requestSequence = 0;
 
   const refresh = () => {
@@ -303,29 +302,22 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
   const scheduleTimeout = typeof targetWindow.setTimeout === "function" ? targetWindow.setTimeout.bind(targetWindow) : globalThis.setTimeout;
   const cancelTimeout = typeof targetWindow.clearTimeout === "function" ? targetWindow.clearTimeout.bind(targetWindow) : globalThis.clearTimeout;
   let fallbackTimer: ReturnType<typeof setTimeout>;
-  const setParentOverlayVisible = (visible: boolean) => {
-    overlay.setPresentationVisible(visible);
-  };
   const checkFrames = () => {
-    if (isScormPlayer) { overlay.hideFrameFallback(); setParentOverlayVisible(false); return; }
-    if (hasDescendantReviewOverlay(targetDocument)) { overlay.hideFrameFallback(); setParentOverlayVisible(false); return; }
+    if (hasDescendantReviewOverlay(targetDocument)) { overlay.hideFrameFallback(); return; }
     const inaccessible = inaccessibleFrameOrigins(targetDocument);
     sendRuntimeMessage(runtime, { type: "GET_REVIEW_FRAME_STATUS" }, (response) => {
       const status = response?.data as { ready_origins?: unknown; active_embedded_count?: unknown } | undefined;
       if (response?.ok && typeof status?.active_embedded_count === "number" && status.active_embedded_count > 0) {
         overlay.hideFrameFallback();
-        setParentOverlayVisible(false);
         return;
       }
-      if (!inaccessible.length) { setParentOverlayVisible(true); overlay.hideFrameFallback(); return; }
+      if (!inaccessible.length) { overlay.hideFrameFallback(); return; }
       const ready = status?.ready_origins;
       const trusted = response?.ok && Array.isArray(ready) ? new Set(ready.filter((value): value is string => typeof value === "string")) : new Set<string>();
       if (inaccessible.some((origin) => !trusted.has(origin))) {
-        setParentOverlayVisible(true);
         overlay.showFrameFallback();
       } else {
         overlay.hideFrameFallback();
-        setParentOverlayVisible(false);
       }
     });
   };
@@ -355,6 +347,7 @@ export function startEmbeddedReview(targetWindow: Window & typeof globalThis, ta
   let stopped = false;
   let activeCleanup: (() => void) | undefined;
   let generation = -1;
+  let handleWorkerCommand: ((message: unknown) => unknown) | undefined;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let leaseTimer: ReturnType<typeof globalThis.setInterval> | undefined;
   let attempts = 0;
@@ -369,9 +362,10 @@ export function startEmbeddedReview(targetWindow: Window & typeof globalThis, ta
     : ((timer) => globalThis.clearInterval(timer));
   const activate = (nextGeneration: number): boolean => {
     if (stopped) return false;
+    if (activeCleanup && generation === nextGeneration) return true;
+    activeCleanup?.();
     generation = nextGeneration;
-    if (activeCleanup) return true;
-    activeCleanup = startActiveEmbeddedReview(targetWindow, targetDocument, runtime, retryDelay);
+    activeCleanup = startActiveEmbeddedReview(targetWindow, targetDocument, runtime, workerInstanceId, generation, (handler) => { handleWorkerCommand = handler; }, retryDelay);
     return true;
   };
   const deactivate = () => { activeCleanup?.(); activeCleanup = undefined; };
@@ -389,6 +383,9 @@ export function startEmbeddedReview(targetWindow: Window & typeof globalThis, ta
       const nextGeneration = command.generation as number;
       if (nextGeneration < generation) { sendResponse({ ok: false, worker_instance_id: workerInstanceId, generation: nextGeneration }); return; }
       generation = nextGeneration; deactivate(); sendResponse({ ok: true, dormant: true, worker_instance_id: workerInstanceId, generation: nextGeneration }); return;
+    }
+    if (typeof command.type === "string" && command.type.startsWith("SCORM_") && handleWorkerCommand) {
+      sendResponse(handleWorkerCommand(message)); return;
     }
   };
   runtime.onMessage?.addListener(onCommand);
@@ -418,44 +415,27 @@ export function startEmbeddedReview(targetWindow: Window & typeof globalThis, ta
   };
 }
 
-function startActiveEmbeddedReview(targetWindow: Window & typeof globalThis, targetDocument: Document, runtime: Runtime, retryDelay = 200): () => void {
+function startActiveEmbeddedReview(targetWindow: Window & typeof globalThis, targetDocument: Document, runtime: Runtime, workerInstanceId: string, generation: number, setCommandHandler: (handler: ((message: unknown) => unknown) | undefined) => void, retryDelay = 200): () => void {
   let stopped = false;
-  let lifecycle: { teardown(): void } | undefined;
-  let overlay: ReviewOverlay | undefined;
-  let courseId = "";
-  let courseTitle = "";
+  let worker: ScormWorker | undefined;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let attempts = 0;
   const scheduleRetry = typeof targetWindow.setTimeout === "function" ? targetWindow.setTimeout.bind(targetWindow) : globalThis.setTimeout;
   const cancelRetry = typeof targetWindow.clearTimeout === "function" ? targetWindow.clearTimeout.bind(targetWindow) : globalThis.clearTimeout;
   const send = <T>(message: unknown) => new Promise<T>((resolve, reject) => sendRuntimeMessage(runtime, message, (response) => response?.ok ? resolve(response.data as T) : reject(new Error(response?.error ?? "Review service unavailable"))));
-  const frameContext = (): CourseContext => {
-    const label = pageLabel(targetDocument); const identity = new URL(targetWindow.location.href); identity.hash = `moodle-review-page=${encodeURIComponent(label)}`;
-    return ({
-    course_url: targetWindow.location.href.split("#")[0]!,
-    page_url: identity.href,
-    title: courseTitle,
-    pageTitle: `Embedded activity · ${label}`,
-    identityConfidence: "confirmed",
-  }); };
   const obtain = () => void send<{ course_id: string; course_title: string; parent_activity_url: string }>({ type: "GET_REVIEW_CONTEXT" }).then((trusted) => {
     if (stopped || typeof trusted?.course_id !== "string" || typeof trusted?.course_title !== "string") return;
-    courseId = trusted.course_id; courseTitle = trusted.course_title;
-    let context = frameContext();
-    let commentSequence = 0;
-    const loadPageComments = async () => { const pageUrl = context.page_url; const sequence = ++commentSequence; overlay?.setPageComments([]); try { const comments = await send<PageComment[]>({ type: "LIST_COURSE_COMMENTS" }); if (sequence === commentSequence && context.page_url === pageUrl) overlay?.setPageComments(comments); } catch { /* connection state remains usable */ } };
-    overlay = mountReviewOverlay(targetDocument, context, "connected", { onTakeToContext: (id) => { overlay?.takeToContext(id); }, submit: async ({ body, category, anchor, screenshot, contextSnapshot }) => {
-      const saved = await send<{ id?: string; screenshot_available?: boolean }>({ type: "CREATE_COMMENT", payload: { course_id: courseId, page_url: contextSnapshot.page_url, page_title: contextSnapshot.pageTitle, body, category, ...anchor }, screenshot_requested: screenshot });
-      if (context.page_url === contextSnapshot.page_url) void loadPageComments();
-      return saved;
-    }, uploadScreenshot: (commentId, dataUrl) => send({ type: "UPLOAD_SCREENSHOT", comment_id: commentId, data_url: dataUrl }), cancelScreenshot: (commentId) => send({ type: "CANCEL_SCREENSHOT", comment_id: commentId }) }, BUILD_DIAGNOSTICS);
-    const refresh = () => { const next = frameContext(); if (context.page_url !== next.page_url) { commentSequence += 1; overlay?.setPageComments([]); } context = next; overlay?.update(context, "connected"); void loadPageComments(); };
-    lifecycle = createLifecycleController(targetWindow, targetDocument, refresh);
-    const clearNavigatedPage = () => { const next = frameContext(); if (context.page_url !== next.page_url) { commentSequence += 1; overlay?.setPageComments([]); } };
-    for (const eventName of ["popstate", "hashchange", "moodle-review:navigate"]) targetWindow.addEventListener(eventName, clearNavigatedPage);
-    const previousTeardown = lifecycle.teardown.bind(lifecycle);
-    lifecycle.teardown = () => { for (const eventName of ["popstate", "hashchange", "moodle-review:navigate"]) targetWindow.removeEventListener(eventName, clearNavigatedPage); previousTeardown(); };
-    void loadPageComments();
+    worker?.destroy();
+    worker = createScormWorker({
+      window: targetWindow,
+      document: targetDocument,
+      workerInstanceId,
+      generation,
+      courseId: trusted.course_id,
+      emit: (event) => { sendRuntimeMessage(runtime, event, () => undefined); },
+      createLifecycle: createLifecycleController,
+    });
+    setCommandHandler((message) => worker?.handleCommand(message));
     sendRuntimeMessage(runtime, { type: "REVIEW_FRAME_READY" }, () => undefined);
     try { targetWindow.parent.postMessage({ type: "MOODLE_REVIEW_FRAME_READY" }, "*"); } catch { /* trigger only */ }
   }).catch((error: unknown) => {
@@ -463,5 +443,5 @@ function startActiveEmbeddedReview(targetWindow: Window & typeof globalThis, tar
     if (!stopped && attempts < 25 && error instanceof Error && error.message === "Review context unavailable") retryTimer = scheduleRetry(obtain, retryDelay);
   });
   obtain();
-  return () => { stopped = true; if (retryTimer !== undefined) cancelRetry(retryTimer); lifecycle?.teardown(); overlay?.destroy(); };
+  return () => { stopped = true; if (retryTimer !== undefined) cancelRetry(retryTimer); setCommandHandler(undefined); worker?.destroy(); worker = undefined; };
 }

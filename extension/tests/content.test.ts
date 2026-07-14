@@ -153,7 +153,7 @@ test("real content-script startup does not require chrome.permissions", async ()
   }
 });
 
-test("embedded review stays dormant until the coordinator activates it", async () => {
+test("embedded review stays dormant until the coordinator activates its toolbar-free worker", async () => {
   const window = new Window({ url: "https://rise.example/activity#/lesson/1" });
   const parent = { postMessage: () => undefined };
   Object.defineProperty(window, "top", { value: parent }); Object.defineProperty(window, "parent", { value: parent });
@@ -177,9 +177,7 @@ test("embedded review stays dormant until the coordinator activates it", async (
   listener!({ type: "ACTIVATE_REVIEW_FRAME", worker_instance_id: workerInstanceId, generation: 1 }, {}, (response) => { activationResponse = response; });
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.deepEqual(activationResponse, { ok: true, worker_instance_id: workerInstanceId, generation: 1 });
-  const activeHost = window.document.querySelector("#moodle-course-review-overlay") as unknown as HTMLElement;
-  assert.ok(activeHost);
-  assert.notEqual(activeHost.style.getPropertyValue("display"), "none", "the elected Rise frame must own a visible controller even without viewport bridge messages");
+  assert.equal(window.document.querySelector("#moodle-course-review-overlay"), null, "an elected Rise frame must never own a toolbar");
   let reconstructionResponse: unknown;
   listener!({ type: "ACTIVATE_REVIEW_FRAME", worker_instance_id: workerInstanceId, generation: 0 }, {}, (response) => { reconstructionResponse = response; });
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -212,7 +210,7 @@ test("embedded review re-registers after a background worker restart interval", 
   assert.equal(contextRequests, stoppedAt);
 });
 
-test("embedded review obtains trusted course context and updates its hash page identity", async () => {
+test("embedded review obtains trusted course context and updates its hash identity without mounting a toolbar", async () => {
   const window = new Window({ url: "https://rise.example/activity#/lesson/1" });
   window.document.title = "Lesson 1"; window.document.body.innerHTML = "<p>Review phrase</p>";
   const messages: unknown[] = [];
@@ -223,17 +221,14 @@ test("embedded review obtains trusted course context and updates its hash page i
   } };
   const cleanup = startEmbeddedReview(window as unknown as globalThis.Window & typeof globalThis, window.document as unknown as Document, runtime);
   await new Promise((resolve) => setTimeout(resolve, 0));
-  const host = window.document.querySelector("#moodle-course-review-overlay") as unknown as HTMLElement;
-  assert.match(host.shadowRoot!.querySelector(".course")!.textContent!, /^Law$/);
-  assert.match(host.shadowRoot!.textContent!, /Embedded activity · Lesson 1/);
+  assert.equal(window.document.querySelector("#moodle-course-review-overlay"), null);
   window.location.hash = "/lesson/2"; window.document.title = "Lesson 2"; window.dispatchEvent(new window.Event("hashchange"));
   await new Promise((resolve) => setTimeout(resolve, 140));
-  assert.match(host.shadowRoot!.textContent!, /Embedded activity · Lesson 2/);
   assert.ok(messages.some((message: any) => message.type === "REVIEW_FRAME_READY"));
   cleanup();
 });
 
-test("embedded review loads the course comment list for its Comments panel", async () => {
+test("embedded review no longer loads a duplicate course comment list", async () => {
   const window = new Window({ url: "https://rise.example/activity#/lesson/1" });
   window.document.title = "Lesson 1"; window.document.body.innerHTML = "<p>Rise content</p>";
   const comment = { id: "00000000-0000-4000-8000-000000000001", body: "Course feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: "https://rise.example/activity#moodle-review-page=Lesson%201", page_title: "Embedded activity · Lesson 1", anchor_type: "visual_pin", selected_quote: null, prefix: null, suffix: null, css_selector: "p", dom_selector: null, relative_x: 0.5, relative_y: 0.5, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } };
@@ -246,9 +241,8 @@ test("embedded review loads the course comment list for its Comments panel", asy
   } };
   const cleanup = startEmbeddedReview(window as any, window.document as any, runtime);
   await new Promise((resolve) => setTimeout(resolve, 0));
-  const shadow = window.document.querySelector("#moodle-course-review-overlay")!.shadowRoot!;
-  assert.equal(shadow.querySelector("[data-comment-count]")!.textContent, "1");
-  assert.ok(messages.some((message: any) => message.type === "LIST_COURSE_COMMENTS"));
+  assert.equal(window.document.querySelector("#moodle-course-review-overlay"), null);
+  assert.equal(messages.some((message: any) => message.type === "LIST_COURSE_COMMENTS"), false);
   cleanup();
 });
 
@@ -262,7 +256,7 @@ test("embedded review retries while the top frame is still resolving", async () 
   const cleanup = startEmbeddedReview(window as unknown as globalThis.Window & typeof globalThis, window.document as unknown as Document, runtime, 0);
   await new Promise((resolve) => setTimeout(resolve, 10));
   assert.equal(attempts, 3);
-  assert.ok(window.document.querySelector("#moodle-course-review-overlay"));
+  assert.equal(window.document.querySelector("#moodle-course-review-overlay"), null);
   cleanup();
 });
 
@@ -388,7 +382,7 @@ test("mixed ready and inaccessible frames keep a passive embedded activity notic
   cleanup();
 });
 
-test("ready embedded activity hides the duplicate parent overlay", async () => {
+test("ready embedded activity leaves the single parent toolbar visible", async () => {
   const window = new Window({ url: "https://moodle.example.invalid/mod/scorm/player.php?id=22" });
   window.document.body.innerHTML = '<h1>SCORM activity</h1><iframe id="rise" src="https://rise.example.invalid/activity"></iframe>';
   Object.defineProperty(window.document.querySelector("#rise")!, "contentDocument", { value: null });
@@ -399,11 +393,11 @@ test("ready embedded activity hides the duplicate parent overlay", async () => {
   } };
   const cleanup = startCourseReview(window as any, window.document as any, runtime);
   await new Promise((resolve) => setTimeout(resolve, 280));
-  assert.equal((window.document.querySelector("#moodle-course-review-overlay") as unknown as HTMLElement).hidden, true);
+  assert.equal((window.document.querySelector("#moodle-course-review-overlay") as unknown as HTMLElement).hidden, false);
   cleanup();
 });
 
-test("active embedded activity hides the parent overlay even through an accessible SCORM wrapper", async () => {
+test("active embedded worker leaves the parent toolbar visible through an accessible SCORM wrapper", async () => {
   const window = new Window({ url: "https://moodle.example.invalid/mod/scorm/player.php?id=22" });
   const wrapper = new Window({ url: "https://moodle.example.invalid/mod/scorm/content" });
   window.document.body.innerHTML = '<h1>SCORM activity</h1><iframe id="wrapper"></iframe>';
@@ -415,11 +409,11 @@ test("active embedded activity hides the parent overlay even through an accessib
   } };
   const cleanup = startCourseReview(window as any, window.document as any, runtime);
   await new Promise((resolve) => setTimeout(resolve, 280));
-  assert.equal((window.document.querySelector("#moodle-course-review-overlay") as unknown as HTMLElement).hidden, true);
+  assert.equal((window.document.querySelector("#moodle-course-review-overlay") as unknown as HTMLElement).hidden, false);
   cleanup();
 });
 
-test("late SCORM ownership still hides the duplicate Moodle controller", async () => {
+test("late SCORM worker ownership never hides the Moodle toolbar", async () => {
   const window = new Window({ url: "https://moodle.example.invalid/course/view.php?id=22" });
   const wrapper = new Window({ url: "https://moodle.example.invalid/mod/scorm/content" });
   window.document.body.innerHTML = '<h1>SCORM activity</h1><iframe id="wrapper"></iframe>';
@@ -433,11 +427,11 @@ test("late SCORM ownership still hides the duplicate Moodle controller", async (
   const cleanup = startCourseReview(window as any, window.document as any, runtime, undefined, 5);
   await new Promise((resolve) => setTimeout(resolve, 100));
   assert.ok(checks >= 2);
-  assert.equal((window.document.querySelector("#moodle-course-review-overlay") as unknown as HTMLElement).style.getPropertyValue("display"), "none");
+  assert.notEqual((window.document.querySelector("#moodle-course-review-overlay") as unknown as HTMLElement).style.getPropertyValue("display"), "none");
   cleanup();
 });
 
-test("an accessible descendant SCORM controller directly hides the Moodle controller", async () => {
+test("a legacy descendant overlay cannot hide the Moodle toolbar", async () => {
   const window = new Window({ url: "https://moodle.example.invalid/mod/scorm/player.php?id=22" });
   const rise = new Window({ url: "https://moodle.example.invalid/pluginfile.php/rise/index.html" });
   rise.document.documentElement.innerHTML = '<body><main>Rise lesson content</main><div id="moodle-course-review-overlay"></div></body>';
@@ -450,11 +444,11 @@ test("an accessible descendant SCORM controller directly hides the Moodle contro
   } };
   const cleanup = startCourseReview(window as any, window.document as any, runtime, undefined, 5);
   await new Promise((resolve) => setTimeout(resolve, 15));
-  assert.equal((window.document.querySelector("#moodle-course-review-overlay") as unknown as HTMLElement).style.getPropertyValue("display"), "none");
+  assert.notEqual((window.document.querySelector("#moodle-course-review-overlay") as unknown as HTMLElement).style.getPropertyValue("display"), "none");
   cleanup();
 });
 
-test("the Moodle controller is always hidden on the dedicated SCORM player route", async () => {
+test("the Moodle toolbar remains visible on the dedicated SCORM player route", async () => {
   const window = new Window({ url: "https://moodle.example.invalid/mod/scorm/player.php" });
   window.document.body.innerHTML = '<h1>SCORM activity</h1><iframe id="rise"></iframe>';
   Object.defineProperty(window.document.querySelector("#rise")!, "contentDocument", { value: null });
@@ -465,6 +459,6 @@ test("the Moodle controller is always hidden on the dedicated SCORM player route
   } };
   const cleanup = startCourseReview(window as any, window.document as any, runtime, undefined, 5);
   await new Promise((resolve) => setTimeout(resolve, 15));
-  assert.equal((window.document.querySelector("#moodle-course-review-overlay") as unknown as HTMLElement).style.getPropertyValue("display"), "none");
+  assert.notEqual((window.document.querySelector("#moodle-course-review-overlay") as unknown as HTMLElement).style.getPropertyValue("display"), "none");
   cleanup();
 });
