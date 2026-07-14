@@ -67,7 +67,8 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
     if (destroyed) return;
     const selection = window.getSelection();
     const range = selection && selection.rangeCount === 1 ? selection.getRangeAt(0) : undefined;
-    cachedSelection = range ? captureTextAnchor(range, document) ?? undefined : undefined;
+    const nextSelection = range ? captureTextAnchor(range, document) ?? undefined : undefined;
+    if (nextSelection) cachedSelection = nextSelection;
     emitSelectionState();
   };
   document.addEventListener("selectionchange", onSelectionChange);
@@ -117,19 +118,19 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
   const acknowledgement = (command: ScormCommand, ok: boolean, errorCode?: string): ScormAck => ok ? {
     protocol: 1,
     request_id: command.request_id,
-    worker_instance_id: options.workerInstanceId,
-    generation: options.generation,
-    course_id: options.courseId,
-    page_url: identity.pageUrl,
+    worker_instance_id: command.worker_instance_id,
+    generation: command.generation,
+    course_id: command.course_id,
+    page_url: command.page_url,
     ack_type: SCORM_ACK_TYPES[command.type],
     ok: true,
   } : {
     protocol: 1,
     request_id: command.request_id,
-    worker_instance_id: options.workerInstanceId,
-    generation: options.generation,
-    course_id: options.courseId,
-    page_url: identity.pageUrl,
+    worker_instance_id: command.worker_instance_id,
+    generation: command.generation,
+    course_id: command.course_id,
+    page_url: command.page_url,
     ack_type: SCORM_ACK_TYPES[command.type],
     ok: false,
     error_code: errorCode ?? "COMMAND_REJECTED",

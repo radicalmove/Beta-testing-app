@@ -5,7 +5,7 @@ import { Window } from "happy-dom";
 import type { PageComment } from "../src/background-bridge.ts";
 import type { CommentRenderer } from "../src/comment-renderer.ts";
 import { createScormWorker } from "../src/scorm-worker.ts";
-import type { ScormCommand, ScormEvent } from "../src/scorm-protocol.ts";
+import { validateScormAckFor, type ScormCommand, type ScormEvent } from "../src/scorm-protocol.ts";
 
 const workerInstanceId = "223e4567-e89b-42d3-a456-426614174000";
 const courseId = "123e4567-e89b-12d3-a456-426614174000";
@@ -98,6 +98,32 @@ test("selectionchange caches a valid range and start-selection consumes its stab
   worker.destroy();
 });
 
+test("a collapsed selectionchange from clicking the top toolbar preserves the last valid Rise selection", () => {
+  const { window, events, worker } = createHarness();
+  const text = window.document.querySelector("#copy")!.firstChild as unknown as Text;
+  selectText(window, text, 0, 10);
+  window.getSelection()!.removeAllRanges();
+  window.document.dispatchEvent(new window.Event("selectionchange"));
+
+  const ack = worker.handleCommand(command(window, "SCORM_START_SELECTION", {}));
+  assert.equal(ack.ok, true);
+  const captured = events.find((event) => event.type === "SCORM_ANCHOR_CAPTURED");
+  assert.equal(captured?.type === "SCORM_ANCHOR_CAPTURED" && captured.payload.anchor_type === "text_highlight" ? captured.payload.selected_quote : undefined, "Meaningful");
+  worker.destroy();
+});
+
+test("a new valid selection replaces the previously cached Rise selection", () => {
+  const { window, events, worker } = createHarness();
+  const text = window.document.querySelector("#copy")!.firstChild as unknown as Text;
+  selectText(window, text, 0, 10);
+  selectText(window, text, 11, 15);
+
+  assert.equal(worker.handleCommand(command(window, "SCORM_START_SELECTION", {})).ok, true);
+  const captured = events.find((event) => event.type === "SCORM_ANCHOR_CAPTURED");
+  assert.equal(captured?.type === "SCORM_ANCHOR_CAPTURED" && captured.payload.anchor_type === "text_highlight" ? captured.payload.selected_quote : undefined, "Rise");
+  worker.destroy();
+});
+
 test("marker mode changes the cursor, captures one stable pin, and cancel removes the mode", () => {
   const { window, events, worker } = createHarness();
   const area = window.document.querySelector("#area") as unknown as HTMLElement;
@@ -169,5 +195,15 @@ test("comment projection is limited to the worker's exact page and take-to-conte
   assert.deepEqual(projections.at(-1)?.map(({ id }) => id), [currentId]);
   assert.equal(worker.handleCommand({ ...command(window, "SCORM_TAKE_TO_CONTEXT", { comment_id: currentId }), request_id: "423e4567-e89b-42d3-a456-426614174000" }).ok, true);
   assert.equal(takenToContext(), currentId);
+  worker.destroy();
+});
+
+test("stale-context errors remain correlated to the triggering command after a page identity race", () => {
+  const { window, worker } = createHarness();
+  const stale = { ...command(window, "SCORM_START_MARKER", {}), page_url: "https://rise.example/activity#moodle-review-page=Earlier" };
+  const acknowledgement = worker.handleCommand(stale);
+  assert.equal(acknowledgement.ok, false);
+  assert.equal(acknowledgement.ok ? undefined : acknowledgement.error_code, "STALE_CONTEXT");
+  assert.doesNotThrow(() => validateScormAckFor(stale, acknowledgement));
   worker.destroy();
 });
