@@ -195,6 +195,7 @@ export function createLifecycleController(targetWindow: Window & typeof globalTh
 }
 
 export function startCourseReview(targetWindow: Window & typeof globalThis = window, targetDocument: Document = document, runtime: { sendMessage(message: unknown, callback: (response: { ok?: boolean; status?: ConnectionStatus; error?: string; data?: unknown } | undefined) => void): void } = chrome.runtime, buildDiagnostics: BuildDiagnostics = BUILD_DIAGNOSTICS, framePollDelay = 1_000): () => void {
+  const isScormPlayer = (() => { try { return new URL(targetWindow.location.href).pathname === "/mod/scorm/player.php"; } catch { return false; } })();
   let context = currentContext(targetWindow, targetDocument);
   let courseId: string | undefined;
   let courseHandle: string | undefined;
@@ -251,6 +252,7 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
     if (context.page_url === contextSnapshot.page_url) void loadPageComments(context.page_url);
     return saved;
   }, editThread: async (commentId, body) => { if (!courseId) throw new Error("Course connection unavailable"); await refreshCourseBindingBeforeComment(send, context, courseId); await send({ type: "EDIT_COMMENT_THREAD", comment_id: commentId, body }); await loadPageComments(context.page_url); }, replyThread: async (commentId, body) => { if (!courseId) throw new Error("Course connection unavailable"); await refreshCourseBindingBeforeComment(send, context, courseId); await send({ type: "REPLY_COMMENT_THREAD", comment_id: commentId, body }); await loadPageComments(context.page_url); }, changeStatus: async (commentId, nextStatus) => { if (!courseId) throw new Error("Course connection unavailable"); await refreshCourseBindingBeforeComment(send, context, courseId); await send({ type: "UPDATE_COMMENT_STATUS", comment_id: commentId, status: nextStatus }); await loadPageComments(context.page_url); }, manageSme: async (commentId, userIds) => { if (!courseId) throw new Error("Course connection unavailable"); await refreshCourseBindingBeforeComment(send, context, courseId); return send({ type: userIds ? "SET_SME_RECIPIENTS" : "GET_SME_RECIPIENTS", comment_id: commentId, ...(userIds ? { user_ids: userIds } : {}) }); }, deleteThread: async (commentId) => { if (!courseId) throw new Error("Course connection unavailable"); await refreshCourseBindingBeforeComment(send, context, courseId); await send({ type: "DELETE_COMMENT_THREAD", comment_id: commentId }); await loadPageComments(context.page_url); }, uploadScreenshot: (commentId, dataUrl) => send({ type: "UPLOAD_SCREENSHOT", comment_id: commentId, data_url: dataUrl }), cancelScreenshot: (commentId) => send({ type: "CANCEL_SCREENSHOT", comment_id: commentId }) }, buildDiagnostics);
+  if (isScormPlayer) overlay.setPresentationVisible(false);
   let requestSequence = 0;
 
   const refresh = () => {
@@ -302,6 +304,7 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
     overlay.setPresentationVisible(visible);
   };
   const checkFrames = () => {
+    if (isScormPlayer) { overlay.hideFrameFallback(); setParentOverlayVisible(false); return; }
     if (hasDescendantReviewOverlay(targetDocument)) { overlay.hideFrameFallback(); setParentOverlayVisible(false); return; }
     const inaccessible = inaccessibleFrameOrigins(targetDocument);
     sendRuntimeMessage(runtime, { type: "GET_REVIEW_FRAME_STATUS" }, (response) => {
