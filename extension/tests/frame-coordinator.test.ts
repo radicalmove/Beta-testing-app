@@ -10,6 +10,7 @@ const content = (area = 800_000): FrameCapabilities => ({
 });
 const workerA = "123e4567-e89b-42d3-a456-426614174000";
 const workerB = "223e4567-e89b-42d3-a456-426614174000";
+const workerC = "323e4567-e89b-42d3-a456-426614174000";
 
 test("elects deepest stable content frame", () => {
   const coordinator = new FrameCoordinator(250);
@@ -139,6 +140,57 @@ test("a new worker instance on the same frame clears stale ownership and stabili
   assert.equal(replacement.activateWorkerInstanceId, workerB);
   assert.equal(coordinator.confirmActivated(1, 7, workerA, replacement.generation!), false);
   assert.equal(coordinator.confirmActivated(1, 7, workerB, replacement.generation!), true);
+});
+
+test("a retired same-frame worker cannot reclaim ownership after its replacement", () => {
+  const coordinator = new FrameCoordinator(0);
+  coordinator.bindCourse(1, "course-a", 0);
+  coordinator.registerNavigation(1, 0, -1, "https://moodle.example/course");
+  coordinator.registerNavigation(1, 7, 0, "https://rise.example/lesson");
+  coordinator.registerCapabilities(1, 7, workerA, content(), 0);
+  const first = coordinator.advanceElection(1, 0);
+  coordinator.confirmActivated(1, 7, workerA, first.generation!);
+
+  coordinator.registerCapabilities(1, 7, workerB, content(), 1);
+  const second = coordinator.advanceElection(1, 1);
+  coordinator.confirmActivated(1, 7, workerB, second.generation!);
+
+  coordinator.registerCapabilities(1, 7, workerA, content(2_000_000), 2);
+  const staleLease = coordinator.advanceElection(1, 2);
+  assert.equal(staleLease.candidateWorkerInstanceId, workerB);
+  assert.equal(staleLease.generation, second.generation);
+  assert.equal(staleLease.activateFrameId, undefined);
+  assert.deepEqual(coordinator.snapshot(1), { activeFrameIds: [7], generation: second.generation! });
+
+  coordinator.registerCapabilities(1, 7, workerC, content(), 3);
+  const third = coordinator.advanceElection(1, 3);
+  assert.equal(third.activateWorkerInstanceId, workerC);
+  assert.equal(third.generation, second.generation! + 1);
+});
+
+test("retired worker tracking fails closed at its bound and resets on navigation", () => {
+  const coordinator = new FrameCoordinator(0);
+  coordinator.bindCourse(1, "course-a", 0);
+  coordinator.registerNavigation(1, 0, -1, "https://moodle.example/course");
+  coordinator.registerNavigation(1, 7, 0, "https://rise.example/lesson");
+  const workers = Array.from({ length: 34 }, (_, index) => `worker-${index}`);
+
+  for (const [index, worker] of workers.slice(0, 33).entries()) {
+    coordinator.registerCapabilities(1, 7, worker, content(), index);
+    const election = coordinator.advanceElection(1, index);
+    assert.equal(election.activateWorkerInstanceId, worker);
+    coordinator.confirmActivated(1, 7, worker, election.generation!);
+  }
+
+  coordinator.registerCapabilities(1, 7, workers[33]!, content(), 33);
+  const saturated = coordinator.advanceElection(1, 33);
+  assert.equal(saturated.candidateWorkerInstanceId, workers[32]);
+  assert.equal(saturated.activateFrameId, undefined);
+
+  coordinator.registerNavigation(1, 7, 0, "https://rise.example/new-document");
+  coordinator.registerCapabilities(1, 7, workers[33]!, content(), 34);
+  const reset = coordinator.advanceElection(1, 34);
+  assert.equal(reset.activateWorkerInstanceId, workers[33]);
 });
 
 test("authoritative navigation prunes departed frames so they cannot win", () => {
