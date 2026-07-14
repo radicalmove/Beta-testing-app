@@ -42,6 +42,7 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
   let activeThreadId: string | undefined;
   let popoverCleanup: (() => void) | undefined;
   let pendingProjection: PageComment[] | undefined;
+  let deferredThreadId: string | undefined;
   let applyComments: (next: PageComment[]) => void;
   let mutationDepth = 0;
   const repositioners = new Set<() => void>();
@@ -63,7 +64,14 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
   const showError = (article: HTMLElement, error: unknown, fallback: string) => {
     const alert = document.createElement("p"); alert.setAttribute("role", "alert"); alert.textContent = error instanceof Error ? error.message : fallback; article.append(alert);
   };
-  const runMutation = async <T>(operation: () => Promise<T>): Promise<T> => { mutationDepth += 1; try { return await operation(); } finally { mutationDepth -= 1; } };
+  const runMutation = async <T>(operation: () => Promise<T>): Promise<T> => {
+    mutationDepth += 1;
+    try { return await operation(); }
+    finally {
+      mutationDepth -= 1;
+      if (mutationDepth === 0 && deferredThreadId) deferredThreadId = undefined;
+    }
+  };
 
   const openThread = (comment: PageComment, index: number, marker: HTMLElement) => {
     if (activeThreadId && activeThreadId !== comment.id && pendingProjection) {
@@ -71,8 +79,10 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
       applyComments(next);
       const refreshedComment = comments.get(requestedId); const refreshedMarker = markers.get(requestedId);
       if (refreshedComment && refreshedMarker) openThread(refreshedComment, Array.from(comments.keys()).indexOf(requestedId), refreshedMarker);
+      else deferredThreadId = requestedId;
       return;
     }
+    deferredThreadId = undefined;
     if (activeThreadId === comment.id && root.querySelector("[data-thread-popover]")) { closeThread(); marker.focus(); return; }
     closeThread(false);
     activeThreadId = comment.id; marker.setAttribute("aria-expanded", "true");
@@ -189,6 +199,15 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
       if (mutationDepth > 0 && activeThreadId && root.querySelector("[data-thread-popover]")) { pendingProjection = [...next]; return; }
       pendingProjection = undefined;
       applyComments(next);
+      if (deferredThreadId) {
+        const requestedId = deferredThreadId;
+        const refreshedComment = comments.get(requestedId);
+        const refreshedMarker = markers.get(requestedId);
+        if (refreshedComment && refreshedMarker) {
+          deferredThreadId = undefined;
+          openThread(refreshedComment, Array.from(comments.keys()).indexOf(requestedId), refreshedMarker);
+        } else if (mutationDepth === 0) deferredThreadId = undefined;
+      }
     },
     takeToContext(commentId) {
       let comment = comments.get(commentId); let marker = markers.get(commentId);
@@ -215,6 +234,6 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
       if (anchorY !== undefined && document.defaultView) document.defaultView.scrollBy({ top: anchorY - document.defaultView.innerHeight / 2, behavior: "auto" });
       marker.focus({ preventScroll: true }); openThread(comment, Array.from(comments.keys()).indexOf(commentId), marker); return true;
     },
-    destroy() { pendingProjection = undefined; clear(); options.onUnresolvedAnchors?.([]); ownedRoot?.dispose(); },
+    destroy() { pendingProjection = undefined; deferredThreadId = undefined; clear(); options.onUnresolvedAnchors?.([]); ownedRoot?.dispose(); },
   };
 }

@@ -157,6 +157,74 @@ test("switching threads flushes a queued mutation projection before opening the 
   assert.equal(freshMarker.getAttribute("aria-expanded"), "true");
 });
 
+test("switching threads survives an intermediate empty mutation projection", async () => {
+  const { document } = setup();
+  const first = comment({ body: "First" });
+  const second = comment({ id: "00000000-0000-4000-8000-000000000012", body: "Old second" });
+  const freshSecond = { ...second, body: "Fresh second" };
+  let releaseFetch!: () => void;
+  const fetchFinished = new Promise<void>((resolve) => { releaseFetch = resolve; });
+  let renderer: ReturnType<typeof createCommentRenderer>;
+  renderer = createCommentRenderer(document, pageUrl, {
+    editThread: async () => {
+      renderer.setComments([]);
+      await fetchFinished;
+      renderer.setComments([{ ...first, body: "First updated" }, freshSecond]);
+    },
+  });
+  renderer.setComments([first, second]);
+  document.querySelector<HTMLElement>(`[data-moodle-review-stored-pin="${first.id}"]`)!.click();
+  const root = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!;
+  root.querySelector<HTMLElement>('[aria-label="Edit original comment"]')!.click();
+  root.querySelector<HTMLTextAreaElement>("[data-edit-composer] textarea")!.value = "First updated";
+  root.querySelector<HTMLElement>("[data-edit-composer] button")!.click();
+  await settle();
+
+  document.querySelector<HTMLElement>(`[data-moodle-review-stored-pin="${second.id}"]`)!.click();
+  assert.equal(root.querySelector("[data-thread-popover]"), null, "the stale thread must not open while the empty projection is current");
+
+  releaseFetch();
+  await settle();
+
+  assert.equal(root.querySelectorAll("[data-thread-popover]").length, 1);
+  assert.match(root.querySelector<HTMLElement>("[data-thread-popover]")!.textContent!, /Fresh second/);
+  const freshMarker = document.querySelector<HTMLElement>(`[data-moodle-review-stored-pin="${second.id}"]`)!;
+  assert.match(freshMarker.getAttribute("aria-label")!, /Fresh second/);
+  assert.equal(freshMarker.getAttribute("aria-expanded"), "true");
+});
+
+test("a deferred thread request is cleared when the mutation confirms that thread disappeared", async () => {
+  const { document } = setup();
+  const first = comment({ body: "First" });
+  const second = comment({ id: "00000000-0000-4000-8000-000000000012", body: "Second" });
+  let releaseFetch!: () => void;
+  const fetchFinished = new Promise<void>((resolve) => { releaseFetch = resolve; });
+  let renderer: ReturnType<typeof createCommentRenderer>;
+  renderer = createCommentRenderer(document, pageUrl, {
+    editThread: async () => {
+      renderer.setComments([]);
+      await fetchFinished;
+      renderer.setComments([{ ...first, body: "First updated" }]);
+    },
+  });
+  renderer.setComments([first, second]);
+  document.querySelector<HTMLElement>(`[data-moodle-review-stored-pin="${first.id}"]`)!.click();
+  const root = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!;
+  root.querySelector<HTMLElement>('[aria-label="Edit original comment"]')!.click();
+  root.querySelector<HTMLTextAreaElement>("[data-edit-composer] textarea")!.value = "First updated";
+  root.querySelector<HTMLElement>("[data-edit-composer] button")!.click();
+  await settle();
+  document.querySelector<HTMLElement>(`[data-moodle-review-stored-pin="${second.id}"]`)!.click();
+
+  releaseFetch();
+  await settle();
+  assert.equal(root.querySelector("[data-thread-popover]"), null);
+
+  renderer.setComments([{ ...first, body: "First updated" }, { ...second, body: "Unrelated later refresh" }]);
+  assert.equal(root.querySelector("[data-thread-popover]"), null, "a later projection must not revive a request for a removed thread");
+  assert.equal(document.querySelector<HTMLElement>(`[data-moodle-review-stored-pin="${second.id}"]`)!.getAttribute("aria-expanded"), "false");
+});
+
 test("resolved confirmation survives a callback projection refresh until its three-second timeout", async () => {
   const { window, document } = setup();
   let delayed: (() => void) | undefined;
