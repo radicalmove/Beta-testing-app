@@ -7,6 +7,7 @@ import type { PageComment } from "../src/background-bridge.ts";
 
 const pageUrl = "https://learn.example/mod/page/view.php?id=2";
 const otherPageUrl = "https://learn.example/mod/page/view.php?id=3";
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 const comment = (overrides: Partial<PageComment> = {}): PageComment => ({
   id: "00000000-0000-4000-8000-000000000001",
@@ -99,6 +100,70 @@ test("contextual threads preserve edit, reply, delete, and status callbacks", as
   await Promise.resolve();
 
   assert.deepEqual(calls, ["edit", "reply", "status", "delete"]);
+});
+
+test("projection refreshes inside edit and reply callbacks keep the active thread visible", async () => {
+  const { document } = setup();
+  let renderer: ReturnType<typeof createCommentRenderer>;
+  const updated = comment({ body: "Updated" });
+  const replied = comment({ body: "Updated", replies: [{ id: "00000000-0000-4000-8000-000000000011", body: "Reply", author: { display_name: "LD", role: "ld_dcd" } }] });
+  renderer = createCommentRenderer(document, pageUrl, {
+    editThread: async () => { renderer.setComments([updated]); },
+    replyThread: async () => { renderer.setComments([replied]); },
+  });
+  renderer.setComments([comment()]);
+  document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")!.click();
+  const root = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!;
+
+  root.querySelector<HTMLElement>('[aria-label="Edit original comment"]')!.click();
+  root.querySelector<HTMLTextAreaElement>("[data-edit-composer] textarea")!.value = "Updated";
+  root.querySelector<HTMLElement>("[data-edit-composer] button")!.click();
+  await settle();
+  assert.ok(root.querySelector("[data-thread-popover]"), "edit refresh must not detach the active thread");
+  assert.match(root.querySelector<HTMLElement>("[data-thread-popover]")!.textContent!, /Updated/);
+
+  root.querySelector<HTMLElement>("[data-reply-toggle]")!.click();
+  root.querySelector<HTMLTextAreaElement>("[data-reply-composer] textarea")!.value = "Reply";
+  root.querySelector<HTMLElement>("[data-save-reply]")!.click();
+  await settle();
+  assert.ok(root.querySelector("[data-thread-popover]"), "reply refresh must not detach the active thread");
+  assert.match(root.querySelector<HTMLElement>("[data-thread-popover]")!.textContent!, /Reply/);
+});
+
+test("resolved confirmation survives a callback projection refresh until its three-second timeout", async () => {
+  const { window, document } = setup();
+  let delayed: (() => void) | undefined;
+  window.setTimeout = ((callback: TimerHandler, delay?: number) => { assert.equal(delay, 3000); delayed = callback as () => void; return 1; }) as unknown as typeof window.setTimeout;
+  let renderer: ReturnType<typeof createCommentRenderer>;
+  renderer = createCommentRenderer(document, pageUrl, {
+    changeStatus: async () => { renderer.setComments([comment({ status: "resolved" })]); },
+  });
+  renderer.setComments([comment()]);
+  document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")!.click();
+  const root = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!;
+
+  root.querySelector<HTMLElement>('[aria-label="Resolve this comment"]')!.click();
+  await settle();
+  assert.equal(root.querySelector<HTMLElement>('[aria-label="Resolve this comment"]')?.textContent, "☑ Resolved");
+  assert.ok(root.querySelector("[data-thread-popover]"));
+
+  delayed?.();
+  assert.equal(root.querySelector("[data-thread-popover]"), null);
+  assert.ok(document.querySelector("[data-moodle-review-stored-pin]"), "resolved projection must be applied after confirmation closes");
+});
+
+test("delete refresh closes the thread and removes stale renderer artifacts", async () => {
+  const { document } = setup();
+  let renderer: ReturnType<typeof createCommentRenderer>;
+  renderer = createCommentRenderer(document, pageUrl, { deleteThread: async () => { renderer.setComments([]); } });
+  renderer.setComments([comment()]);
+  document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")!.click();
+  const root = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!;
+
+  root.querySelector<HTMLElement>('[aria-label="Delete thread"]')!.click();
+  await settle();
+  assert.equal(root.querySelector("[data-thread-popover]"), null);
+  assert.equal(document.querySelector("[data-moodle-review-stored-pin]"), null);
 });
 
 test("takeToContext opens the matching anchored thread and destroy removes renderer artifacts", () => {
