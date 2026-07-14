@@ -44,6 +44,51 @@ test("deactivates and confirms dormancy before activating a replacement", async 
   assert.deepEqual(runtime.snapshot(1).activeFrameIds, [7]);
 });
 
+test("serializes overlapping election drives per tab without blocking another tab", async () => {
+  let resolveFirstActivation: ((value: ReturnType<typeof acknowledgement>) => void) | undefined;
+  let firstActivationMessage: unknown;
+  const sent: Array<{ tabId: number; frameId: number; type: string }> = [];
+  const live = new Map<number, Set<number>>();
+  const runtime = new FrameCoordinatorRuntime({
+    send: async (tabId, frameId, message) => {
+      const type = (message as { type: string }).type;
+      sent.push({ tabId, frameId, type });
+      const liveFrames = live.get(tabId) ?? new Set<number>();
+      live.set(tabId, liveFrames);
+      if (type === "ACTIVATE_REVIEW_FRAME") liveFrames.add(frameId);
+      if (type === "DEACTIVATE_REVIEW_FRAME") liveFrames.delete(frameId);
+      if (tabId === 1 && frameId === 2 && type === "ACTIVATE_REVIEW_FRAME") {
+        firstActivationMessage = message;
+        return new Promise((resolve) => { resolveFirstActivation = resolve; });
+      }
+      return acknowledgement(message, type === "DEACTIVATE_REVIEW_FRAME");
+    },
+  }, 0);
+  runtime.bindCourse(1, "course-a");
+  runtime.bindCourse(2, "course-b");
+
+  const first = runtime.registerFrame(1, 2, "document-2", 1, workerA, content, frames, 0);
+  await Promise.resolve();
+  const replacement = runtime.registerFrame(1, 7, "document-7", 1, workerB, { ...content, area: 900_000 }, frames, 1);
+  await Promise.resolve();
+  await runtime.registerFrame(2, 7, "document-7", 1, workerB, content, frames, 1);
+
+  assert.deepEqual(sent, [
+    { tabId: 1, frameId: 2, type: "ACTIVATE_REVIEW_FRAME" },
+    { tabId: 2, frameId: 7, type: "ACTIVATE_REVIEW_FRAME" },
+  ]);
+  resolveFirstActivation!(acknowledgement(firstActivationMessage));
+  await Promise.all([first, replacement]);
+
+  assert.deepEqual(sent.slice(2), [
+    { tabId: 1, frameId: 2, type: "DEACTIVATE_REVIEW_FRAME" },
+    { tabId: 1, frameId: 7, type: "ACTIVATE_REVIEW_FRAME" },
+  ]);
+  assert.deepEqual([...live.get(1)!], [7]);
+  assert.deepEqual(runtime.snapshot(1).activeFrameIds, [7]);
+  assert.deepEqual(runtime.snapshot(2).activeFrameIds, [7]);
+});
+
 test("abandons an unreachable old owner and activates the replacement", async () => {
   const sent: Array<{ frameId: number; type: string }> = [];
   let loseDeactivate = false;
@@ -83,11 +128,14 @@ test("status and delayed reevaluation are harmless before a tab is bound", async
 test("times out a hanging deactivation, ignores its late acknowledgement, and continues election", async () => {
   let fireTimeout: (() => void) | undefined;
   let resolveDormant: ((value: ReturnType<typeof acknowledgement>) => void) | undefined;
+  let markDeactivationStarted: (() => void) | undefined;
+  const deactivationStarted = new Promise<void>((resolve) => { markDeactivationStarted = resolve; });
   const sent: Array<{ frameId: number; message: any }> = [];
   const runtime = new FrameCoordinatorRuntime({
     send: async (_tabId, frameId, message) => {
       sent.push({ frameId, message });
       if ((message as { type?: string }).type !== "DEACTIVATE_REVIEW_FRAME") return acknowledgement(message);
+      markDeactivationStarted!();
       return new Promise((resolve) => { resolveDormant = resolve; });
     },
     setTimeout: (handler) => { fireTimeout = handler; return 1; },
@@ -96,7 +144,7 @@ test("times out a hanging deactivation, ignores its late acknowledgement, and co
   runtime.bindCourse(1, "course-a");
   await runtime.registerFrame(1, 2, "document-2", 1, workerA, content, frames, 0);
   const replacement = runtime.registerFrame(1, 7, "document-7", 1, workerB, { ...content, area: 900_000 }, frames, 1);
-  await Promise.resolve();
+  await deactivationStarted;
   fireTimeout!();
   await replacement;
   assert.deepEqual(runtime.snapshot(1).activeFrameIds, [7]);

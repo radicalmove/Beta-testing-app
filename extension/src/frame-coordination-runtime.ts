@@ -20,6 +20,7 @@ export class FrameCoordinatorRuntime {
   private readonly scheduleTimeout: (handler: () => void, delay: number) => Timer;
   private readonly cancelTimeout: (timer: Timer) => void;
   private readonly lastReady = new Map<number, { frameId: number; workerInstanceId: string }>();
+  private readonly tabOperations = new Map<number, Promise<void>>();
 
   constructor(dependencies: Dependencies, stabilityMs = 250, deactivationTimeoutMs = 1_000) {
     this.dependencies = dependencies;
@@ -33,9 +34,11 @@ export class FrameCoordinatorRuntime {
   bindCourse(tabId: number, courseId: string): void { this.coordinator.bindCourse(tabId, courseId, 0); }
 
   async registerFrame(tabId: number, frameId: number, documentId: string, workerInstanceEpoch: number, workerInstanceId: string, capabilities: FrameCapabilities, navigation: NavigationFrame[], now = this.now()): Promise<void> {
-    this.coordinator.replaceNavigation(tabId, navigation);
-    if (!this.coordinator.registerCapabilities(tabId, frameId, documentId, workerInstanceEpoch, workerInstanceId, capabilities, now)) return;
-    await this.drive(tabId, now);
+    await this.runSerialized(tabId, async () => {
+      this.coordinator.replaceNavigation(tabId, navigation);
+      if (!this.coordinator.registerCapabilities(tabId, frameId, documentId, workerInstanceEpoch, workerInstanceId, capabilities, now)) return;
+      await this.drive(tabId, now);
+    });
   }
 
   snapshot(tabId: number): CoordinatorSnapshot {
@@ -46,7 +49,7 @@ export class FrameCoordinatorRuntime {
   removeTab(tabId: number): void { this.coordinator.removeTab(tabId); this.lastReady.delete(tabId); }
 
   async reevaluate(tabId: number, now = this.now()): Promise<void> {
-    try { await this.drive(tabId, now); }
+    try { await this.runSerialized(tabId, () => this.drive(tabId, now)); }
     catch { /* a navigation or worker restart can remove the tab before the delayed election */ }
   }
 
@@ -91,6 +94,15 @@ export class FrameCoordinatorRuntime {
         }
       } catch { /* activation can be retried after registration/navigation changes */ }
     }
+  }
+
+  private runSerialized(tabId: number, operation: () => Promise<void>): Promise<void> {
+    const previous = this.tabOperations.get(tabId) ?? Promise.resolve();
+    const current = previous.catch(() => undefined).then(operation);
+    this.tabOperations.set(tabId, current);
+    return current.finally(() => {
+      if (this.tabOperations.get(tabId) === current) this.tabOperations.delete(tabId);
+    });
   }
 
   private matches(result: DeliveryResult, workerInstanceId: string, generation: number): boolean {
