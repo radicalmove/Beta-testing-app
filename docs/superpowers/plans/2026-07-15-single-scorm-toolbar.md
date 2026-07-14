@@ -32,17 +32,17 @@
 - Create: `extension/src/scorm-protocol.ts`
 - Create: `extension/tests/scorm-protocol.test.ts`
 
-- [ ] **Step 1: Write failing protocol-validation tests**
+- [x] **Step 1: Write failing protocol-validation tests**
 
 Cover exact keys and bounds for `SCORM_SELECTION_CHANGED`, `SCORM_START_SELECTION`, `SCORM_START_MARKER`, `SCORM_CANCEL_MARKER`, `SCORM_ANCHOR_CAPTURED`, `SCORM_PAGE_IDENTITY_CHANGED`, `SCORM_SET_COMMENTS`, `SCORM_COMMENTS_CHANGED`, `SCORM_APPLY_LOCATOR`, and `SCORM_TAKE_TO_CONTEXT`. Pre-election worker registration remains the separate exact `REGISTER_REVIEW_FRAME` control path in `review-context.ts`; it has a worker instance but no generation. Post-election commands/events require `protocol: 1`, UUID request/worker IDs, integer generation, course ID, exact page identity, and acknowledgements bound to the same `request_id`, worker instance, generation, course, and page plus `{ ok, ack_type, error_code? }`. Assert extra keys and malformed identifiers are rejected; stateful stale/duplicate checks belong to the runtime in Tasks 2 and 7.
 
-- [ ] **Step 2: Verify red**
+- [x] **Step 2: Verify red**
 
 Run: `cd extension && node --test tests/scorm-protocol.test.ts`
 
 Expected: FAIL because `scorm-protocol.ts` does not exist.
 
-- [ ] **Step 3: Implement the minimal discriminated-union validators**
+- [x] **Step 3: Implement the minimal discriminated-union validators**
 
 Export bounded types and functions such as:
 
@@ -56,7 +56,7 @@ export function validateScormMessage(value: unknown): ScormMessage;
 
 Use exact-key checks; do not accept client-supplied tab/frame IDs. Include type-to-acknowledgement mapping and full binding comparison so a validly shaped but wrong acknowledgement type/course/page/instance/generation is rejected.
 
-- [ ] **Step 4: Verify green and commit**
+- [x] **Step 4: Verify green and commit**
 
 Run: `cd extension && node --test tests/scorm-protocol.test.ts && npm run typecheck`
 
