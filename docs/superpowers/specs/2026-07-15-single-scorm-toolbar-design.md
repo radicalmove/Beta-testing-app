@@ -67,9 +67,10 @@ Embedded comment creation uses a coordinator-issued pending-anchor capability bo
 ## Page identity and navigation
 
 - The worker preserves the exact existing embedded `page_url` and `pageTitle` derivation so stored comments continue to match without migration.
+- New embedded comments also persist optional navigation metadata: the parent Moodle SCORM activity URL and a validated Rise locator captured from the worker's real location/navigation state. This metadata is separate from the stable comment page identity and is never treated as an authorization boundary.
 - Rise hash/title changes clear cached selection and stale rendered markers, announce the new identity, and request a new per-document comment projection.
-- Selecting an embedded item from the course list first navigates the top tab to its Moodle SCORM activity when necessary, then asks the elected worker to navigate to the stored Rise identity and scroll to/open the anchor.
-- If an old comment lacks enough Rise navigation information, the worker uses the existing anchor recovery rules on the currently loaded embedded page and reports a clear unavailable-context state if recovery fails.
+- Selecting an embedded item from the course list first navigates the top tab to its persisted parent Moodle SCORM activity when necessary, then asks the elected worker to apply the persisted Rise locator and scroll to/open the anchor.
+- For legacy comments without navigation metadata, navigation is best-effort: if the relevant activity is already loaded, the worker uses the existing page identity and anchor recovery rules; otherwise the list reports that the original SCORM activity must be opened first. No existing comment is silently assigned a guessed activity or Rise route.
 
 ## Failure handling
 
@@ -85,7 +86,7 @@ Embedded comment creation uses a coordinator-issued pending-anchor capability bo
 
 - Normal Moodle pages keep their current interaction behavior.
 - Chrome and Edge use the same Manifest V3 build.
-- Existing comments and anchors remain compatible; this changes ownership and messaging, not stored comment data.
+- Existing comments and anchors remain readable and renderable. The comment schema gains nullable embedded navigation metadata for new SCORM comments; existing rows require no destructive migration and use the documented best-effort navigation fallback.
 
 ## Testing
 
@@ -94,6 +95,7 @@ Embedded comment creation uses a coordinator-issued pending-anchor capability bo
 - Test command routing to the elected frame and event routing back to the top controller.
 - Test marker placement, cancellation, text highlighting, comment restoration, and comment-list navigation in a nested SCORM fixture.
 - Test top-list and worker-renderer comment partitioning, embedded list navigation, selection preservation across toolbar focus, and exact page-identity compatibility.
+- Test persisted parent-activity/Rise navigation metadata, metadata validation, and legacy comments without that metadata.
 - Test the pending-anchor capability, cross-origin save rejection without it, capability tampering/reuse/expiry, and stale-event rejection.
 - Test late frame registration, Rise internal navigation, same-frame navigation, worker-instance replacement, extension reload, failed deactivation, and desired-state replay.
 - Test missing, denied, and revoked optional permissions plus unsupported/never-registering frame recovery.
