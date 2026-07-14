@@ -286,6 +286,20 @@ test("comments count follows visible top-level threads", () => {
   assert.equal(shadow.querySelector("[data-comment-count]")?.textContent, "0");
 });
 
+test("course-list projection does not recover anchors until renderer projection is set", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const target = document.createElement("div"); target.id = "target"; document.body.append(target);
+  const overlay = mountReviewOverlay(document, context, "connected");
+  const listed = { id: "00000000-0000-4000-8000-000000000003", body: "Feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: context.pageTitle, anchor_type: "visual_pin" as const, selected_quote: null, prefix: null, suffix: null, css_selector: "#target", dom_selector: null, relative_x: 0.5, relative_y: 0.5, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: true } };
+
+  overlay.setCommentList([listed]);
+  assert.equal(document.querySelector("[data-moodle-review-stored-pin]"), null);
+  assert.equal(document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!.querySelector("[data-comment-item]")?.textContent?.includes("Feedback"), true);
+
+  overlay.setRendererComments([listed]);
+  assert.ok(document.querySelector("[data-moodle-review-stored-pin]"));
+});
+
 test("one adaptive action opens highlighted text directly or enters marker placement", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   document.body.innerHTML = '<main><p id="copy">Select these words for review</p></main>';
