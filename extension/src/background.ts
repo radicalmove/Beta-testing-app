@@ -2,7 +2,7 @@ import { ApiClient, authenticate, getActiveToken, lookupReviewCourse, redeemRevi
 import { authorizeAuthenticateSender, authorizeResolveSender, handleCreateCommentBridge, handleDeleteCommentBridge, handleListCourseCommentsBridge, handleListPageCommentsBridge, handleResolveCourseBridge, normalizeErrorMessage, validateAuthenticateMessage, validateCancelScreenshotMessage, validateUploadScreenshotMessage, validateViewerResponse, type CreateCommentPayload, type ResolveCoursePayload } from "./background-bridge.ts";
 import { validateScreenshotDataUrl } from "./screenshot-validation.ts";
 import { reconcileOptionalContentScript } from "./optional-content-scripts";
-import { ReviewContextCache, validateContextMessage, type ReviewSender, type StoredReviewContext } from "./review-context.ts";
+import { matchesCurrentNavigationDocument, ReviewContextCache, validateContextMessage, type ReviewSender, type StoredReviewContext } from "./review-context.ts";
 import { ScreenshotCapabilities } from "./screenshot-capabilities.ts";
 import { PendingAccessStore, PendingApprovalManager } from "./pending-access.ts";
 import { FrameCoordinatorRuntime } from "./frame-coordination-runtime.ts";
@@ -367,10 +367,12 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       }
       if (control.type === "REGISTER_REVIEW_FRAME") {
         if (!reviewContexts.obtain(sender) || typeof sender.tab?.id !== "number" || typeof sender.frameId !== "number") throw new Error("Review context unavailable");
-        const navigation = await chrome.webNavigation.getAllFrames({ tabId: sender.tab.id }) as Array<{ frameId: number; parentFrameId: number; url: string }> | null;
-        if (!navigation?.some((frame) => frame.frameId === sender.frameId && frame.url === sender.url)) throw new Error("Review frame navigation mismatch");
+        const navigation = await chrome.webNavigation.getAllFrames({ tabId: sender.tab.id }) as Array<{ frameId: number; parentFrameId: number; url: string; documentId?: string }> | null;
+        if (!navigation || !matchesCurrentNavigationDocument(sender, navigation)
+          || navigation.some((frame) => typeof frame.documentId !== "string" || frame.documentId.length === 0)) throw new Error("Review frame navigation mismatch");
+        const authoritativeNavigation = navigation as Array<{ frameId: number; parentFrameId: number; url: string; documentId: string }>;
         const now = Date.now();
-        await frameCoordination.registerFrame(sender.tab.id, sender.frameId, control.worker_instance_id, control.capabilities, navigation, now);
+        await frameCoordination.registerFrame(sender.tab.id, sender.frameId, sender.documentId!, control.worker_instance_id, control.capabilities, authoritativeNavigation, now);
         setTimeout(() => void frameCoordination.reevaluate(sender.tab!.id!, Date.now()), 260);
         return { registered: true };
       }

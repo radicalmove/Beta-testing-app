@@ -1,4 +1,4 @@
-export type ReviewSender = { id?: string; frameId?: number; tab?: { id?: number }; url?: string };
+export type ReviewSender = { id?: string; frameId?: number; tab?: { id?: number }; url?: string; documentId?: string };
 export type StoredReviewContext = { id: string; title: string; course_url: string; parent_activity_url: string };
 export type FrameReviewContext = { course_id: string; course_title: string; parent_activity_url: string };
 import type { FrameCapabilities } from "./frame-coordinator.ts";
@@ -112,4 +112,9 @@ function isStoredReviewContext(context: StoredReviewContext): boolean {
   if (!context || typeof context !== "object") return false;
   if (![context.id, context.title, context.course_url, context.parent_activity_url].every((value) => typeof value === "string" && value.length > 0)) return false;
   try { return new URL(context.course_url).protocol === "https:" && new URL(context.parent_activity_url).protocol === "https:"; } catch { return false; }
+}
+
+export function matchesCurrentNavigationDocument(sender: ReviewSender, navigation: Array<{ frameId: number; url: string; documentId?: string }>): boolean {
+  return typeof sender.frameId === "number" && typeof sender.url === "string" && typeof sender.documentId === "string" && sender.documentId.length > 0
+    && navigation.some((frame) => frame.frameId === sender.frameId && frame.url === sender.url && frame.documentId === sender.documentId);
 }

@@ -9,14 +9,13 @@ type FrameRecord = {
   frameId: number;
   parentFrameId: number;
   url: string;
+  documentId: string;
   workerInstanceId?: string;
-  retiredWorkerInstanceIds?: Set<string>;
-  workerReplacementHistorySaturated?: boolean;
+  workerRegistrationClosed?: boolean;
   capabilities?: FrameCapabilities;
   stableSince?: number;
 };
-const MAX_RETIRED_WORKER_INSTANCES = 32;
-export type NavigationFrame = { frameId: number; parentFrameId: number; url: string };
+export type NavigationFrame = { frameId: number; parentFrameId: number; url: string; documentId: string };
 export type ChildOwnerReport = { childFrameId: number; visible: boolean; area: number; origin: string };
 type StoredOwnerReport = ChildOwnerReport & { parentFrameId: number };
 
@@ -58,18 +57,18 @@ export class FrameCoordinator {
 
   removeTab(tabId: number): void { this.tabs.delete(tabId); }
 
-  registerNavigation(tabId: number, frameId: number, parentFrameId: number, url: string): void {
+  registerNavigation(tabId: number, frameId: number, parentFrameId: number, url: string, documentId: string): void {
     const tab = this.requireTab(tabId);
     const previous = tab.frames.get(frameId);
-    const sameDocument = previous?.parentFrameId === parentFrameId && previous.url === url;
+    const sameDocument = previous?.parentFrameId === parentFrameId && previous.url === url && previous.documentId === documentId;
     if (previous && !sameDocument) this.clearFrameState(tab, frameId);
     tab.frames.set(frameId, {
       frameId,
       parentFrameId,
       url,
+      documentId,
       workerInstanceId: sameDocument ? previous.workerInstanceId : undefined,
-      retiredWorkerInstanceIds: sameDocument ? previous.retiredWorkerInstanceIds : undefined,
-      workerReplacementHistorySaturated: sameDocument ? previous.workerReplacementHistorySaturated : undefined,
+      workerRegistrationClosed: sameDocument ? previous.workerRegistrationClosed : undefined,
       capabilities: sameDocument ? previous.capabilities : undefined,
       stableSince: sameDocument ? previous.stableSince : undefined,
     });
@@ -81,21 +80,14 @@ export class FrameCoordinator {
     for (const frameId of [...tab.frames.keys()]) {
       if (!authoritativeIds.has(frameId) && frameId !== tab.fallbackFrameId) this.removeFrame(tabId, frameId);
     }
-    for (const frame of navigation) this.registerNavigation(tabId, frame.frameId, frame.parentFrameId, frame.url);
+    for (const frame of navigation) this.registerNavigation(tabId, frame.frameId, frame.parentFrameId, frame.url, frame.documentId);
     for (const childFrameId of [...tab.ownerReports.keys()]) if (!authoritativeIds.has(childFrameId)) tab.ownerReports.delete(childFrameId);
   }
 
-  registerCapabilities(tabId: number, frameId: number, workerInstanceId: string, capabilities: FrameCapabilities, now: number): void {
+  registerCapabilities(tabId: number, frameId: number, documentId: string, workerInstanceId: string, capabilities: FrameCapabilities, now: number): boolean {
     const frame = this.requireFrame(tabId, frameId);
-    const tab = this.requireTab(tabId);
-    if (frame.retiredWorkerInstanceIds?.has(workerInstanceId)
-      || (frame.workerReplacementHistorySaturated && frame.workerInstanceId !== workerInstanceId)) return;
-    if (frame.workerInstanceId !== undefined && frame.workerInstanceId !== workerInstanceId) {
-      this.clearFrameState(tab, frameId);
-      this.retireWorker(frame, frame.workerInstanceId);
-      frame.capabilities = undefined;
-      frame.stableSince = undefined;
-    }
+    if (frame.documentId !== documentId || frame.workerRegistrationClosed
+      || (frame.workerInstanceId !== undefined && frame.workerInstanceId !== workerInstanceId)) return false;
     const same = frame.capabilities
       && frame.workerInstanceId === workerInstanceId
       && frame.capabilities.contentBearing === capabilities.contentBearing
@@ -105,6 +97,7 @@ export class FrameCoordinator {
     frame.workerInstanceId = workerInstanceId;
     frame.capabilities = { ...capabilities };
     if (!same) frame.stableSince = now;
+    return true;
   }
 
   registerChildOwnerReports(tabId: number, parentFrameId: number, reports: ChildOwnerReport[]): void {
@@ -132,8 +125,8 @@ export class FrameCoordinator {
     const handover = tab.handover;
     if (!frame || frame.workerInstanceId !== workerInstanceId || !handover
       || handover.from.frameId !== frameId || handover.from.workerInstanceId !== workerInstanceId || handover.generation !== generation) return false;
-    this.retireWorker(frame, workerInstanceId);
     frame.workerInstanceId = undefined;
+    frame.workerRegistrationClosed = true;
     frame.capabilities = undefined;
     frame.stableSince = undefined;
     if (tab.active?.frameId === frameId && tab.active.workerInstanceId === workerInstanceId) tab.active = undefined;
@@ -250,13 +243,6 @@ export class FrameCoordinator {
   private clearFrameState(tab: TabState, frameId: number): void {
     if (tab.active?.frameId === frameId) tab.active = undefined;
     if (tab.handover?.from.frameId === frameId || tab.handover?.to.frameId === frameId) tab.handover = undefined;
-  }
-
-  private retireWorker(frame: FrameRecord, workerInstanceId: string): void {
-    const retired = frame.retiredWorkerInstanceIds ?? new Set<string>();
-    frame.retiredWorkerInstanceIds = retired;
-    if (retired.size < MAX_RETIRED_WORKER_INSTANCES) retired.add(workerInstanceId);
-    if (retired.size >= MAX_RETIRED_WORKER_INSTANCES) frame.workerReplacementHistorySaturated = true;
   }
 
   private requireFrame(tabId: number, frameId: number): FrameRecord {
