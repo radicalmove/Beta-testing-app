@@ -36,15 +36,18 @@ test("context control messages have strict empty schemas", () => {
 
 test("frame coordination messages have strict typed schemas", () => {
   const capabilities = { contentBearing: true, wrapper: false, visible: true, area: 400000 };
-  assert.deepEqual(validateContextMessage({ type: "REGISTER_REVIEW_FRAME", worker_instance_id: workerInstanceId, capabilities }), { type: "REGISTER_REVIEW_FRAME", worker_instance_id: workerInstanceId, capabilities });
+  assert.deepEqual(validateContextMessage({ type: "REGISTER_REVIEW_FRAME", worker_instance_id: workerInstanceId, worker_instance_epoch: 2, capabilities }), { type: "REGISTER_REVIEW_FRAME", worker_instance_id: workerInstanceId, worker_instance_epoch: 2, capabilities });
   assert.deepEqual(validateContextMessage({ type: "RENEW_REVIEW_FRAME_LEASE", generation: 4 }), { type: "RENEW_REVIEW_FRAME_LEASE", generation: 4 });
   assert.deepEqual(validateContextMessage({ type: "ACK_REVIEW_FRAME_DORMANT", generation: 5 }), { type: "ACK_REVIEW_FRAME_DORMANT", generation: 5 });
   for (const invalid of [
-    { type: "REGISTER_REVIEW_FRAME", capabilities },
-    { type: "REGISTER_REVIEW_FRAME", worker_instance_id: "worker-1", capabilities },
-    { type: "REGISTER_REVIEW_FRAME", worker_instance_id: workerInstanceId, capabilities, generation: 1 },
-    { type: "REGISTER_REVIEW_FRAME", worker_instance_id: workerInstanceId, capabilities, document_id: "client-document" },
-    { type: "REGISTER_REVIEW_FRAME", worker_instance_id: workerInstanceId, capabilities: { ...capabilities, area: -1 } },
+    { type: "REGISTER_REVIEW_FRAME", worker_instance_id: workerInstanceId, capabilities },
+    { type: "REGISTER_REVIEW_FRAME", worker_instance_id: "worker-1", worker_instance_epoch: 1, capabilities },
+    { type: "REGISTER_REVIEW_FRAME", worker_instance_id: workerInstanceId, worker_instance_epoch: -1, capabilities },
+    { type: "REGISTER_REVIEW_FRAME", worker_instance_id: workerInstanceId, worker_instance_epoch: 1.5, capabilities },
+    { type: "REGISTER_REVIEW_FRAME", worker_instance_id: workerInstanceId, worker_instance_epoch: Number.MAX_SAFE_INTEGER, capabilities },
+    { type: "REGISTER_REVIEW_FRAME", worker_instance_id: workerInstanceId, worker_instance_epoch: 1, capabilities, generation: 1 },
+    { type: "REGISTER_REVIEW_FRAME", worker_instance_id: workerInstanceId, worker_instance_epoch: 1, capabilities, document_id: "client-document" },
+    { type: "REGISTER_REVIEW_FRAME", worker_instance_id: workerInstanceId, worker_instance_epoch: 1, capabilities: { ...capabilities, area: -1 } },
     { type: "RENEW_REVIEW_FRAME_LEASE", generation: "4" },
     { type: "ACK_REVIEW_FRAME_DORMANT", generation: 5, frameId: 2 },
   ]) assert.throws(() => validateContextMessage(invalid));

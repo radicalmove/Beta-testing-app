@@ -5,12 +5,13 @@ import type { FrameCapabilities } from "./frame-coordinator.ts";
 
 export type ContextMessage =
   | { type: "GET_REVIEW_CONTEXT" | "REVIEW_FRAME_READY" | "GET_REVIEW_FRAME_STATUS" }
-  | { type: "REGISTER_REVIEW_FRAME"; worker_instance_id: string; capabilities: FrameCapabilities }
+  | { type: "REGISTER_REVIEW_FRAME"; worker_instance_id: string; worker_instance_epoch: number; capabilities: FrameCapabilities }
   | { type: "RENEW_REVIEW_FRAME_LEASE" | "ACK_REVIEW_FRAME_DORMANT"; generation: number };
 
 type ReadyFrame = { origin: string; readyAt: number };
 type Entry = StoredReviewContext & { extensionId: string; lastActivityAt: number; readyFrames: Map<number, ReadyFrame> };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const MAX_WORKER_INSTANCE_EPOCH = 2_147_483_647;
 
 export function validateContextMessage(message: unknown): ContextMessage {
   if (!message || typeof message !== "object" || Array.isArray(message)) throw new Error("Invalid review context message");
@@ -20,13 +21,14 @@ export function validateContextMessage(message: unknown): ContextMessage {
     return { type: record.type as "GET_REVIEW_CONTEXT" | "REVIEW_FRAME_READY" | "GET_REVIEW_FRAME_STATUS" };
   }
   if (record.type === "REGISTER_REVIEW_FRAME") {
-    if (Object.keys(record).sort().join() !== "capabilities,type,worker_instance_id" || typeof record.worker_instance_id !== "string" || !UUID.test(record.worker_instance_id)
+    if (Object.keys(record).sort().join() !== "capabilities,type,worker_instance_epoch,worker_instance_id" || typeof record.worker_instance_id !== "string" || !UUID.test(record.worker_instance_id)
+      || !Number.isSafeInteger(record.worker_instance_epoch) || (record.worker_instance_epoch as number) < 1 || (record.worker_instance_epoch as number) > MAX_WORKER_INSTANCE_EPOCH
       || !record.capabilities || typeof record.capabilities !== "object" || Array.isArray(record.capabilities)) throw new Error("Invalid review context message");
     const capability = record.capabilities as Record<string, unknown>;
     if (Object.keys(capability).sort().join() !== "area,contentBearing,visible,wrapper"
       || typeof capability.contentBearing !== "boolean" || typeof capability.wrapper !== "boolean" || typeof capability.visible !== "boolean"
       || typeof capability.area !== "number" || !Number.isFinite(capability.area) || capability.area < 0) throw new Error("Invalid review context message");
-    return { type: record.type, worker_instance_id: record.worker_instance_id, capabilities: capability as FrameCapabilities };
+    return { type: record.type, worker_instance_id: record.worker_instance_id, worker_instance_epoch: record.worker_instance_epoch as number, capabilities: capability as FrameCapabilities };
   }
   if (["RENEW_REVIEW_FRAME_LEASE", "ACK_REVIEW_FRAME_DORMANT"].includes(record.type as string)) {
     if (Object.keys(record).sort().join() !== "generation,type" || !Number.isInteger(record.generation) || (record.generation as number) < 0) throw new Error("Invalid review context message");

@@ -72,23 +72,26 @@ test("real bootstrap replaces its owned instance and recovers from a stale marke
   };
   let injections = 0;
   let cleanups = 0;
+  const workerEpochs: number[] = [];
   const options = {
     url: "https://moodle.example.invalid/course/view.php?id=1",
     document: documentLike,
     moodlePatterns: ["https://moodle.example.invalid/*"],
     optionalFramePatterns: [],
-    inject: () => { injections += 1; return () => { cleanups += 1; }; },
+    inject: (workerInstanceEpoch: number) => { workerEpochs.push(workerInstanceEpoch); injections += 1; return () => { cleanups += 1; }; },
   };
 
   assert.equal(await bootstrapContentScript(options), true);
   assert.equal(await bootstrapContentScript(options), true);
   assert.equal(injections, 2);
   assert.equal(cleanups, 1);
+  assert.deepEqual(workerEpochs, [1, 2]);
   assert.equal(markers.has("data-moodle-review-extension"), true);
 
   for (const symbol of Object.getOwnPropertySymbols(root)) delete (root as Record<symbol, unknown>)[symbol];
   assert.equal(await bootstrapContentScript(options), true);
   assert.equal(injections, 3);
+  assert.deepEqual(workerEpochs, [1, 2, 1]);
   assert.equal(markers.has("data-moodle-review-extension"), true);
 });
 
@@ -201,6 +204,8 @@ test("embedded review re-registers after a background worker restart interval", 
   assert.ok(registrations.length >= 2);
   assert.match(registrations[0].worker_instance_id, /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
   assert.equal(new Set(registrations.map((message) => message.worker_instance_id)).size, 1);
+  assert.equal(new Set(registrations.map((message) => message.worker_instance_epoch)).size, 1);
+  assert.equal(registrations[0].worker_instance_epoch, 1);
   cleanup();
   const stoppedAt = contextRequests;
   await new Promise((resolve) => setTimeout(resolve, 10));

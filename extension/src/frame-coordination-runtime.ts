@@ -32,9 +32,9 @@ export class FrameCoordinatorRuntime {
 
   bindCourse(tabId: number, courseId: string): void { this.coordinator.bindCourse(tabId, courseId, 0); }
 
-  async registerFrame(tabId: number, frameId: number, documentId: string, workerInstanceId: string, capabilities: FrameCapabilities, navigation: NavigationFrame[], now = this.now()): Promise<void> {
+  async registerFrame(tabId: number, frameId: number, documentId: string, workerInstanceEpoch: number, workerInstanceId: string, capabilities: FrameCapabilities, navigation: NavigationFrame[], now = this.now()): Promise<void> {
     this.coordinator.replaceNavigation(tabId, navigation);
-    if (!this.coordinator.registerCapabilities(tabId, frameId, documentId, workerInstanceId, capabilities, now)) return;
+    if (!this.coordinator.registerCapabilities(tabId, frameId, documentId, workerInstanceEpoch, workerInstanceId, capabilities, now)) return;
     await this.drive(tabId, now);
   }
 

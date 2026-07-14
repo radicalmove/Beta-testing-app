@@ -15,12 +15,13 @@ const BUILD_DIAGNOSTICS = {
   buildCommit: typeof __BUILD_COMMIT__ === "string" ? __BUILD_COMMIT__ : "0000000000000000000000000000000000000000",
 };
 const OWNER = Symbol.for("moodle-course-review.content-owner");
+const MAX_WORKER_INSTANCE_EPOCH = 2_147_483_647;
 type MarkerRoot = {
   hasAttribute(name: string): boolean;
   setAttribute(name: string, value: string): void;
   removeAttribute(name: string): void;
 };
-type OwnedRoot = MarkerRoot & { [OWNER]?: { cleanup(): void } };
+type OwnedRoot = MarkerRoot & { [OWNER]?: { cleanup(): void; workerInstanceEpoch: number } };
 
 export function sendRuntimeMessage(
   runtime: { sendMessage(message: unknown, callback: (response: any) => void): void },
@@ -75,18 +76,20 @@ export async function bootstrapContentScript(options: {
   moodlePatterns: string[];
   optionalFramePatterns: string[];
   parentUrl?: string;
-  inject: () => void | (() => void);
+  inject: (workerInstanceEpoch: number) => void | (() => void);
 }): Promise<boolean> {
   // Chrome gates static Moodle matches and background registration gates optional
   // frames, so a running content script is already authorized for this URL.
   if (!isConfiguredFrame(options.url, [...options.moodlePatterns, ...options.optionalFramePatterns], [], () => false, options.parentUrl)) return false;
   const root = options.document.documentElement as OwnedRoot;
+  const workerInstanceEpoch = (root[OWNER]?.workerInstanceEpoch ?? 0) + 1;
+  if (workerInstanceEpoch > MAX_WORKER_INSTANCE_EPOCH) return false;
   root[OWNER]?.cleanup();
   if (root.hasAttribute(MARKER) && !root[OWNER]) root.removeAttribute(MARKER);
-  const owner = { cleanup: () => {} };
+  const owner = { cleanup: () => {}, workerInstanceEpoch };
   root[OWNER] = owner;
   root.setAttribute(MARKER, "active");
-  const injectedCleanup = options.inject();
+  const injectedCleanup = options.inject(workerInstanceEpoch);
   let stopped = false;
   owner.cleanup = () => {
     if (stopped) return;
@@ -107,10 +110,10 @@ if (typeof window !== "undefined" && typeof document !== "undefined") {
     moodlePatterns: __MOODLE_PATTERNS__,
     optionalFramePatterns: __OPTIONAL_FRAME_PATTERNS__,
     parentUrl: document.referrer,
-    inject: () => {
+    inject: (workerInstanceEpoch) => {
       document.documentElement.dispatchEvent(new CustomEvent("moodle-review:bootstrap"));
       if (window.top === window) return startCourseReview(window, document, chrome.runtime);
-      return startEmbeddedReview(window, document, chrome.runtime);
+      return startEmbeddedReview(window, document, chrome.runtime, 200, 2_000, workerInstanceEpoch);
     },
   });
 }
@@ -348,7 +351,7 @@ type Runtime = {
   onMessage?: { addListener(listener: RuntimeListener): void; removeListener(listener: RuntimeListener): void };
 };
 
-export function startEmbeddedReview(targetWindow: Window & typeof globalThis, targetDocument: Document, runtime: Runtime, retryDelay = 200, leaseDelay = 2_000): () => void {
+export function startEmbeddedReview(targetWindow: Window & typeof globalThis, targetDocument: Document, runtime: Runtime, retryDelay = 200, leaseDelay = 2_000, workerInstanceEpoch = 1): () => void {
   let stopped = false;
   let activeCleanup: (() => void) | undefined;
   let generation = -1;
@@ -398,7 +401,7 @@ export function startEmbeddedReview(targetWindow: Window & typeof globalThis, ta
       return;
     }
     attempts = 0;
-    sendRuntimeMessage(runtime, { type: "REGISTER_REVIEW_FRAME", worker_instance_id: workerInstanceId, capabilities: measureFrameCapabilities(targetDocument, targetWindow) }, () => undefined);
+    sendRuntimeMessage(runtime, { type: "REGISTER_REVIEW_FRAME", worker_instance_id: workerInstanceId, worker_instance_epoch: workerInstanceEpoch, capabilities: measureFrameCapabilities(targetDocument, targetWindow) }, () => undefined);
     // Unit-test and legacy runtimes have no command channel. Production Chrome
     // always supplies runtime.onMessage and therefore remains coordinator-owned.
     if (!runtime.onMessage) activate(0);

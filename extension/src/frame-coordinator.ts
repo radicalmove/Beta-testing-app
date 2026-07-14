@@ -10,11 +10,13 @@ type FrameRecord = {
   parentFrameId: number;
   url: string;
   documentId: string;
+  workerInstanceEpoch?: number;
   workerInstanceId?: string;
-  workerRegistrationClosed?: boolean;
+  workerAbandoned?: boolean;
   capabilities?: FrameCapabilities;
   stableSince?: number;
 };
+const MAX_WORKER_INSTANCE_EPOCH = 2_147_483_647;
 export type NavigationFrame = { frameId: number; parentFrameId: number; url: string; documentId: string };
 export type ChildOwnerReport = { childFrameId: number; visible: boolean; area: number; origin: string };
 type StoredOwnerReport = ChildOwnerReport & { parentFrameId: number };
@@ -67,8 +69,9 @@ export class FrameCoordinator {
       parentFrameId,
       url,
       documentId,
+      workerInstanceEpoch: sameDocument ? previous.workerInstanceEpoch : undefined,
       workerInstanceId: sameDocument ? previous.workerInstanceId : undefined,
-      workerRegistrationClosed: sameDocument ? previous.workerRegistrationClosed : undefined,
+      workerAbandoned: sameDocument ? previous.workerAbandoned : undefined,
       capabilities: sameDocument ? previous.capabilities : undefined,
       stableSince: sameDocument ? previous.stableSince : undefined,
     });
@@ -84,16 +87,25 @@ export class FrameCoordinator {
     for (const childFrameId of [...tab.ownerReports.keys()]) if (!authoritativeIds.has(childFrameId)) tab.ownerReports.delete(childFrameId);
   }
 
-  registerCapabilities(tabId: number, frameId: number, documentId: string, workerInstanceId: string, capabilities: FrameCapabilities, now: number): boolean {
+  registerCapabilities(tabId: number, frameId: number, documentId: string, workerInstanceEpoch: number, workerInstanceId: string, capabilities: FrameCapabilities, now: number): boolean {
     const frame = this.requireFrame(tabId, frameId);
-    if (frame.documentId !== documentId || frame.workerRegistrationClosed
-      || (frame.workerInstanceId !== undefined && frame.workerInstanceId !== workerInstanceId)) return false;
+    if (frame.documentId !== documentId || !Number.isSafeInteger(workerInstanceEpoch) || workerInstanceEpoch < 1 || workerInstanceEpoch > MAX_WORKER_INSTANCE_EPOCH) return false;
+    const currentEpoch = frame.workerInstanceEpoch;
+    if (currentEpoch !== undefined && (workerInstanceEpoch < currentEpoch
+      || (workerInstanceEpoch === currentEpoch && (frame.workerInstanceId !== workerInstanceId || frame.workerAbandoned)))) return false;
+    if (currentEpoch !== undefined && workerInstanceEpoch > currentEpoch) {
+      this.clearFrameState(this.requireTab(tabId), frameId);
+      frame.capabilities = undefined;
+      frame.stableSince = undefined;
+      frame.workerAbandoned = false;
+    }
     const same = frame.capabilities
       && frame.workerInstanceId === workerInstanceId
       && frame.capabilities.contentBearing === capabilities.contentBearing
       && frame.capabilities.wrapper === capabilities.wrapper
       && frame.capabilities.visible === capabilities.visible
       && frame.capabilities.area === capabilities.area;
+    frame.workerInstanceEpoch = workerInstanceEpoch;
     frame.workerInstanceId = workerInstanceId;
     frame.capabilities = { ...capabilities };
     if (!same) frame.stableSince = now;
@@ -125,8 +137,7 @@ export class FrameCoordinator {
     const handover = tab.handover;
     if (!frame || frame.workerInstanceId !== workerInstanceId || !handover
       || handover.from.frameId !== frameId || handover.from.workerInstanceId !== workerInstanceId || handover.generation !== generation) return false;
-    frame.workerInstanceId = undefined;
-    frame.workerRegistrationClosed = true;
+    frame.workerAbandoned = true;
     frame.capabilities = undefined;
     frame.stableSince = undefined;
     if (tab.active?.frameId === frameId && tab.active.workerInstanceId === workerInstanceId) tab.active = undefined;

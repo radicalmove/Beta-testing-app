@@ -372,7 +372,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
           || navigation.some((frame) => typeof frame.documentId !== "string" || frame.documentId.length === 0)) throw new Error("Review frame navigation mismatch");
         const authoritativeNavigation = navigation as Array<{ frameId: number; parentFrameId: number; url: string; documentId: string }>;
         const now = Date.now();
-        await frameCoordination.registerFrame(sender.tab.id, sender.frameId, sender.documentId!, control.worker_instance_id, control.capabilities, authoritativeNavigation, now);
+        await frameCoordination.registerFrame(sender.tab.id, sender.frameId, sender.documentId!, control.worker_instance_epoch, control.worker_instance_id, control.capabilities, authoritativeNavigation, now);
         setTimeout(() => void frameCoordination.reevaluate(sender.tab!.id!, Date.now()), 260);
         return { registered: true };
       }

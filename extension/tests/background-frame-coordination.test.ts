@@ -23,7 +23,7 @@ test("uses authoritative navigation parentage and activates the deepest frame", 
     send: async (_tabId, frameId, message) => { sent.push({ frameId, message }); return acknowledgement(message); },
   }, 0);
   runtime.bindCourse(1, "course-a");
-  await runtime.registerFrame(1, 7, "document-7", workerA, content, frames, 0);
+  await runtime.registerFrame(1, 7, "document-7", 1, workerA, content, frames, 0);
   assert.deepEqual(sent, [{ frameId: 7, message: { type: "ACTIVATE_REVIEW_FRAME", worker_instance_id: workerA, generation: 1 } }]);
   assert.deepEqual(runtime.snapshot(1).activeFrameIds, [7]);
 });
@@ -34,8 +34,8 @@ test("deactivates and confirms dormancy before activating a replacement", async 
     send: async (_tabId, frameId, message) => { const type = (message as { type: string }).type; sent.push({ frameId, type }); return acknowledgement(message, type === "DEACTIVATE_REVIEW_FRAME"); },
   }, 0);
   runtime.bindCourse(1, "course-a");
-  await runtime.registerFrame(1, 2, "document-2", workerA, content, frames, 0);
-  await runtime.registerFrame(1, 7, "document-7", workerB, { ...content, area: 900_000 }, frames, 1);
+  await runtime.registerFrame(1, 2, "document-2", 1, workerA, content, frames, 0);
+  await runtime.registerFrame(1, 7, "document-7", 1, workerB, { ...content, area: 900_000 }, frames, 1);
   assert.deepEqual(sent, [
     { frameId: 2, type: "ACTIVATE_REVIEW_FRAME" },
     { frameId: 2, type: "DEACTIVATE_REVIEW_FRAME" },
@@ -55,9 +55,9 @@ test("abandons an unreachable old owner and activates the replacement", async ()
     },
   }, 0);
   runtime.bindCourse(1, "course-a");
-  await runtime.registerFrame(1, 2, "document-2", workerA, content, frames, 0);
+  await runtime.registerFrame(1, 2, "document-2", 1, workerA, content, frames, 0);
   loseDeactivate = true;
-  await runtime.registerFrame(1, 7, "document-7", workerB, { ...content, area: 900_000 }, frames, 1);
+  await runtime.registerFrame(1, 7, "document-7", 1, workerB, { ...content, area: 900_000 }, frames, 1);
   assert.deepEqual(sent.map((entry) => entry.type), ["ACTIVATE_REVIEW_FRAME", "DEACTIVATE_REVIEW_FRAME", "ACTIVATE_REVIEW_FRAME"]);
   assert.deepEqual(runtime.snapshot(1).activeFrameIds, [7]);
 });
@@ -66,7 +66,7 @@ test("activates only after the election stability window", async () => {
   const sent: unknown[] = [];
   const runtime = new FrameCoordinatorRuntime({ send: async (_tabId, _frameId, message) => { sent.push(message); return acknowledgement(message); } }, 250);
   runtime.bindCourse(1, "course-a");
-  await runtime.registerFrame(1, 7, "document-7", workerA, content, frames, 1000);
+  await runtime.registerFrame(1, 7, "document-7", 1, workerA, content, frames, 1000);
   assert.deepEqual(sent, []);
   await runtime.reevaluate(1, 1249);
   assert.deepEqual(sent, []);
@@ -94,8 +94,8 @@ test("times out a hanging deactivation, ignores its late acknowledgement, and co
     clearTimeout: () => undefined,
   }, 0, 50);
   runtime.bindCourse(1, "course-a");
-  await runtime.registerFrame(1, 2, "document-2", workerA, content, frames, 0);
-  const replacement = runtime.registerFrame(1, 7, "document-7", workerB, { ...content, area: 900_000 }, frames, 1);
+  await runtime.registerFrame(1, 2, "document-2", 1, workerA, content, frames, 0);
+  const replacement = runtime.registerFrame(1, 7, "document-7", 1, workerB, { ...content, area: 900_000 }, frames, 1);
   await Promise.resolve();
   fireTimeout!();
   await replacement;
@@ -124,10 +124,10 @@ test("an abandoned worker instance cannot reclaim ownership through a stale leas
     },
   }, 0);
   runtime.bindCourse(1, "course-a");
-  await runtime.registerFrame(1, 2, "document-2", workerA, content, siblingFrames, 0);
+  await runtime.registerFrame(1, 2, "document-2", 1, workerA, content, siblingFrames, 0);
   failDeactivation = true;
-  await runtime.registerFrame(1, 7, "document-7", workerB, { ...content, area: 900_000 }, siblingFrames, 1);
-  await runtime.registerFrame(1, 2, "document-2", workerA, { ...content, area: 2_000_000 }, siblingFrames, 2);
+  await runtime.registerFrame(1, 7, "document-7", 1, workerB, { ...content, area: 900_000 }, siblingFrames, 1);
+  await runtime.registerFrame(1, 2, "document-2", 1, workerA, { ...content, area: 2_000_000 }, siblingFrames, 2);
 
   assert.deepEqual(runtime.snapshot(1).activeFrameIds, [7]);
   assert.equal(sent.length, 3);
@@ -138,7 +138,7 @@ test("rejects activation acknowledgements bound to another worker instance", asy
     send: async (_tabId, _frameId, message) => ({ ...acknowledgement(message), worker_instance_id: workerB }),
   }, 0);
   runtime.bindCourse(1, "course-a");
-  await runtime.registerFrame(1, 7, "document-7", workerA, content, frames, 0);
+  await runtime.registerFrame(1, 7, "document-7", 1, workerA, content, frames, 0);
   assert.deepEqual(runtime.snapshot(1).activeFrameIds, []);
 });
 
@@ -150,10 +150,9 @@ test("notifies worker readiness after replacement and after runtime reconstructi
   }, 0);
   const first = createRuntime();
   first.bindCourse(1, "course-a");
-  await first.registerFrame(1, 7, "document-7", workerA, content, frames, 0);
-  const replacementFrames = frames.map((frame) => frame.frameId === 7 ? { ...frame, documentId: "document-7b" } : frame);
-  await first.registerFrame(1, 7, "document-7b", workerB, content, replacementFrames, 1);
-  await first.registerFrame(1, 7, "document-7", workerA, content, replacementFrames, 2);
+  await first.registerFrame(1, 7, "document-7", 1, workerA, content, frames, 0);
+  await first.registerFrame(1, 7, "document-7", 2, workerB, content, frames, 1);
+  await first.registerFrame(1, 7, "document-7", 1, workerA, content, frames, 2);
   assert.deepEqual(ready.map(({ workerInstanceId, generation, replaced }) => ({ workerInstanceId, generation, replaced })), [
     { workerInstanceId: workerA, generation: 1, replaced: false },
     { workerInstanceId: workerB, generation: 2, replaced: true },
@@ -161,6 +160,6 @@ test("notifies worker readiness after replacement and after runtime reconstructi
 
   const reconstructed = createRuntime();
   reconstructed.bindCourse(1, "course-a");
-  await reconstructed.registerFrame(1, 7, "document-7b", workerB, content, replacementFrames, 3);
+  await reconstructed.registerFrame(1, 7, "document-7", 2, workerB, content, frames, 3);
   assert.deepEqual(ready.at(-1), { tabId: 1, frameId: 7, workerInstanceId: workerB, generation: 1, replaced: false });
 });
