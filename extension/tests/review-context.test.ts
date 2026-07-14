@@ -5,6 +5,7 @@ import { ReviewContextCache, validateContextMessage } from "../src/review-contex
 const top = { id: "extension", frameId: 0, tab: { id: 4 }, url: "https://learn.example/mod/scorm/player.php?a=9&cmid=22" };
 const frame = { id: "extension", frameId: 3, tab: { id: 4 }, url: "https://rise.example/activity#/lesson/2" };
 const context = { id: "123e4567-e89b-12d3-a456-426614174000", title: "Law", course_url: "https://learn.example/course/view.php?id=7", parent_activity_url: top.url };
+const workerInstanceId = "223e4567-e89b-42d3-a456-426614174000";
 
 test("successful top resolution registers the minimum frame review context without a token", () => {
   const cache = new ReviewContextCache(60_000, () => 100); cache.register(top, context);
@@ -35,11 +36,14 @@ test("context control messages have strict empty schemas", () => {
 
 test("frame coordination messages have strict typed schemas", () => {
   const capabilities = { contentBearing: true, wrapper: false, visible: true, area: 400000 };
-  assert.deepEqual(validateContextMessage({ type: "REGISTER_REVIEW_FRAME", capabilities }), { type: "REGISTER_REVIEW_FRAME", capabilities });
+  assert.deepEqual(validateContextMessage({ type: "REGISTER_REVIEW_FRAME", worker_instance_id: workerInstanceId, capabilities }), { type: "REGISTER_REVIEW_FRAME", worker_instance_id: workerInstanceId, capabilities });
   assert.deepEqual(validateContextMessage({ type: "RENEW_REVIEW_FRAME_LEASE", generation: 4 }), { type: "RENEW_REVIEW_FRAME_LEASE", generation: 4 });
   assert.deepEqual(validateContextMessage({ type: "ACK_REVIEW_FRAME_DORMANT", generation: 5 }), { type: "ACK_REVIEW_FRAME_DORMANT", generation: 5 });
   for (const invalid of [
-    { type: "REGISTER_REVIEW_FRAME", capabilities: { ...capabilities, area: -1 } },
+    { type: "REGISTER_REVIEW_FRAME", capabilities },
+    { type: "REGISTER_REVIEW_FRAME", worker_instance_id: "worker-1", capabilities },
+    { type: "REGISTER_REVIEW_FRAME", worker_instance_id: workerInstanceId, capabilities, generation: 1 },
+    { type: "REGISTER_REVIEW_FRAME", worker_instance_id: workerInstanceId, capabilities: { ...capabilities, area: -1 } },
     { type: "RENEW_REVIEW_FRAME_LEASE", generation: "4" },
     { type: "ACK_REVIEW_FRAME_DORMANT", generation: 5, frameId: 2 },
   ]) assert.throws(() => validateContextMessage(invalid));

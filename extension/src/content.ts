@@ -355,6 +355,7 @@ export function startEmbeddedReview(targetWindow: Window & typeof globalThis, ta
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let leaseTimer: ReturnType<typeof globalThis.setInterval> | undefined;
   let attempts = 0;
+  const workerInstanceId = targetWindow.crypto?.randomUUID?.() ?? globalThis.crypto.randomUUID();
   const scheduleRetry = typeof targetWindow.setTimeout === "function" ? targetWindow.setTimeout.bind(targetWindow) : globalThis.setTimeout;
   const cancelRetry = typeof targetWindow.clearTimeout === "function" ? targetWindow.clearTimeout.bind(targetWindow) : globalThis.clearTimeout;
   const scheduleLease: (handler: () => void, delay: number) => ReturnType<typeof globalThis.setInterval> = typeof targetWindow.setInterval === "function"
@@ -363,21 +364,28 @@ export function startEmbeddedReview(targetWindow: Window & typeof globalThis, ta
   const cancelLease: (timer: ReturnType<typeof globalThis.setInterval>) => void = typeof targetWindow.clearInterval === "function"
     ? ((timer: ReturnType<typeof globalThis.setInterval>) => targetWindow.clearInterval(timer as unknown as number))
     : ((timer) => globalThis.clearInterval(timer));
-  const activate = (nextGeneration: number) => {
-    if (stopped || nextGeneration < generation) return;
-    if (nextGeneration === generation && activeCleanup) return;
-    activeCleanup?.();
+  const activate = (nextGeneration: number): boolean => {
+    if (stopped) return false;
     generation = nextGeneration;
+    if (activeCleanup) return true;
     activeCleanup = startActiveEmbeddedReview(targetWindow, targetDocument, runtime, retryDelay);
+    return true;
   };
   const deactivate = () => { activeCleanup?.(); activeCleanup = undefined; };
   const onCommand: RuntimeListener = (message, _sender, sendResponse) => {
-    const command = message as { type?: unknown; generation?: unknown };
+    const command = message as { type?: unknown; worker_instance_id?: unknown; generation?: unknown };
+    if (["ACTIVATE_REVIEW_FRAME", "DEACTIVATE_REVIEW_FRAME"].includes(command.type as string)
+      && Number.isInteger(command.generation) && command.worker_instance_id !== workerInstanceId) {
+      sendResponse({ ok: false, worker_instance_id: workerInstanceId, generation: command.generation }); return;
+    }
     if (command.type === "ACTIVATE_REVIEW_FRAME" && Number.isInteger(command.generation)) {
-      activate(command.generation as number); sendResponse({ ok: true }); return;
+      const accepted = activate(command.generation as number);
+      sendResponse({ ok: accepted, worker_instance_id: workerInstanceId, generation: command.generation }); return;
     }
     if (command.type === "DEACTIVATE_REVIEW_FRAME" && Number.isInteger(command.generation)) {
-      generation = Math.max(generation, command.generation as number); deactivate(); sendResponse({ ok: true, dormant: true }); return;
+      const nextGeneration = command.generation as number;
+      if (nextGeneration < generation) { sendResponse({ ok: false, worker_instance_id: workerInstanceId, generation: nextGeneration }); return; }
+      generation = nextGeneration; deactivate(); sendResponse({ ok: true, dormant: true, worker_instance_id: workerInstanceId, generation: nextGeneration }); return;
     }
   };
   runtime.onMessage?.addListener(onCommand);
@@ -390,7 +398,7 @@ export function startEmbeddedReview(targetWindow: Window & typeof globalThis, ta
       return;
     }
     attempts = 0;
-    sendRuntimeMessage(runtime, { type: "REGISTER_REVIEW_FRAME", capabilities: measureFrameCapabilities(targetDocument, targetWindow) }, () => undefined);
+    sendRuntimeMessage(runtime, { type: "REGISTER_REVIEW_FRAME", worker_instance_id: workerInstanceId, capabilities: measureFrameCapabilities(targetDocument, targetWindow) }, () => undefined);
     // Unit-test and legacy runtimes have no command channel. Production Chrome
     // always supplies runtime.onMessage and therefore remains coordinator-owned.
     if (!runtime.onMessage) activate(0);

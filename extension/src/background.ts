@@ -20,9 +20,18 @@ const frameCoordination = new FrameCoordinatorRuntime({
   send: (tabId, frameId, message) => new Promise((resolve, reject) => {
     chrome.tabs.sendMessage(tabId, message, { frameId }, (response: unknown) => {
       const error = chrome.runtime.lastError;
-      if (error) reject(new Error(error.message)); else resolve(response as { ok?: boolean; dormant?: boolean } | undefined);
+      if (error) reject(new Error(error.message)); else resolve(response as { ok?: boolean; dormant?: boolean; worker_instance_id?: string; generation?: number } | undefined);
     });
   }),
+  onWorkerReady: ({ tabId, frameId, workerInstanceId, generation, replaced }) => {
+    chrome.tabs.sendMessage(tabId, {
+      type: "REVIEW_WORKER_READY",
+      frame_id: frameId,
+      worker_instance_id: workerInstanceId,
+      generation,
+      replaced,
+    }, { frameId: 0 }, () => void chrome.runtime.lastError);
+  },
 });
 const screenshotCapabilities = new ScreenshotCapabilities(chrome.storage.session);
 const pendingAccess = new PendingAccessStore(chrome.storage.local);
@@ -361,7 +370,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
         const navigation = await chrome.webNavigation.getAllFrames({ tabId: sender.tab.id }) as Array<{ frameId: number; parentFrameId: number; url: string }> | null;
         if (!navigation?.some((frame) => frame.frameId === sender.frameId && frame.url === sender.url)) throw new Error("Review frame navigation mismatch");
         const now = Date.now();
-        await frameCoordination.registerFrame(sender.tab.id, sender.frameId, control.capabilities, navigation, now);
+        await frameCoordination.registerFrame(sender.tab.id, sender.frameId, control.worker_instance_id, control.capabilities, navigation, now);
         setTimeout(() => void frameCoordination.reevaluate(sender.tab!.id!, Date.now()), 260);
         return { registered: true };
       }

@@ -9,27 +9,34 @@ type FrameRecord = {
   frameId: number;
   parentFrameId: number;
   url: string;
+  workerInstanceId?: string;
+  abandonedWorkerInstanceId?: string;
   capabilities?: FrameCapabilities;
   stableSince?: number;
 };
+export type NavigationFrame = { frameId: number; parentFrameId: number; url: string };
 export type ChildOwnerReport = { childFrameId: number; visible: boolean; area: number; origin: string };
 type StoredOwnerReport = ChildOwnerReport & { parentFrameId: number };
 
-type Handover = { from: number; to: number; generation: number; dormant: boolean };
+type WorkerOwner = { frameId: number; workerInstanceId: string; generation: number };
+type Handover = { from: WorkerOwner; to: Omit<WorkerOwner, "generation">; generation: number; dormant: boolean };
 type TabState = {
   courseId: string;
   fallbackFrameId: number;
   frames: Map<number, FrameRecord>;
   ownerReports: Map<number, StoredOwnerReport>;
-  active?: { frameId: number; generation: number };
+  active?: WorkerOwner;
   handover?: Handover;
   generation: number;
 };
 
 export type Election = {
   candidateFrameId?: number;
+  candidateWorkerInstanceId?: string;
   deactivateFrameId?: number;
+  deactivateWorkerInstanceId?: string;
   activateFrameId?: number;
+  activateWorkerInstanceId?: string;
   generation?: number;
 };
 
@@ -52,16 +59,45 @@ export class FrameCoordinator {
   registerNavigation(tabId: number, frameId: number, parentFrameId: number, url: string): void {
     const tab = this.requireTab(tabId);
     const previous = tab.frames.get(frameId);
-    tab.frames.set(frameId, { frameId, parentFrameId, url, capabilities: previous?.capabilities, stableSince: previous?.stableSince });
+    if (previous && (previous.parentFrameId !== parentFrameId || previous.url !== url)) this.clearFrameState(tab, frameId);
+    tab.frames.set(frameId, {
+      frameId,
+      parentFrameId,
+      url,
+      workerInstanceId: previous?.parentFrameId === parentFrameId && previous.url === url ? previous.workerInstanceId : undefined,
+      abandonedWorkerInstanceId: previous?.parentFrameId === parentFrameId && previous.url === url ? previous.abandonedWorkerInstanceId : undefined,
+      capabilities: previous?.parentFrameId === parentFrameId && previous.url === url ? previous.capabilities : undefined,
+      stableSince: previous?.parentFrameId === parentFrameId && previous.url === url ? previous.stableSince : undefined,
+    });
   }
 
-  registerCapabilities(tabId: number, frameId: number, capabilities: FrameCapabilities, now: number): void {
+  replaceNavigation(tabId: number, navigation: NavigationFrame[]): void {
+    const tab = this.requireTab(tabId);
+    const authoritativeIds = new Set(navigation.map((frame) => frame.frameId));
+    for (const frameId of [...tab.frames.keys()]) {
+      if (!authoritativeIds.has(frameId) && frameId !== tab.fallbackFrameId) this.removeFrame(tabId, frameId);
+    }
+    for (const frame of navigation) this.registerNavigation(tabId, frame.frameId, frame.parentFrameId, frame.url);
+    for (const childFrameId of [...tab.ownerReports.keys()]) if (!authoritativeIds.has(childFrameId)) tab.ownerReports.delete(childFrameId);
+  }
+
+  registerCapabilities(tabId: number, frameId: number, workerInstanceId: string, capabilities: FrameCapabilities, now: number): void {
     const frame = this.requireFrame(tabId, frameId);
+    const tab = this.requireTab(tabId);
+    if (frame.abandonedWorkerInstanceId === workerInstanceId) return;
+    frame.abandonedWorkerInstanceId = undefined;
+    if (frame.workerInstanceId !== undefined && frame.workerInstanceId !== workerInstanceId) {
+      this.clearFrameState(tab, frameId);
+      frame.capabilities = undefined;
+      frame.stableSince = undefined;
+    }
     const same = frame.capabilities
+      && frame.workerInstanceId === workerInstanceId
       && frame.capabilities.contentBearing === capabilities.contentBearing
       && frame.capabilities.wrapper === capabilities.wrapper
       && frame.capabilities.visible === capabilities.visible
       && frame.capabilities.area === capabilities.area;
+    frame.workerInstanceId = workerInstanceId;
     frame.capabilities = { ...capabilities };
     if (!same) frame.stableSince = now;
   }
@@ -81,41 +117,76 @@ export class FrameCoordinator {
     tab.frames.delete(frameId);
     tab.ownerReports.delete(frameId);
     if (tab.active?.frameId === frameId) tab.active = undefined;
-    if (tab.handover?.from === frameId) tab.handover.dormant = true;
-    if (tab.handover?.to === frameId) tab.handover = undefined;
+    if (tab.handover?.from.frameId === frameId) tab.handover.dormant = true;
+    if (tab.handover?.to.frameId === frameId) tab.handover = undefined;
+  }
+
+  abandonWorker(tabId: number, frameId: number, workerInstanceId: string, generation: number): boolean {
+    const tab = this.requireTab(tabId);
+    const frame = tab.frames.get(frameId);
+    const handover = tab.handover;
+    if (!frame || frame.workerInstanceId !== workerInstanceId || !handover
+      || handover.from.frameId !== frameId || handover.from.workerInstanceId !== workerInstanceId || handover.generation !== generation) return false;
+    frame.workerInstanceId = undefined;
+    frame.abandonedWorkerInstanceId = workerInstanceId;
+    frame.capabilities = undefined;
+    frame.stableSince = undefined;
+    if (tab.active?.frameId === frameId && tab.active.workerInstanceId === workerInstanceId) tab.active = undefined;
+    handover.dormant = true;
+    return true;
   }
 
   advanceElection(tabId: number, now: number): Election {
     const tab = this.requireTab(tabId);
     const winner = this.winner(tab, now);
     if (winner === undefined) return {};
+    const winnerFrame = tab.frames.get(winner)!;
+    const winnerInstance = winnerFrame.workerInstanceId!;
 
     if (tab.handover) {
-      if (!tab.handover.dormant) return { candidateFrameId: tab.handover.to, deactivateFrameId: tab.handover.from, generation: tab.handover.generation };
+      if (!tab.handover.dormant) return {
+        candidateFrameId: tab.handover.to.frameId,
+        candidateWorkerInstanceId: tab.handover.to.workerInstanceId,
+        deactivateFrameId: tab.handover.from.frameId,
+        deactivateWorkerInstanceId: tab.handover.from.workerInstanceId,
+        generation: tab.handover.generation,
+      };
       const handover = tab.handover;
       tab.handover = undefined;
-      return { candidateFrameId: handover.to, activateFrameId: handover.to, generation: handover.generation };
+      return {
+        candidateFrameId: handover.to.frameId,
+        candidateWorkerInstanceId: handover.to.workerInstanceId,
+        activateFrameId: handover.to.frameId,
+        activateWorkerInstanceId: handover.to.workerInstanceId,
+        generation: handover.generation,
+      };
     }
 
-    if (tab.active?.frameId === winner) return { candidateFrameId: winner, generation: tab.active.generation };
+    if (tab.active?.frameId === winner && tab.active.workerInstanceId === winnerInstance) return { candidateFrameId: winner, candidateWorkerInstanceId: winnerInstance, generation: tab.active.generation };
     const generation = ++tab.generation;
     if (tab.active) {
-      tab.handover = { from: tab.active.frameId, to: winner, generation, dormant: false };
-      return { candidateFrameId: winner, deactivateFrameId: tab.active.frameId, generation };
+      tab.handover = { from: tab.active, to: { frameId: winner, workerInstanceId: winnerInstance }, generation, dormant: false };
+      return {
+        candidateFrameId: winner,
+        candidateWorkerInstanceId: winnerInstance,
+        deactivateFrameId: tab.active.frameId,
+        deactivateWorkerInstanceId: tab.active.workerInstanceId,
+        generation,
+      };
     }
-    return { candidateFrameId: winner, activateFrameId: winner, generation };
+    return { candidateFrameId: winner, candidateWorkerInstanceId: winnerInstance, activateFrameId: winner, activateWorkerInstanceId: winnerInstance, generation };
   }
 
-  confirmActivated(tabId: number, frameId: number, generation: number): boolean {
+  confirmActivated(tabId: number, frameId: number, workerInstanceId: string, generation: number): boolean {
     const tab = this.requireTab(tabId);
-    if (generation !== tab.generation) return false;
-    tab.active = { frameId, generation };
+    if (generation !== tab.generation || tab.frames.get(frameId)?.workerInstanceId !== workerInstanceId) return false;
+    tab.active = { frameId, workerInstanceId, generation };
     return true;
   }
 
-  acknowledgeDormant(tabId: number, frameId: number, generation: number): boolean {
+  acknowledgeDormant(tabId: number, frameId: number, workerInstanceId: string, generation: number): boolean {
     const tab = this.requireTab(tabId);
-    if (!tab.handover || tab.handover.from !== frameId || tab.handover.generation !== generation) return false;
+    if (!tab.handover || tab.handover.from.frameId !== frameId || tab.handover.from.workerInstanceId !== workerInstanceId || tab.handover.generation !== generation) return false;
     tab.handover.dormant = true;
     tab.active = undefined;
     return true;
@@ -129,7 +200,7 @@ export class FrameCoordinator {
   private winner(tab: TabState, now: number): number | undefined {
     const eligible = [...tab.frames.values()].filter((frame) => {
       const capability = frame.capabilities;
-      return capability?.contentBearing && !capability.wrapper && capability.visible && capability.area > 0
+      return frame.workerInstanceId !== undefined && capability?.contentBearing && !capability.wrapper && capability.visible && capability.area > 0
         && this.ownerChainVisible(tab, frame)
         && frame.stableSince !== undefined && now - frame.stableSince >= this.stabilityMs;
     });
@@ -169,6 +240,11 @@ export class FrameCoordinator {
     const tab = this.tabs.get(tabId);
     if (!tab) throw new Error("Course is not bound to tab");
     return tab;
+  }
+
+  private clearFrameState(tab: TabState, frameId: number): void {
+    if (tab.active?.frameId === frameId) tab.active = undefined;
+    if (tab.handover?.from.frameId === frameId || tab.handover?.to.frameId === frameId) tab.handover = undefined;
   }
 
   private requireFrame(tabId: number, frameId: number): FrameRecord {

@@ -156,39 +156,51 @@ test("embedded review stays dormant until the coordinator activates it", async (
   Object.defineProperty(window, "top", { value: parent }); Object.defineProperty(window, "parent", { value: parent });
   window.document.title = "Lesson 1"; window.document.body.innerHTML = "<main><h1>Lesson 1</h1><p>Meaningful Rise lesson content for review.</p></main>";
   let listener: ((message: any, sender: unknown, respond: (response: unknown) => void) => void) | undefined;
+  let workerInstanceId = "";
   const runtime = {
     onMessage: { addListener: (candidate: typeof listener) => { listener = candidate; }, removeListener: (candidate: typeof listener) => { if (listener === candidate) listener = undefined; } },
     sendMessage: (message: any, callback: (response: any) => void) => {
       if (message.type === "GET_REVIEW_CONTEXT") callback({ ok: true, data: { course_id: "123e4567-e89b-12d3-a456-426614174000", course_title: "Law", parent_activity_url: "https://learn.example/mod/scorm/player.php?cmid=22" } });
-      else callback({ ok: true, data: {} });
+      else { if (message.type === "REGISTER_REVIEW_FRAME") workerInstanceId = message.worker_instance_id; callback({ ok: true, data: {} }); }
     },
   };
   const cleanup = startEmbeddedReview(window as any, window.document as any, runtime as any);
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(window.document.querySelector("#moodle-course-review-overlay"), null);
-  listener!({ type: "ACTIVATE_REVIEW_FRAME", generation: 1 }, {}, () => undefined);
+  listener!({ type: "ACTIVATE_REVIEW_FRAME", worker_instance_id: "223e4567-e89b-42d3-a456-426614174000", generation: 1 }, {}, () => undefined);
   await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(window.document.querySelector("#moodle-course-review-overlay"), null);
+  let activationResponse: unknown;
+  listener!({ type: "ACTIVATE_REVIEW_FRAME", worker_instance_id: workerInstanceId, generation: 1 }, {}, (response) => { activationResponse = response; });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(activationResponse, { ok: true, worker_instance_id: workerInstanceId, generation: 1 });
   const activeHost = window.document.querySelector("#moodle-course-review-overlay") as unknown as HTMLElement;
   assert.ok(activeHost);
   assert.notEqual(activeHost.style.getPropertyValue("display"), "none", "the elected Rise frame must own a visible controller even without viewport bridge messages");
+  let reconstructionResponse: unknown;
+  listener!({ type: "ACTIVATE_REVIEW_FRAME", worker_instance_id: workerInstanceId, generation: 0 }, {}, (response) => { reconstructionResponse = response; });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(reconstructionResponse, { ok: true, worker_instance_id: workerInstanceId, generation: 0 });
   cleanup();
 });
 
 test("embedded review re-registers after a background worker restart interval", async () => {
   const window = new Window({ url: "https://rise.example/activity#/lesson/1" });
   window.document.body.innerHTML = "<main><h1>Lesson</h1><p>Meaningful Rise lesson content for review.</p></main>";
-  let contextRequests = 0; let registrations = 0;
+  let contextRequests = 0; const registrations: any[] = [];
   const runtime = {
     onMessage: { addListener: () => undefined, removeListener: () => undefined },
     sendMessage: (message: any, callback: (response: any) => void) => {
       if (message.type === "GET_REVIEW_CONTEXT") { contextRequests += 1; callback({ ok: true, data: { course_id: "123e4567-e89b-12d3-a456-426614174000", course_title: "Law", parent_activity_url: "https://learn.example/mod/scorm/player.php?cmid=22" } }); }
-      else { if (message.type === "REGISTER_REVIEW_FRAME") registrations += 1; callback({ ok: true, data: {} }); }
+      else { if (message.type === "REGISTER_REVIEW_FRAME") registrations.push(message); callback({ ok: true, data: {} }); }
     },
   };
   const cleanup = startEmbeddedReview(window as any, window.document as any, runtime as any, 0, 5);
   await new Promise((resolve) => setTimeout(resolve, 18));
   assert.ok(contextRequests >= 2);
-  assert.ok(registrations >= 2);
+  assert.ok(registrations.length >= 2);
+  assert.match(registrations[0].worker_instance_id, /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+  assert.equal(new Set(registrations.map((message) => message.worker_instance_id)).size, 1);
   cleanup();
   const stoppedAt = contextRequests;
   await new Promise((resolve) => setTimeout(resolve, 10));
