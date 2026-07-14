@@ -66,3 +66,9 @@ test("activates only after the election stability window", async () => {
   await runtime.reevaluate(1, 1250);
   assert.equal((sent[0] as { type: string }).type, "ACTIVATE_REVIEW_FRAME");
 });
+
+test("status and delayed reevaluation are harmless before a tab is bound", async () => {
+  const runtime = new FrameCoordinatorRuntime({ send: async () => ({ ok: true }) }, 250);
+  assert.deepEqual(runtime.snapshot(99), { activeFrameIds: [], generation: 0 });
+  await assert.doesNotReject(() => runtime.reevaluate(99, 1250));
+});

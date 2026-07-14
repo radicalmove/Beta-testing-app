@@ -388,8 +388,9 @@ test("ready embedded activity hides the duplicate parent overlay", async () => {
 
 test("active embedded activity hides the parent overlay even through an accessible SCORM wrapper", async () => {
   const window = new Window({ url: "https://moodle.example.invalid/mod/scorm/player.php?id=22" });
+  const wrapper = new Window({ url: "https://moodle.example.invalid/mod/scorm/content" });
   window.document.body.innerHTML = '<h1>SCORM activity</h1><iframe id="wrapper"></iframe>';
-  Object.defineProperty(window.document.querySelector("#wrapper")!, "contentDocument", { value: window.document });
+  Object.defineProperty(window.document.querySelector("#wrapper")!, "contentDocument", { value: wrapper.document });
   const runtime = { sendMessage: (message: any, callback: (response: any) => void) => {
     if (message.type === "RESOLVE_COURSE") callback({ ok: true, data: { id: "123e4567-e89b-12d3-a456-426614174000" } });
     else if (message.type === "GET_REVIEW_FRAME_STATUS") callback({ ok: true, data: { active_embedded_count: 1 } });
@@ -403,17 +404,35 @@ test("active embedded activity hides the parent overlay even through an accessib
 
 test("late SCORM ownership still hides the duplicate Moodle controller", async () => {
   const window = new Window({ url: "https://moodle.example.invalid/mod/scorm/player.php?id=22" });
+  const wrapper = new Window({ url: "https://moodle.example.invalid/mod/scorm/content" });
   window.document.body.innerHTML = '<h1>SCORM activity</h1><iframe id="wrapper"></iframe>';
-  Object.defineProperty(window.document.querySelector("#wrapper")!, "contentDocument", { value: window.document });
+  Object.defineProperty(window.document.querySelector("#wrapper")!, "contentDocument", { value: wrapper.document });
   let checks = 0;
   const runtime = { sendMessage: (message: any, callback: (response: any) => void) => {
     if (message.type === "RESOLVE_COURSE") callback({ ok: true, data: { id: "123e4567-e89b-12d3-a456-426614174000" } });
-    else if (message.type === "GET_REVIEW_FRAME_STATUS") { checks += 1; callback({ ok: true, data: { active_embedded_count: checks >= 4 ? 1 : 0 } }); }
+    else if (message.type === "GET_REVIEW_FRAME_STATUS") { checks += 1; callback({ ok: true, data: { active_embedded_count: checks >= 2 ? 1 : 0 } }); }
     else callback({ ok: true, data: {} });
   } };
   const cleanup = startCourseReview(window as any, window.document as any, runtime, undefined, 5);
-  await new Promise((resolve) => setTimeout(resolve, 35));
-  assert.ok(checks >= 4);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.ok(checks >= 2);
+  assert.equal((window.document.querySelector("#moodle-course-review-overlay") as unknown as HTMLElement).style.getPropertyValue("display"), "none");
+  cleanup();
+});
+
+test("an accessible descendant SCORM controller directly hides the Moodle controller", async () => {
+  const window = new Window({ url: "https://moodle.example.invalid/mod/scorm/player.php?id=22" });
+  const rise = new Window({ url: "https://moodle.example.invalid/pluginfile.php/rise/index.html" });
+  rise.document.documentElement.innerHTML = '<body><main>Rise lesson content</main><div id="moodle-course-review-overlay"></div></body>';
+  window.document.body.innerHTML = '<h1>SCORM activity</h1><iframe id="rise"></iframe>';
+  Object.defineProperty(window.document.querySelector("#rise")!, "contentDocument", { value: rise.document });
+  const runtime = { sendMessage: (message: any, callback: (response: any) => void) => {
+    if (message.type === "RESOLVE_COURSE") callback({ ok: true, data: { id: "123e4567-e89b-12d3-a456-426614174000" } });
+    else if (message.type === "GET_REVIEW_FRAME_STATUS") callback({ ok: true, data: { active_embedded_count: 0 } });
+    else callback({ ok: true, data: {} });
+  } };
+  const cleanup = startCourseReview(window as any, window.document as any, runtime, undefined, 5);
+  await new Promise((resolve) => setTimeout(resolve, 15));
   assert.equal((window.document.querySelector("#moodle-course-review-overlay") as unknown as HTMLElement).style.getPropertyValue("display"), "none");
   cleanup();
 });

@@ -148,6 +148,16 @@ export function inaccessibleFrameOrigins(targetDocument: Document): string[] {
   return origins;
 }
 
+export function hasDescendantReviewOverlay(targetDocument: Document): boolean {
+  for (const frame of Array.from(targetDocument.querySelectorAll("iframe"))) {
+    let child: Document | null = null;
+    try { child = frame.contentDocument; } catch { /* cross-origin descendants use coordinator status */ }
+    if (!child) continue;
+    if (child.getElementById("moodle-course-review-overlay") || hasDescendantReviewOverlay(child)) return true;
+  }
+  return false;
+}
+
 export function hasInaccessibleFrame(targetDocument: Document): boolean {
   return countInaccessibleFrames(targetDocument) > 0;
 }
@@ -292,6 +302,7 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
     overlay.setPresentationVisible(visible);
   };
   const checkFrames = () => {
+    if (hasDescendantReviewOverlay(targetDocument)) { overlay.hideFrameFallback(); setParentOverlayVisible(false); return; }
     const inaccessible = inaccessibleFrameOrigins(targetDocument);
     sendRuntimeMessage(runtime, { type: "GET_REVIEW_FRAME_STATUS" }, (response) => {
       const status = response?.data as { ready_origins?: unknown; active_embedded_count?: unknown } | undefined;

@@ -21,11 +21,17 @@ export class FrameCoordinatorRuntime {
     await this.drive(tabId, now);
   }
 
-  snapshot(tabId: number): CoordinatorSnapshot { return this.coordinator.snapshot(tabId); }
+  snapshot(tabId: number): CoordinatorSnapshot {
+    try { return this.coordinator.snapshot(tabId); }
+    catch { return { activeFrameIds: [], generation: 0 }; }
+  }
 
   removeTab(tabId: number): void { this.coordinator.removeTab(tabId); }
 
-  async reevaluate(tabId: number, now = Date.now()): Promise<void> { await this.drive(tabId, now); }
+  async reevaluate(tabId: number, now = Date.now()): Promise<void> {
+    try { await this.drive(tabId, now); }
+    catch { /* a navigation or worker restart can remove the tab before the delayed election */ }
+  }
 
   private async drive(tabId: number, now: number): Promise<void> {
     const election = this.coordinator.advanceElection(tabId, now);
