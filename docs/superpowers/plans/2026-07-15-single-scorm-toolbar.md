@@ -103,7 +103,7 @@ Commit: `fix(review): recover SCORM worker election by instance`
 - Modify: `extension/src/overlay/root.ts`
 - Modify: `extension/tests/overlay.test.ts`
 
-- [ ] **Step 1: Write failing renderer and projection tests**
+- [x] **Step 1: Write failing renderer and projection tests**
 
 Specify a renderer API:
 
@@ -117,17 +117,17 @@ export type CommentRenderer = {
 
 Assert it renders/restores only comments matching its exact `page_url`, opens marker threads beside anchors, supports edit/reply/delete/status callbacks, and mounts no `#moodle-course-review-overlay`. Assert the top overlay can set course-list comments without attempting anchor recovery in the Moodle DOM.
 
-- [ ] **Step 2: Verify red**
+- [x] **Step 2: Verify red**
 
 Run: `cd extension && node --test tests/comment-renderer.test.ts tests/overlay.test.ts`
 
 Expected: FAIL because list and renderer behavior are coupled inside `ReviewOverlay.setPageComments`.
 
-- [ ] **Step 3: Move marker/highlight/thread behavior into the renderer**
+- [x] **Step 3: Move marker/highlight/thread behavior into the renderer**
 
 Keep toolbar panels, filters, numbering, authentication, help, and composition in `overlay/root.ts`. Add separate `setCommentList` and local `setRendererComments` calls, while retaining `setPageComments` temporarily as a compatibility wrapper so `content.ts` continues to compile until Task 7. Preserve existing marker CSS classes and thread mutation callbacks so stored anchors remain compatible.
 
-- [ ] **Step 4: Verify green and commit**
+- [x] **Step 4: Verify green and commit**
 
 Run: `cd extension && node --test tests/comment-renderer.test.ts tests/overlay.test.ts && npm run typecheck`
 
