@@ -209,6 +209,7 @@ The initial pilot will include the University of Canterbury Moodle configuration
 - Correct field population and event dispatch.
 - Dynamic-control timeouts.
 - Tracking and rollback of created controls.
+- Restoration of reused starter controls to their original blank state after a mid-import failure.
 - Safe behavior for ambiguous or unsupported markup.
 
 ### Integrated Extension Tests
