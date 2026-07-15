@@ -329,7 +329,7 @@ Commit: `feat(review): navigate course lists into SCORM context`
 - Modify: `tests/test_release_artifacts.py`
 - Modify: `tests/test_deployment_package.py`
 
-- [ ] **Step 1: Add the nested SCORM integration fixture**
+- [x] **Step 1: Add the nested SCORM integration fixture**
 
 Add a nested Moodle -> SCORM wrapper -> Rise fixture test. It must exercise continuously single-toolbar ownership, selection preservation across toolbar focus, marker start/cancel, highlight/marker restoration, contextual thread opening, course-list navigation, late/replaced workers, internal Rise navigation, permission denial/retry/revocation, and stale-worker rejection.
 
@@ -339,11 +339,11 @@ Expected: all browser fixtures, including nested SCORM, pass.
 
 Commit: `test(review): cover nested single-toolbar SCORM flow`
 
-- [ ] **Step 2: Update pilot documentation and bump the patch version**
+- [x] **Step 2: Update pilot documentation and bump the patch version**
 
 Update the existing pilot script with one installed path, extension version verification, Chrome/Edge reload, SCORM permission recovery, expected single-toolbar behavior, and how to clear historical Chrome extension warnings. Bump package, lockfile, and build-config expectation together.
 
-- [ ] **Step 3: Run complete verification**
+- [x] **Step 3: Run complete verification**
 
 Run: `cd extension && npm test && npm run typecheck`
 
@@ -365,11 +365,11 @@ Run: `git diff --check && git status --short`
 
 Expected: only the intended version, pilot-script, and any necessary packaging-test changes remain after the separately committed E2E fixture.
 
-- [ ] **Step 4: Commit the release version**
+- [x] **Step 4: Commit the release version**
 
 Commit: `release(review): prepare single-toolbar SCORM pilot`
 
-- [ ] **Step 5: Build and publish the verified pilot**
+- [x] **Step 5: Build and publish the verified pilot**
 
 Run:
 
@@ -382,7 +382,7 @@ deploy/scripts/release-pilot-extension.sh
 
 Expected: the release script reruns extension unit/type checks, server tests, production build validation, and deployment packaging checks; production manifest contains the exact configured optional patterns; release version, commit, artifact digest, permissions, metadata, and checksums validate. The fresh E2E and release-artifact suite evidence comes from Step 3 rather than being attributed to this command.
 
-- [ ] **Step 6: Verify the installed compatibility path**
+- [x] **Step 6: Verify the installed compatibility path**
 
 Run:
 
