@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { FrameCoordinatorRuntime } from "../src/frame-coordination-runtime.ts";
+import { FrameCoordinatorRuntime, workerReadyMatchesState } from "../src/frame-coordination-runtime.ts";
 import type { FrameCapabilities } from "../src/frame-coordinator.ts";
 
 const content: FrameCapabilities = { contentBearing: true, wrapper: false, visible: true, area: 500_000 };
@@ -250,4 +250,12 @@ test("times out commands deterministically and ignores their stale late acknowle
   resolveAck({ ...command, type: "SCORM_START_MARKER_ACK", ack_type: "SCORM_START_MARKER_ACK", ok: true });
   await Promise.resolve();
   assert.equal(runtime.pendingCommandCount(), 0);
+});
+
+test("top readiness is withheld until initial elected-worker state is bound", () => {
+  const ready = { tabId: 1, frameId: 7, workerInstanceId: workerA, generation: 3, replaced: false };
+  assert.equal(workerReadyMatchesState(ready, undefined), false);
+  assert.equal(workerReadyMatchesState(ready, { worker_instance_id: workerB, generation: 3 }), false);
+  assert.equal(workerReadyMatchesState(ready, { worker_instance_id: workerA, generation: 2 }), false);
+  assert.equal(workerReadyMatchesState(ready, { worker_instance_id: workerA, generation: 3 }), true);
 });

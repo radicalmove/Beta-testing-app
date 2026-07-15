@@ -525,3 +525,31 @@ test("delegated mode sends one adaptive interaction request and exposes permissi
   assert.equal(permissions, 1);
   overlay.destroy();
 });
+
+test("loading SCORM keeps one actionable queued marker toggle", () => {
+  const window = new Window({ url: "https://learn.example/mod/scorm/player.php" });
+  const requested: string[] = [];
+  const overlay = mountReviewOverlay(window.document as unknown as Document, context, "connected", { onRequestInteraction: (intent) => requested.push(intent) });
+  const root = window.document.querySelector("#moodle-course-review-overlay")!.shadowRoot!;
+  const add = root.querySelector('[data-action="add-comment"]') as unknown as HTMLButtonElement;
+  overlay.setInteractionState("loading");
+  assert.equal(add.disabled, false);
+  assert.match(add.textContent!, /waiting/i);
+  add.click(); add.click();
+  assert.deepEqual(requested, ["marker", "marker"]);
+  assert.match(add.textContent!, /waiting/i);
+  overlay.destroy();
+});
+
+test("reload-required state explains and performs the precise recovery", () => {
+  const window = new Window({ url: "https://learn.example/mod/scorm/player.php" });
+  let reloads = 0;
+  const overlay = mountReviewOverlay(window.document as unknown as Document, context, "connected", { onReloadRequired: () => { reloads += 1; } });
+  const root = window.document.querySelector("#moodle-course-review-overlay")!.shadowRoot!;
+  const add = root.querySelector('[data-action="add-comment"]') as unknown as HTMLButtonElement;
+  overlay.setInteractionState("reload-required");
+  assert.match(add.textContent!, /reload/i);
+  add.click();
+  assert.equal(reloads, 1);
+  overlay.destroy();
+});

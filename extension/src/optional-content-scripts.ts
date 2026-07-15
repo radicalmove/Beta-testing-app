@@ -21,6 +21,34 @@ export function requestOptionalFramePermission(
   return dependencies.request([pattern]);
 }
 
+export async function grantOptionalFrameAccess(
+  sender: { frameId?: number }, tabId: number, origin: string,
+  dependencies: {
+    optionalPatterns: string[];
+    request(origins: string[]): Promise<boolean>;
+    grantedOrigins(): Promise<string[]>;
+    reconcile(grantedOrigins: string[]): Promise<void>;
+    inject(tabId: number, allFrames: true): Promise<void>;
+  },
+): Promise<{ granted: boolean; reload_required: boolean }> {
+  // Keep the permission prompt in the direct user-gesture stack.
+  const permission = requestOptionalFramePermission(sender, origin, dependencies);
+  if (!await permission) return { granted: false, reload_required: false };
+  await dependencies.reconcile(await dependencies.grantedOrigins());
+  try { await dependencies.inject(tabId, true); return { granted: true, reload_required: false }; }
+  catch { return { granted: true, reload_required: true }; }
+}
+
+export async function handleOptionalPermissionRevocation(dependencies: {
+  reconcile(): Promise<void>;
+  invalidateCapabilities(): Promise<void>;
+  invalidateWorkers(): void;
+}): Promise<void> {
+  await dependencies.reconcile();
+  await dependencies.invalidateCapabilities();
+  dependencies.invalidateWorkers();
+}
+
 type RegisteredContentScript = {
   id: string;
   matches?: string[];

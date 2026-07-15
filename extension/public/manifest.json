@@ -7,7 +7,7 @@
   "permissions": ["identity", "storage", "scripting", "webNavigation"],
   "host_permissions": ["https://moodle.example.invalid/*", "https://review.example.invalid/*"],
   "optional_host_permissions": ["https://rise.example.invalid/*", "https://scorm.example.invalid/*"],
-  "background": { "service_worker": "background.js", "type": "module" },
+  "background": { "service_worker": "background.js" },
   "content_scripts": [{
     "matches": ["https://moodle.example.invalid/*"],
     "js": ["content.js"],

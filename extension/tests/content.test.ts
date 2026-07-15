@@ -228,6 +228,29 @@ test("embedded review obtains trusted course context and updates its hash identi
   cleanup();
 });
 
+test("elected SCORM worker publishes initial identity and selection before ready", async () => {
+  const window = new Window({ url: "https://rise.example/activity#/lesson/1" });
+  window.document.title = "Lesson 1"; window.document.body.innerHTML = "<main><h1>Lesson 1</h1><p>Review phrase</p></main>";
+  const messages: any[] = [];
+  let listener: ((message: any, sender: any, response: (value: unknown) => void) => void) | undefined;
+  const runtime = { onMessage: { addListener: (next: typeof listener) => { listener = next; }, removeListener: () => undefined }, sendMessage: (message: any, callback: (response: any) => void) => {
+    messages.push(message);
+    if (message.type === "GET_REVIEW_CONTEXT") callback({ ok: true, data: { course_id: "123e4567-e89b-12d3-a456-426614174000", course_title: "Law", parent_activity_url: "https://learn.example/mod/scorm/player.php?cmid=22" } });
+    else callback({ ok: true, data: {} });
+  } };
+  const cleanup = startEmbeddedReview(window as any, window.document as any, runtime as any, 0);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const workerInstanceId = messages.find((message) => message.type === "REGISTER_REVIEW_FRAME")?.worker_instance_id;
+  listener!({ type: "ACTIVATE_REVIEW_FRAME", worker_instance_id: workerInstanceId, generation: 1 }, {}, () => undefined);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const types = messages.map((message) => message.type);
+  assert.notEqual(types.indexOf("SCORM_PAGE_IDENTITY_CHANGED"), -1);
+  assert.notEqual(types.indexOf("SCORM_SELECTION_CHANGED"), -1);
+  assert.ok(types.indexOf("SCORM_PAGE_IDENTITY_CHANGED") < types.indexOf("REVIEW_FRAME_READY"));
+  assert.ok(types.indexOf("SCORM_SELECTION_CHANGED") < types.indexOf("REVIEW_FRAME_READY"));
+  cleanup();
+});
+
 test("interaction target queues one intent while loading and replays it to an embedded worker", () => {
   let deadline!: () => void;
   const states: string[] = [];
@@ -246,6 +269,9 @@ test("interaction target queues one intent while loading and replays it to an em
   controller.request("marker"); controller.request("marker");
   assert.equal(cancellations, 1);
   assert.equal(controller.queuedIntent(), undefined);
+  controller.request("marker");
+  controller.workerLost(); controller.workerReady();
+  assert.deepEqual(intents.slice(-2), ["marker", "marker"], "replacement worker replays the one retained marker intent");
 });
 
 test("requestable permission never falls through to parent fallback", () => {
@@ -268,6 +294,15 @@ test("unsupported SCORM becomes unavailable after its bounded loading deadline",
     onState: (state) => states.push(state), onReplay: () => undefined });
   deadline();
   assert.deepEqual(states, ["loading", "unavailable"]);
+});
+
+test("permission grant that cannot inject requires a precise reload state", () => {
+  const states: string[] = [];
+  const controller = createInteractionTargetController({ scorm: true, requestablePermission: true, loadingTimeoutMs: 100,
+    setTimeout: () => 1, clearTimeout: () => undefined, onState: (state) => states.push(state), onReplay: () => undefined });
+  controller.permissionGranted(true);
+  assert.equal(controller.state(), "reload-required");
+  assert.deepEqual(states, ["permission-required", "reload-required"]);
 });
 
 test("embedded review no longer loads a duplicate course comment list", async () => {

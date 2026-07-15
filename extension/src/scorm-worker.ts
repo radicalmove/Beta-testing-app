@@ -9,6 +9,7 @@ type LifecycleFactory = (window: Window & typeof globalThis, document: Document,
 
 export type ScormWorker = {
   handleCommand(command: unknown): ScormAck;
+  initialEvents(): ScormEvent[];
   destroy(): void;
 };
 
@@ -161,6 +162,10 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
   };
 
   return {
+    initialEvents: () => [
+      envelope("SCORM_PAGE_IDENTITY_CHANGED", { page_title: identity.pageTitle, embedded_locator: identity.embeddedLocator }),
+      envelope("SCORM_SELECTION_CHANGED", { has_selection: Boolean(cachedSelection) }),
+    ],
     handleCommand(value) {
       let command: ScormCommand;
       try {

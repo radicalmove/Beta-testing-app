@@ -2,11 +2,11 @@ import { ApiClient, authenticate, getActiveToken, lookupReviewCourse, redeemRevi
 import { authorizeAuthenticateSender, authorizeResolveSender, handleCreateCommentBridge, handleCreateEmbeddedCommentBridge, handleDeleteCommentBridge, handleListCourseCommentsBridge, handleListPageCommentsBridge, handleResolveCourseBridge, normalizeErrorMessage, validateAuthenticateMessage, validateCancelScreenshotMessage, validateUploadScreenshotMessage, validateViewerResponse, type CreateCommentPayload, type ResolveCoursePayload } from "./background-bridge.ts";
 import { EmbeddedAnchorCapabilities, issueEmbeddedAnchorFromWorker } from "./embedded-anchor-capabilities.ts";
 import { validateScreenshotDataUrl } from "./screenshot-validation.ts";
-import { optionalPatternForOrigin, reconcileOptionalContentScript, requestOptionalFramePermission } from "./optional-content-scripts";
+import { grantOptionalFrameAccess, handleOptionalPermissionRevocation, optionalPatternForOrigin, reconcileOptionalContentScript } from "./optional-content-scripts";
 import { matchesCurrentNavigationDocument, ReviewContextCache, validateContextMessage, type ReviewSender, type StoredReviewContext } from "./review-context.ts";
 import { ScreenshotCapabilities } from "./screenshot-capabilities.ts";
 import { PendingAccessStore, PendingApprovalManager } from "./pending-access.ts";
-import { FrameCoordinatorRuntime } from "./frame-coordination-runtime.ts";
+import { FrameCoordinatorRuntime, workerReadyMatchesState, type WorkerReadyNotification } from "./frame-coordination-runtime.ts";
 import { validateScormMessage, type ScormCommand, type ScormEvent } from "./scorm-protocol.ts";
 
 declare const chrome: any;
@@ -19,6 +19,7 @@ const DEFAULT_SERVICE_ORIGIN = __REVIEW_SERVICE_ORIGIN__;
 let optionalRegistration = Promise.resolve();
 const reviewContexts = new ReviewContextCache();
 const latestWorkerEvent = new Map<number, ScormEvent>();
+const pendingWorkerReady = new Map<number, WorkerReadyNotification>();
 const seenWorkerEventIds = new Map<number, Set<string>>();
 function rememberWorkerEvent(tabId: number, requestId: string): void {
   const seen = seenWorkerEventIds.get(tabId) ?? new Set<string>();
@@ -33,15 +34,17 @@ const frameCoordination = new FrameCoordinatorRuntime({
     });
   }),
   onWorkerReady: ({ tabId, frameId, workerInstanceId, generation, replaced }) => {
-    chrome.tabs.sendMessage(tabId, {
-      type: "REVIEW_WORKER_READY",
-      frame_id: frameId,
-      worker_instance_id: workerInstanceId,
-      generation,
-      replaced,
-    }, { frameId: 0 }, () => void chrome.runtime.lastError);
+    pendingWorkerReady.set(tabId, { tabId, frameId, workerInstanceId, generation, replaced });
   },
 });
+
+function publishWorkerReady(tabId: number): boolean {
+  const ready = pendingWorkerReady.get(tabId); const state = latestWorkerEvent.get(tabId);
+  if (!workerReadyMatchesState(ready, state)) return false;
+  pendingWorkerReady.delete(tabId);
+  chrome.tabs.sendMessage(tabId, { type: "REVIEW_WORKER_READY", frame_id: ready.frameId, worker_instance_id: ready.workerInstanceId, generation: ready.generation, replaced: ready.replaced }, { frameId: 0 }, () => void chrome.runtime.lastError);
+  return true;
+}
 const screenshotCapabilities = new ScreenshotCapabilities(chrome.storage.session);
 const embeddedAnchorCapabilities = new EmbeddedAnchorCapabilities(chrome.storage.session);
 const pendingAccess = new PendingAccessStore(chrome.storage.local);
@@ -74,15 +77,15 @@ refreshOptionalContentScript();
 chrome.runtime.onStartup.addListener(refreshOptionalContentScript);
 chrome.runtime.onInstalled.addListener(refreshOptionalContentScript);
 chrome.permissions.onAdded.addListener(refreshOptionalContentScript);
-chrome.permissions.onRemoved.addListener(() => {
-  refreshOptionalContentScript();
-  void chrome.storage.session.remove("embeddedAnchorCapabilities");
-  for (const tabId of latestWorkerEvent.keys()) {
+chrome.permissions.onRemoved.addListener(() => { void handleOptionalPermissionRevocation({
+  reconcile: async () => { refreshOptionalContentScript(); await optionalRegistration; },
+  invalidateCapabilities: () => chrome.storage.session.remove("embeddedAnchorCapabilities"),
+  invalidateWorkers: () => { for (const tabId of new Set([...latestWorkerEvent.keys(), ...pendingWorkerReady.keys()])) {
     chrome.tabs.sendMessage(tabId, { type: "SCORM_PERMISSION_REVOKED" }, { frameId: 0 }, () => void chrome.runtime.lastError);
-    latestWorkerEvent.delete(tabId); seenWorkerEventIds.delete(tabId); frameCoordination.removeTab(tabId);
+    latestWorkerEvent.delete(tabId); pendingWorkerReady.delete(tabId); seenWorkerEventIds.delete(tabId); frameCoordination.removeTab(tabId);
     const context = reviewContexts.exportTab(tabId); if (context) frameCoordination.bindCourse(tabId, context.id);
-  }
-});
+  } },
+}).catch((error: Error) => console.error("Unable to revoke optional SCORM access", error)); });
 
 async function serviceOrigin(): Promise<string> {
   return DEFAULT_SERVICE_ORIGIN;
@@ -180,9 +183,9 @@ async function deleteComment(commentId: string, _courseId: string): Promise<unkn
   return {};
 }
 
-chrome.tabs?.onRemoved?.addListener((tabId: number) => { latestWorkerEvent.delete(tabId); seenWorkerEventIds.delete(tabId); reviewContexts.removeTab(tabId); frameCoordination.removeTab(tabId); void chrome.storage.session.remove(`reviewContext:${tabId}`); });
+chrome.tabs?.onRemoved?.addListener((tabId: number) => { latestWorkerEvent.delete(tabId); pendingWorkerReady.delete(tabId); seenWorkerEventIds.delete(tabId); reviewContexts.removeTab(tabId); frameCoordination.removeTab(tabId); void chrome.storage.session.remove(`reviewContext:${tabId}`); });
 chrome.tabs?.onRemoved?.addListener((tabId: number) => chrome.storage.session.remove(`commentNavigation:${tabId}`));
-chrome.webNavigation?.onCommitted?.addListener((details: { tabId: number; frameId: number }) => { if (details.frameId === 0) { latestWorkerEvent.delete(details.tabId); seenWorkerEventIds.delete(details.tabId); reviewContexts.removeTab(details.tabId); frameCoordination.removeTab(details.tabId); void chrome.storage.session.remove(`reviewContext:${details.tabId}`); } });
+chrome.webNavigation?.onCommitted?.addListener((details: { tabId: number; frameId: number }) => { if (details.frameId === 0) { latestWorkerEvent.delete(details.tabId); pendingWorkerReady.delete(details.tabId); seenWorkerEventIds.delete(details.tabId); reviewContexts.removeTab(details.tabId); frameCoordination.removeTab(details.tabId); void chrome.storage.session.remove(`reviewContext:${details.tabId}`); } });
 
 chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & { tab?: { id?: number; windowId?: number } }, sendResponse: (value: unknown) => void) => {
   void screenshotCapabilities.cleanup().catch(() => undefined);
@@ -194,14 +197,11 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
     try { trustedMoodle = sender.id === chrome.runtime.id && sender.frameId === 0 && typeof sender.url === "string" && Boolean(optionalPatternForOrigin(new URL(sender.url).origin, __MOODLE_PATTERNS__)); } catch { /* invalid sender URL */ }
     if (Object.keys(record).sort().join() !== "origin,type" || typeof record.origin !== "string" || typeof sender.tab?.id !== "number" || !trustedMoodle) operation = Promise.reject(new Error("Invalid SCORM permission request"));
     else {
-      // requestOptionalFramePermission invokes chrome.permissions.request before any await.
-      operation = requestOptionalFramePermission(sender, record.origin, {
+      operation = grantOptionalFrameAccess(sender, sender.tab.id, record.origin, {
         optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, request: (origins) => chrome.permissions.request({ origins }),
-      }).then(async (granted) => {
-        if (!granted) return { granted: false };
-        await optionalRegistration; refreshOptionalContentScript(); await optionalRegistration;
-        try { await chrome.scripting.executeScript({ target: { tabId: sender.tab!.id!, allFrames: true }, files: ["content.js"] }); return { granted: true, reload_required: false }; }
-        catch { return { granted: true, reload_required: true }; }
+        grantedOrigins: async () => (await chrome.permissions.getAll()).origins ?? [],
+        reconcile: (grantedOrigins) => reconcileOptionalContentScript({ optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, grantedOrigins, scripting: chrome.scripting }),
+        inject: (tabId) => chrome.scripting.executeScript({ target: { tabId, allFrames: true }, files: ["content.js"] }).then(() => undefined),
       });
     }
   } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "LOOKUP_REVIEW_COURSE") {
@@ -454,6 +454,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       }
       if (control.type === "REVIEW_FRAME_READY") {
         if (!reviewContexts.markReady(sender)) throw new Error("Review context unavailable");
+        if (typeof sender.tab?.id !== "number" || !publishWorkerReady(sender.tab.id)) throw new Error("SCORM initial state unavailable");
         return {};
       }
       if (control.type === "REGISTER_REVIEW_FRAME") {

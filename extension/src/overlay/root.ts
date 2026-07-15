@@ -41,8 +41,8 @@ export function handleDialogKey(input: { key: string; shiftKey: boolean; activeI
 export type CommentAnchor = ({ anchor_type: "text_highlight" } & TextAnchor) | ({ anchor_type: "visual_pin" } & PinAnchor);
 export type AuthenticationOutcome = { status: ConnectionStatus; message?: string };
 export type ReviewerAccessInput = { displayName: string; email: string; role: string; code: string };
-export type ReviewOverlayOptions = { onRequestInteraction?: (intent: "marker" | "selection") => void; onRequestPermission?: () => Promise<boolean>; submitEmbedded?: (input: { capability: string; body: string; category: string; screenshot: boolean }) => Promise<{ id?: string; screenshot_available?: boolean } | void>; onAuthenticate?: () => Promise<AuthenticationOutcome>; onCheckApproval?: () => Promise<AuthenticationOutcome>; onAccessSubmit?: (input: ReviewerAccessInput) => Promise<AuthenticationOutcome>; getSavedReviewers?: () => Promise<Array<{ email: string; label: string }>>; onUseSavedReviewer?: (email: string) => Promise<AuthenticationOutcome>; useAccessForm?: () => boolean; navigateToComment?: (commentId: string, pageUrl: string) => Promise<void>; submit?: (input: { body: string; category: string; anchor: CommentAnchor; screenshot: boolean; embeddedFrameUnavailable: boolean; contextSnapshot: CourseContext }) => Promise<{ id?: string; screenshot_available?: boolean } | void>; editThread?: (commentId: string, body: string) => Promise<void>; replyThread?: (commentId: string, body: string) => Promise<void>; changeStatus?: (commentId: string, status: string) => Promise<void>; manageSme?: (commentId: string, userIds?: string[]) => Promise<{ available_recipients: Array<{ id: string; display_name: string }>; selected_user_ids: string[] }>; deleteThread?: (commentId: string) => Promise<void>; uploadScreenshot?: (commentId: string, dataUrl: string) => Promise<void>; cancelScreenshot?: (commentId: string) => Promise<void>; captureScreenshot?: () => Promise<string>; onFrameFallback?: () => void; onTakeToContext?: (id: string) => void };
-export type ReviewOverlay = { update(context: CourseContext, status: ConnectionStatus): void; setInteractionState(state: "local" | "loading" | "embedded" | "permission-required" | "unavailable", hasSelection?: boolean): void; setViewer(viewer?: { display_name: string | null; email: string; role: string }): void; setCommentList(comments: PageComment[]): void; setRendererComments(comments: PageComment[]): void; setPageComments(comments: PageComment[]): void; takeToContext(id: string): boolean; showFrameFallback(): void; hideFrameFallback(): void; setPresentationVisible(visible: boolean): void; setPresentationPosition(position?: { left: number; top: number }): void; presentationSize(): { width: number; height: number }; setUnresolvedAnchors(anchors: UnresolvedAnchor[]): void; destroy(): void };
+export type ReviewOverlayOptions = { onRequestInteraction?: (intent: "marker" | "selection") => void; onRequestPermission?: () => Promise<boolean>; onReloadRequired?: () => void; submitEmbedded?: (input: { capability: string; body: string; category: string; screenshot: boolean }) => Promise<{ id?: string; screenshot_available?: boolean } | void>; onAuthenticate?: () => Promise<AuthenticationOutcome>; onCheckApproval?: () => Promise<AuthenticationOutcome>; onAccessSubmit?: (input: ReviewerAccessInput) => Promise<AuthenticationOutcome>; getSavedReviewers?: () => Promise<Array<{ email: string; label: string }>>; onUseSavedReviewer?: (email: string) => Promise<AuthenticationOutcome>; useAccessForm?: () => boolean; navigateToComment?: (commentId: string, pageUrl: string) => Promise<void>; submit?: (input: { body: string; category: string; anchor: CommentAnchor; screenshot: boolean; embeddedFrameUnavailable: boolean; contextSnapshot: CourseContext }) => Promise<{ id?: string; screenshot_available?: boolean } | void>; editThread?: (commentId: string, body: string) => Promise<void>; replyThread?: (commentId: string, body: string) => Promise<void>; changeStatus?: (commentId: string, status: string) => Promise<void>; manageSme?: (commentId: string, userIds?: string[]) => Promise<{ available_recipients: Array<{ id: string; display_name: string }>; selected_user_ids: string[] }>; deleteThread?: (commentId: string) => Promise<void>; uploadScreenshot?: (commentId: string, dataUrl: string) => Promise<void>; cancelScreenshot?: (commentId: string) => Promise<void>; captureScreenshot?: () => Promise<string>; onFrameFallback?: () => void; onTakeToContext?: (id: string) => void };
+export type ReviewOverlay = { update(context: CourseContext, status: ConnectionStatus): void; setInteractionState(state: "local" | "loading" | "embedded" | "permission-required" | "reload-required" | "unavailable", hasSelection?: boolean): void; setViewer(viewer?: { display_name: string | null; email: string; role: string }): void; setCommentList(comments: PageComment[]): void; setRendererComments(comments: PageComment[]): void; setPageComments(comments: PageComment[]): void; takeToContext(id: string): boolean; showFrameFallback(): void; hideFrameFallback(): void; setPresentationVisible(visible: boolean): void; setPresentationPosition(position?: { left: number; top: number }): void; presentationSize(): { width: number; height: number }; setUnresolvedAnchors(anchors: UnresolvedAnchor[]): void; destroy(): void };
 
 export function mountReviewOverlay(document: Document, context: CourseContext, status: ConnectionStatus = "connecting", options: ReviewOverlayOptions = {}, buildDiagnostics: BuildDiagnostics = defaultBuildDiagnostics): ReviewOverlay {
   const existing = document.getElementById(OVERLAY_HOST_ID) as HTMLElement | null;
@@ -80,8 +80,9 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   let frameUnavailable = false;
   let composerContext: CourseContext | undefined;
   let pendingScreenshotId: string | undefined;
-  let interactionTarget: "local" | "loading" | "embedded" | "permission-required" | "unavailable" = "local";
+  let interactionTarget: "local" | "loading" | "embedded" | "permission-required" | "reload-required" | "unavailable" = "local";
   let embeddedSelection = false;
+  let loadingMarkerQueued = false;
   let loadedComments = new Map<string, PageComment>();
   let renderer: CommentRenderer;
   const clearAreaSelection = () => {
@@ -248,10 +249,11 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     const button = shadow.querySelector<HTMLButtonElement>('[data-action="add-comment"]');
     if (!button) return;
     if (interactionTarget === "permission-required") button.textContent = "Allow SCORM review access";
-    else if (interactionTarget === "loading") button.textContent = "SCORM content is loading…";
+    else if (interactionTarget === "reload-required") button.textContent = "Reload page to finish SCORM setup";
+    else if (interactionTarget === "loading") button.textContent = loadingMarkerQueued ? "Cancel queued comment marker" : "Add comment marker (waiting for SCORM…)";
     else if (interactionTarget === "unavailable") button.textContent = "Comment on parent page";
     else button.textContent = (interactionTarget === "embedded" ? embeddedSelection : Boolean(selectedTextDraft())) ? "Add comment to highlighted text" : "Add comment marker";
-    button.toggleAttribute("disabled", interactionTarget === "loading");
+    button.removeAttribute("disabled");
   };
   const selectionListener = () => updateAdaptiveAction();
   ownerDocument.addEventListener("selectionchange", selectionListener);
@@ -310,6 +312,8 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     addComment?.addEventListener("click", (event) => {
       const trigger = event.currentTarget as HTMLElement;
       if (interactionTarget === "permission-required") { void options.onRequestPermission?.(); return; }
+      if (interactionTarget === "reload-required") { options.onReloadRequired?.(); return; }
+      if (interactionTarget === "loading") { loadingMarkerQueued = !loadingMarkerQueued; options.onRequestInteraction?.("marker"); updateAdaptiveAction(); return; }
       if (interactionTarget === "embedded") { options.onRequestInteraction?.(embeddedSelection ? "selection" : "marker"); return; }
       if (pinListener) { event.preventDefault(); event.stopPropagation(); clearAreaSelection(); fallbackPin = false; shadow.querySelector<HTMLElement>(".panel")!.hidden = true; trigger.focus(); return; }
       const selected = selectedTextDraft();
@@ -368,7 +372,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   });
   renderer = makeRenderer();
   return {
-    setInteractionState(next, hasSelection = false) { interactionTarget = next; embeddedSelection = hasSelection; frameUnavailable = next === "unavailable"; updateAdaptiveAction(); },
+    setInteractionState(next, hasSelection = false) { interactionTarget = next; embeddedSelection = hasSelection; if (next !== "loading") loadingMarkerQueued = false; frameUnavailable = next === "unavailable"; updateAdaptiveAction(); },
     update(next, nextStatus) {
       const pageChanged = context.page_url !== next.page_url;
       stateVersion += 1; authenticating = false; context = next; status = nextStatus; closeChoice(false);

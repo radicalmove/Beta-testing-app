@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import os
 import re
 import subprocess
 import tempfile
@@ -20,7 +21,7 @@ def assert_classic_self_contained_script(source: str) -> None:
     }
     for label, pattern in forbidden.items():
         if re.search(pattern, source):
-            raise AssertionError(f"content.js contains {label}")
+            raise AssertionError(f"classic extension script contains {label}")
 
 
 def assert_production_manifest(manifest: dict) -> None:
@@ -35,6 +36,18 @@ def assert_production_manifest(manifest: dict) -> None:
         raise AssertionError("content.js must match only the real UC Online host")
 
 class DeploymentPackageTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        required = [ROOT / "extension/dist/manifest.json", ROOT / "extension/dist/content.js", ROOT / "extension/dist/background.js"]
+        if all(path.is_file() for path in required):
+            return
+        cls._build_directory = tempfile.TemporaryDirectory()
+        private_key = Path(cls._build_directory.name) / "pilot-test.pem"
+        subprocess.run(["openssl", "genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048", "-out", str(private_key)], check=True, capture_output=True)
+        commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+        environment = {**os.environ, "PRIVATE_KEY_PATH": str(private_key), "REVIEW_SERVICE_ORIGIN": "https://fld-mini.tail4ccaba.ts.net", "OPTIONAL_FRAME_PATTERNS": "", "BUILD_COMMIT": commit}
+        subprocess.run([str(ROOT / "deploy/scripts/build-pilot-extension.sh")], cwd=ROOT, env=environment, check=True, capture_output=True, text=True)
+
     def test_compose_is_private_persistent_and_health_checked(self):
         compose = yaml.safe_load((ROOT / "deploy/docker-compose.yml").read_text())
         api, db = compose["services"]["api"], compose["services"]["db"]
@@ -155,13 +168,20 @@ class DeploymentPackageTests(unittest.TestCase):
     def test_release_uses_the_exact_reviewed_optional_frame_pattern_file(self):
         config = ROOT / "deploy/config/pilot-optional-frame-patterns.txt"
         self.assertTrue(config.is_file())
-        patterns = [line.strip() for line in config.read_text().splitlines() if line.strip()]
+        patterns = [line.strip() for line in config.read_text().splitlines() if line.strip() and not line.lstrip().startswith("#")]
         for pattern in patterns:
             self.assertRegex(pattern, r"^https://[^/]+/\*$")
         script = (ROOT / "deploy/scripts/release-pilot-extension.sh").read_text()
         self.assertIn("pilot-optional-frame-patterns.txt", script)
         self.assertIn("CONFIGURED_OPTIONAL_FRAME_PATTERNS", script)
         self.assertIn('OPTIONAL_FRAME_PATTERNS="$CONFIGURED_OPTIONAL_FRAME_PATTERNS"', script)
+
+    def test_empty_optional_pattern_config_is_intentional_and_evidence_backed(self):
+        config = (ROOT / "deploy/config/pilot-optional-frame-patterns.txt").read_text()
+        self.assertIn("INTENTIONALLY EMPTY", config)
+        self.assertIn("CRJU150", config)
+        self.assertIn("my.uconline.ac.nz/mod/scorm/player.php", config)
+        self.assertIn("no verified cross-origin iframe src", config)
 
     def test_release_script_rechecks_clean_tree_and_unchanged_head_before_publish(self):
         script = (ROOT / "deploy/scripts/release-pilot-extension.sh").read_text()
@@ -177,6 +197,12 @@ class DeploymentPackageTests(unittest.TestCase):
     def test_built_content_script_is_classic_and_self_contained(self):
         content_script = (ROOT / "extension/dist/content.js").read_text()
         assert_classic_self_contained_script(content_script)
+
+    def test_built_background_script_is_classic_and_self_contained(self):
+        background = (ROOT / "extension/dist/background.js").read_text()
+        assert_classic_self_contained_script(background)
+        manifest = json.loads((ROOT / "extension/dist/manifest.json").read_text())
+        self.assertEqual(manifest["background"], {"service_worker": "background.js"})
 
     def test_classic_script_validator_rejects_esm_chunks_and_external_dependencies(self):
         invalid_sources = (

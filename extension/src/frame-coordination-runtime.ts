@@ -4,6 +4,9 @@ export type { NavigationFrame } from "./frame-coordinator.ts";
 
 type DeliveryResult = { ok?: boolean; dormant?: boolean; worker_instance_id?: string; generation?: number } | ScormAck | undefined;
 export type WorkerReadyNotification = { tabId: number; frameId: number; workerInstanceId: string; generation: number; replaced: boolean };
+export function workerReadyMatchesState(ready: WorkerReadyNotification | undefined, state: { worker_instance_id: string; generation: number } | undefined): ready is WorkerReadyNotification {
+  return Boolean(ready && state && state.worker_instance_id === ready.workerInstanceId && state.generation === ready.generation);
+}
 type Timer = unknown;
 type Dependencies = {
   send(tabId: number, frameId: number, message: unknown): Promise<DeliveryResult>;
