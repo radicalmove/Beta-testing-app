@@ -182,14 +182,15 @@ export async function handleCreateEmbeddedCommentBridge(message: unknown, sender
   if (!expectedCourseId) throw new Error("CREATE_EMBEDDED_COMMENT course context unavailable");
   const claim = await dependencies.claim(composition.capability, { tabId: sender.tab.id, courseId: expectedCourseId });
   if (!claim) throw new Error("Embedded comment capability is invalid or expired");
+  let senderUrl: URL;
+  try { senderUrl = new URL(sender.url ?? ""); } catch { throw new Error("Embedded comment parent context mismatch"); }
+  if (senderUrl.origin !== new URL(claim.parentActivityUrl).origin) throw new Error("Embedded comment parent context mismatch");
+  if (!dependencies.current(claim)) throw new Error("Embedded comment worker changed");
+  const payload: CreateCommentPayload = {
+    course_id: claim.courseId, page_url: claim.pageUrl, page_title: claim.pageTitle,
+    body: composition.body, category: composition.category, ...claim.anchor,
+  };
   try {
-    let senderUrl: URL;
-    try { senderUrl = new URL(sender.url ?? ""); } catch { throw new Error("Embedded comment parent context mismatch"); }
-    if (senderUrl.origin !== new URL(claim.parentActivityUrl).origin || !dependencies.current(claim)) throw new Error("Embedded comment worker changed");
-    const payload: CreateCommentPayload = {
-      course_id: claim.courseId, page_url: claim.pageUrl, page_title: claim.pageTitle,
-      body: composition.body, category: composition.category, ...claim.anchor,
-    };
     return await dependencies.create(payload, composition.screenshotRequested === true);
   } catch (error) {
     await dependencies.restore(composition.capability, claim);

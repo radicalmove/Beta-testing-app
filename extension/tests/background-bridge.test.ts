@@ -39,7 +39,7 @@ test("embedded create requires this extension frame zero on Moodle and uses clai
   assert.deepEqual(created, { payload: { course_id: claim.courseId, page_url: claim.pageUrl, page_title: claim.pageTitle, body: "Please revise", category: "general", ...claim.anchor }, screenshot: true });
 });
 
-test("embedded create rechecks election and restores claims after election or API failure", async () => {
+test("stale election consumes the claim permanently instead of restoring it", async () => {
   const claim: EmbeddedAnchorClaim = {
     tabId: 7, courseId: capabilityUuid(90), frameId: 12, workerInstanceId: capabilityUuid(91), generation: 3,
     pageUrl: "https://rise.example/index.html#/one", pageTitle: "One", parentActivityUrl: "https://my.uconline.ac.nz/mod/scorm/player.php?a=9",
@@ -47,12 +47,44 @@ test("embedded create rechecks election and restores claims after election or AP
     anchor: { anchor_type: "text_highlight", selected_quote: "words", prefix: "", suffix: "" }, createdAt: 1, expiresAt: 999,
   };
   const message = { type: "CREATE_EMBEDDED_COMMENT", capability: "a".repeat(64), body: "Fix", category: "general" };
-  let restores = 0;
-  const base = { extensionId: "ours", authorizeMoodle: async () => true, expectedCourseId: () => claim.courseId, claim: async () => claim, restore: async () => { restores += 1; }, create: async () => { throw new Error("API down"); } };
+  let available: EmbeddedAnchorClaim | undefined = claim; let restores = 0; let creates = 0;
+  const base = { extensionId: "ours", authorizeMoodle: async () => true, expectedCourseId: () => claim.courseId, claim: async () => { const value = available; available = undefined; return value; }, restore: async () => { restores += 1; available = claim; }, create: async () => { creates += 1; return {}; } };
   await assert.rejects(() => handleCreateEmbeddedCommentBridge(message, { id: "ours", frameId: 0, url: claim.parentActivityUrl, tab: { id: 7 } }, { ...base, current: () => false }), /worker changed/);
+  assert.equal(restores, 0);
+  await assert.rejects(() => handleCreateEmbeddedCommentBridge(message, { id: "ours", frameId: 0, url: claim.parentActivityUrl, tab: { id: 7 } }, { ...base, current: () => true }), /invalid or expired/);
+  assert.equal(creates, 0);
+});
+
+test("parent-context mismatch consumes the claim permanently", async () => {
+  const claim: EmbeddedAnchorClaim = {
+    tabId: 7, courseId: capabilityUuid(90), frameId: 12, workerInstanceId: capabilityUuid(91), generation: 3,
+    pageUrl: "https://rise.example/index.html#/one", pageTitle: "One", parentActivityUrl: "https://my.uconline.ac.nz/mod/scorm/player.php?a=9",
+    courseUrl: "https://my.uconline.ac.nz/course/view.php?id=896", embeddedLocator: "#/one",
+    anchor: { anchor_type: "visual_pin", css_selector: "#card", relative_x: 0.2, relative_y: 0.5 }, createdAt: 1, expiresAt: 999,
+  };
+  let available: EmbeddedAnchorClaim | undefined = claim; let restores = 0;
+  const dependencies = { extensionId: "ours", authorizeMoodle: async () => true, expectedCourseId: () => claim.courseId, claim: async () => { const value = available; available = undefined; return value; }, current: () => true, restore: async () => { restores += 1; available = claim; }, create: async () => ({}) };
+  const message = { type: "CREATE_EMBEDDED_COMMENT", capability: "a".repeat(64), body: "Fix", category: "general" };
+  await assert.rejects(() => handleCreateEmbeddedCommentBridge(message, { id: "ours", frameId: 0, url: "https://other-moodle.example/mod/scorm/player.php", tab: { id: 7 } }, dependencies), /parent context mismatch/);
+  assert.equal(restores, 0);
+  await assert.rejects(() => handleCreateEmbeddedCommentBridge(message, { id: "ours", frameId: 0, url: claim.parentActivityUrl, tab: { id: 7 } }, dependencies), /invalid or expired/);
+});
+
+test("only an API create failure restores the claim for one successful retry", async () => {
+  const claim: EmbeddedAnchorClaim = {
+    tabId: 7, courseId: capabilityUuid(90), frameId: 12, workerInstanceId: capabilityUuid(91), generation: 3,
+    pageUrl: "https://rise.example/index.html#/one", pageTitle: "One", parentActivityUrl: "https://my.uconline.ac.nz/mod/scorm/player.php?a=9",
+    courseUrl: "https://my.uconline.ac.nz/course/view.php?id=896", embeddedLocator: "#/one",
+    anchor: { anchor_type: "text_highlight", selected_quote: "words", prefix: "", suffix: "" }, createdAt: 1, expiresAt: 999,
+  };
+  let available: EmbeddedAnchorClaim | undefined = claim; let restores = 0; let attempts = 0;
+  const dependencies = { extensionId: "ours", authorizeMoodle: async () => true, expectedCourseId: () => claim.courseId, claim: async () => { const value = available; available = undefined; return value; }, current: () => true, restore: async () => { restores += 1; available = claim; }, create: async () => { attempts += 1; if (attempts === 1) throw new Error("API down"); return { ok: true }; } };
+  const message = { type: "CREATE_EMBEDDED_COMMENT", capability: "a".repeat(64), body: "Fix", category: "general" };
+  const sender = { id: "ours", frameId: 0, url: claim.parentActivityUrl, tab: { id: 7 } };
+  await assert.rejects(() => handleCreateEmbeddedCommentBridge(message, sender, dependencies), /API down/);
   assert.equal(restores, 1);
-  await assert.rejects(() => handleCreateEmbeddedCommentBridge(message, { id: "ours", frameId: 0, url: claim.parentActivityUrl, tab: { id: 7 } }, { ...base, current: () => true }), /API down/);
-  assert.equal(restores, 2);
+  assert.deepEqual(await handleCreateEmbeddedCommentBridge(message, sender, dependencies), { ok: true });
+  await assert.rejects(() => handleCreateEmbeddedCommentBridge(message, sender, dependencies), /invalid or expired/);
 });
 
 test("authenticate sender must be this extension's trusted configured top frame", async () => {
