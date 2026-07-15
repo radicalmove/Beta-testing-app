@@ -502,3 +502,26 @@ test("course scope and status filters share one compact row", () => {
   assert.match(tealOverlayOverrides, /\.comment-filters button\[aria-pressed="true"\]\{background:#082f2f;color:#fff;border-color:#082f2f\}/);
   assert.match(tealOverlayOverrides, /\.comment-filters button:hover\{background:#28c4c2;color:#082f2f;border-color:#082f2f\}/);
 });
+
+test("delegated mode sends one adaptive interaction request and exposes permission recovery", async () => {
+  const window = new Window({ url: "https://learn.example/mod/scorm/player.php" });
+  window.document.body.innerHTML = "<h1>SCORM</h1>";
+  const requested: string[] = [];
+  let permissions = 0;
+  const overlay = mountReviewOverlay(window.document as unknown as Document, context, "connected", {
+    onRequestInteraction: (intent) => { requested.push(intent); },
+    onRequestPermission: () => { permissions += 1; return Promise.resolve(true); },
+  });
+  overlay.setInteractionState("embedded", true);
+  const root = window.document.querySelector("#moodle-course-review-overlay")!.shadowRoot!;
+  const add = root.querySelector('[data-action="add-comment"]') as unknown as HTMLButtonElement;
+  assert.equal(add.textContent, "Add comment to highlighted text");
+  add.click();
+  assert.deepEqual(requested, ["selection"]);
+  overlay.setInteractionState("permission-required", false);
+  assert.equal(add.textContent, "Allow SCORM review access");
+  add.click();
+  await Promise.resolve();
+  assert.equal(permissions, 1);
+  overlay.destroy();
+});

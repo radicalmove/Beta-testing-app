@@ -5,6 +5,13 @@ set -euo pipefail
 : "${REVIEW_SERVICE_ORIGIN:?Set REVIEW_SERVICE_ORIGIN=https://host.tailnet.ts.net}"
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+OPTIONAL_PATTERN_FILE="$ROOT/deploy/config/pilot-optional-frame-patterns.txt"
+[[ -f "$OPTIONAL_PATTERN_FILE" ]] || { echo "missing reviewed optional-frame pattern file" >&2; exit 1; }
+CONFIGURED_OPTIONAL_FRAME_PATTERNS=$(awk 'NF && $1 !~ /^#/ { printf "%s%s", separator, $0; separator="," }' "$OPTIONAL_PATTERN_FILE")
+if [[ -n ${OPTIONAL_FRAME_PATTERNS+x} && "$OPTIONAL_FRAME_PATTERNS" != "$CONFIGURED_OPTIONAL_FRAME_PATTERNS" ]]; then
+  echo "OPTIONAL_FRAME_PATTERNS must exactly match the reviewed pilot configuration" >&2
+  exit 1
+fi
 COMMON_GIT_DIR=$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir)
 PROJECT_ROOT=$(dirname "$COMMON_GIT_DIR")
 DELIVERY_ROOT=${DELIVERY_ROOT:-"$PROJECT_ROOT-pilot-builds"}
@@ -22,7 +29,7 @@ VERSIONED_ZIP="$DELIVERY_ROOT/moodle-review-extension-v$RELEASE_VERSION-chrome-e
 (cd "$ROOT/server" && python3 -m pytest -q)
 
 rm -rf "$ROOT/extension/dist"
-PRIVATE_KEY_PATH="$PRIVATE_KEY_PATH" REVIEW_SERVICE_ORIGIN="$REVIEW_SERVICE_ORIGIN" BUILD_COMMIT="$BUILD_COMMIT" \
+PRIVATE_KEY_PATH="$PRIVATE_KEY_PATH" REVIEW_SERVICE_ORIGIN="$REVIEW_SERVICE_ORIGIN" OPTIONAL_FRAME_PATTERNS="$CONFIGURED_OPTIONAL_FRAME_PATTERNS" BUILD_COMMIT="$BUILD_COMMIT" \
   "$ROOT/deploy/scripts/build-pilot-extension.sh"
 
 for artifact in manifest.json content.js background.js; do

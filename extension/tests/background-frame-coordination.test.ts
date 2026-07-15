@@ -212,3 +212,42 @@ test("notifies worker readiness after replacement and after runtime reconstructi
   await reconstructed.registerFrame(1, 7, "document-7", 2, workerB, content, frames, 3);
   assert.deepEqual(ready.at(-1), { tabId: 1, frameId: 7, workerInstanceId: workerB, generation: 1, replaced: false });
 });
+
+test("routes a correlated command only to the elected worker and rejects duplicate request ids", async () => {
+  const sent: unknown[] = [];
+  const runtime = new FrameCoordinatorRuntime({
+    send: async (_tabId, _frameId, message) => {
+      sent.push(message);
+      const command = message as any;
+      return { protocol: 1, request_id: command.request_id, worker_instance_id: command.worker_instance_id, generation: command.generation, course_id: command.course_id, page_url: command.page_url, ack_type: `${command.type}_ACK`, ok: true };
+    },
+  }, 0);
+  runtime.bindCourse(1, "123e4567-e89b-42d3-a456-426614174000");
+  await runtime.registerFrame(1, 7, "document-7", 1, workerA, content, frames, 0);
+  const command = { protocol: 1 as const, type: "SCORM_START_MARKER" as const, request_id: "323e4567-e89b-42d3-a456-426614174000", worker_instance_id: workerA, generation: 1, course_id: "123e4567-e89b-42d3-a456-426614174000", page_url: "https://rise.example/lesson", payload: {} };
+  await runtime.sendCommand(1, command);
+  await assert.rejects(() => runtime.sendCommand(1, command), /duplicate/i);
+  assert.equal(sent.filter((message: any) => message.type === "SCORM_START_MARKER").length, 1);
+});
+
+test("times out commands deterministically and ignores their stale late acknowledgements", async () => {
+  let fireTimeout!: () => void;
+  let resolveAck!: (value: any) => void;
+  const runtime = new FrameCoordinatorRuntime({
+    send: async (_tabId, _frameId, message) => {
+      if ((message as any).type === "ACTIVATE_REVIEW_FRAME") return acknowledgement(message);
+      return new Promise((resolve) => { resolveAck = resolve; });
+    },
+    setTimeout: (handler) => { fireTimeout = handler; return 1; },
+    clearTimeout: () => undefined,
+  }, 0, 50, 50);
+  runtime.bindCourse(1, "123e4567-e89b-42d3-a456-426614174000");
+  await runtime.registerFrame(1, 7, "document-7", 1, workerA, content, frames, 0);
+  const command = { protocol: 1 as const, type: "SCORM_START_MARKER" as const, request_id: "323e4567-e89b-42d3-a456-426614174000", worker_instance_id: workerA, generation: 1, course_id: "123e4567-e89b-42d3-a456-426614174000", page_url: "https://rise.example/lesson", payload: {} };
+  const pending = runtime.sendCommand(1, command);
+  fireTimeout();
+  await assert.rejects(pending, /timed out/i);
+  resolveAck({ ...command, type: "SCORM_START_MARKER_ACK", ack_type: "SCORM_START_MARKER_ACK", ok: true });
+  await Promise.resolve();
+  assert.equal(runtime.pendingCommandCount(), 0);
+});

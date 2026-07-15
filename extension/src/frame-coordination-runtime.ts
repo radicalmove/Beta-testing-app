@@ -1,7 +1,8 @@
 import { FrameCoordinator, type ActiveWorkerOwner, type CoordinatorSnapshot, type FrameCapabilities, type NavigationFrame } from "./frame-coordinator.ts";
+import { validateScormAckFor, validateScormMessage, type ScormAck, type ScormCommand } from "./scorm-protocol.ts";
 export type { NavigationFrame } from "./frame-coordinator.ts";
 
-type DeliveryResult = { ok?: boolean; dormant?: boolean; worker_instance_id?: string; generation?: number } | undefined;
+type DeliveryResult = { ok?: boolean; dormant?: boolean; worker_instance_id?: string; generation?: number } | ScormAck | undefined;
 export type WorkerReadyNotification = { tabId: number; frameId: number; workerInstanceId: string; generation: number; replaced: boolean };
 type Timer = unknown;
 type Dependencies = {
@@ -21,11 +22,15 @@ export class FrameCoordinatorRuntime {
   private readonly cancelTimeout: (timer: Timer) => void;
   private readonly lastReady = new Map<number, { frameId: number; workerInstanceId: string }>();
   private readonly tabOperations = new Map<number, Promise<void>>();
+  private readonly pendingCommands = new Map<string, Timer>();
+  private readonly completedRequestIds = new Set<string>();
+  private readonly commandTimeoutMs: number;
 
-  constructor(dependencies: Dependencies, stabilityMs = 250, deactivationTimeoutMs = 1_000) {
+  constructor(dependencies: Dependencies, stabilityMs = 250, deactivationTimeoutMs = 1_000, commandTimeoutMs = 2_000) {
     this.dependencies = dependencies;
     this.coordinator = new FrameCoordinator(stabilityMs);
     this.deactivationTimeoutMs = deactivationTimeoutMs;
+    this.commandTimeoutMs = commandTimeoutMs;
     this.now = dependencies.now ?? Date.now;
     this.scheduleTimeout = dependencies.setTimeout ?? ((handler, delay) => globalThis.setTimeout(handler, delay));
     this.cancelTimeout = dependencies.clearTimeout ?? ((timer) => globalThis.clearTimeout(timer as ReturnType<typeof globalThis.setTimeout>));
@@ -50,6 +55,38 @@ export class FrameCoordinatorRuntime {
     try { return this.coordinator.activeOwner(tabId); } catch { return undefined; }
   }
 
+  pendingCommandCount(): number { return this.pendingCommands.size; }
+
+  async sendCommand(tabId: number, value: unknown): Promise<ScormAck> {
+    const command = validateScormMessage(value);
+    if (!command.type.startsWith("SCORM_") || ["SCORM_SELECTION_CHANGED", "SCORM_ANCHOR_CAPTURED", "SCORM_PAGE_IDENTITY_CHANGED", "SCORM_COMMENTS_CHANGED"].includes(command.type)) throw new Error("Expected SCORM command");
+    const typed = command as ScormCommand;
+    if (this.pendingCommands.has(typed.request_id) || this.completedRequestIds.has(typed.request_id)) throw new Error("Duplicate SCORM request id");
+    const owner = this.currentOwner(tabId);
+    if (!owner || owner.workerInstanceId !== typed.worker_instance_id || owner.generation !== typed.generation) throw new Error("SCORM command does not target elected worker");
+    return new Promise<ScormAck>((resolve, reject) => {
+      const timer = this.scheduleTimeout(() => {
+        if (this.pendingCommands.delete(typed.request_id)) {
+          this.rememberCompleted(typed.request_id);
+          reject(new Error("SCORM command timed out"));
+        }
+      }, this.commandTimeoutMs);
+      this.pendingCommands.set(typed.request_id, timer);
+      void this.dependencies.send(tabId, owner.frameId, typed).then((result) => {
+        if (!this.pendingCommands.delete(typed.request_id)) return;
+        this.cancelTimeout(timer);
+        this.rememberCompleted(typed.request_id);
+        try { resolve(validateScormAckFor(typed, result)); }
+        catch (error) { reject(error); }
+      }, (error: unknown) => {
+        if (!this.pendingCommands.delete(typed.request_id)) return;
+        this.cancelTimeout(timer);
+        this.rememberCompleted(typed.request_id);
+        reject(error);
+      });
+    });
+  }
+
   removeTab(tabId: number): void { this.coordinator.removeTab(tabId); this.lastReady.delete(tabId); }
 
   async reevaluate(tabId: number, now = this.now()): Promise<void> {
@@ -66,7 +103,7 @@ export class FrameCoordinatorRuntime {
           worker_instance_id: election.deactivateWorkerInstanceId,
           generation: election.generation,
         });
-        if (this.matches(result, election.deactivateWorkerInstanceId, election.generation) && result?.dormant
+        if (this.matches(result, election.deactivateWorkerInstanceId, election.generation) && result && "dormant" in result && result.dormant
           && this.coordinator.acknowledgeDormant(tabId, election.deactivateFrameId, election.deactivateWorkerInstanceId, election.generation)) {
           await this.drive(tabId, now);
           return;
@@ -111,6 +148,11 @@ export class FrameCoordinatorRuntime {
 
   private matches(result: DeliveryResult, workerInstanceId: string, generation: number): boolean {
     return result?.ok === true && result.worker_instance_id === workerInstanceId && result.generation === generation;
+  }
+
+  private rememberCompleted(requestId: string): void {
+    this.completedRequestIds.add(requestId);
+    if (this.completedRequestIds.size > 256) this.completedRequestIds.delete(this.completedRequestIds.values().next().value!);
   }
 
   private deliverDeactivation(tabId: number, frameId: number, message: unknown): Promise<DeliveryResult> {

@@ -23,6 +23,40 @@ type MarkerRoot = {
   removeAttribute(name: string): void;
 };
 type OwnedRoot = MarkerRoot & { [OWNER]?: { cleanup(): void; workerInstanceEpoch: number } };
+export type InteractionTarget = "local" | "loading" | "embedded" | "permission-required" | "unavailable";
+export type DesiredInteraction = "marker" | "selection";
+
+export function createInteractionTargetController(options: {
+  scorm: boolean; requestablePermission: boolean; loadingTimeoutMs: number;
+  setTimeout(handler: () => void, delay: number): unknown; clearTimeout(timer: unknown): void;
+  onState(state: InteractionTarget): void; onReplay(intent: DesiredInteraction): void; onCancel?: () => void;
+}) {
+  let current: InteractionTarget = options.scorm ? (options.requestablePermission ? "permission-required" : "loading") : "local";
+  let requestablePermission = options.requestablePermission;
+  let desired: DesiredInteraction | undefined;
+  let deadline: unknown;
+  let cancelled = false;
+  const publish = (next: InteractionTarget) => { if (current === next && !cancelled) return; current = next; cancelled = false; options.onState(next); };
+  const beginDeadline = () => {
+    if (current !== "loading") return;
+    deadline = options.setTimeout(() => { if (current === "loading") publish("unavailable"); }, options.loadingTimeoutMs);
+  };
+  options.onState(current);
+  beginDeadline();
+  return {
+    state: () => current,
+    queuedIntent: () => desired,
+    request: (intent: DesiredInteraction) => { if (intent === "marker" && desired === "marker") { desired = undefined; options.onCancel?.(); return; } desired = intent; if (current === "embedded") options.onReplay(intent); },
+    cancel: () => { desired = undefined; cancelled = true; },
+    workerReady: () => { if (deadline !== undefined) options.clearTimeout(deadline); publish("embedded"); if (desired) options.onReplay(desired); },
+    workerLost: () => { publish(requestablePermission ? "permission-required" : "loading"); beginDeadline(); },
+    permissionRequired: () => { requestablePermission = true; publish("permission-required"); },
+    permissionDenied: () => publish("permission-required"),
+    permissionRevoked: () => publish("permission-required"),
+    permissionGranted: () => { publish("loading"); beginDeadline(); },
+    destroy: () => { if (deadline !== undefined) options.clearTimeout(deadline); desired = undefined; },
+  };
+}
 
 export function sendRuntimeMessage(
   runtime: { sendMessage(message: unknown, callback: (response: any) => void): void },
@@ -198,7 +232,7 @@ export function createLifecycleController(targetWindow: Window & typeof globalTh
   } };
 }
 
-export function startCourseReview(targetWindow: Window & typeof globalThis = window, targetDocument: Document = document, runtime: { sendMessage(message: unknown, callback: (response: { ok?: boolean; status?: ConnectionStatus; error?: string; data?: unknown } | undefined) => void): void } = chrome.runtime, buildDiagnostics: BuildDiagnostics = BUILD_DIAGNOSTICS, framePollDelay = 1_000): () => void {
+export function startCourseReview(targetWindow: Window & typeof globalThis = window, targetDocument: Document = document, runtime: Runtime = chrome.runtime, buildDiagnostics: BuildDiagnostics = BUILD_DIAGNOSTICS, framePollDelay = 1_000): () => void {
   let context = currentContext(targetWindow, targetDocument);
   let courseId: string | undefined;
   let courseHandle: string | undefined;
@@ -209,6 +243,9 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
   let approvalTimer: number | undefined;
   let stopped = false;
   let commentSequence = 0;
+  let latestComments: PageComment[] = [];
+  let embeddedPageUrl = "";
+  let interactionController: ReturnType<typeof createInteractionTargetController>;
   let overlay: ReviewOverlay;
   const waitingForApproval = "Waiting for approval — you can leave this page open or return later.";
   const checkPendingApproval = (): Promise<AuthenticationOutcome> => {
@@ -225,8 +262,15 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
   const scheduleApprovalCheck = () => { clearApprovalTimer(); if (stopped) return; approvalTimer = targetWindow.setTimeout(async () => { approvalTimer = undefined; if (targetDocument.hidden) { scheduleApprovalCheck(); return; } const outcome = await checkPendingApproval(); overlay.update(context, outcome.status); if (outcome.status === "pending") scheduleApprovalCheck(); }, 10_000); };
   const onVisibility = () => { if (!targetDocument.hidden && courseHandle) void checkPendingApproval().then((outcome) => { overlay.update(context, outcome.status); if (outcome.status === "pending") scheduleApprovalCheck(); }); };
   targetDocument.addEventListener("visibilitychange", onVisibility);
-  const loadPageComments = async (pageUrl: string) => { const sequence = ++commentSequence; overlay.setPageComments([]); try { const comments = await send<PageComment[]>({ type: "LIST_COURSE_COMMENTS" }); if (sequence === commentSequence && context.page_url === pageUrl) { overlay.setPageComments(comments); const pending: { comment_id?: string } = await send<{ comment_id?: string }>({ type: "CONSUME_COMMENT_NAVIGATION" }).catch(() => ({})); if (pending.comment_id) overlay.takeToContext(pending.comment_id); } } catch { if (sequence === commentSequence) overlay.setPageComments([]); } };
-  overlay = mountReviewOverlay(targetDocument, context, "connecting", { navigateToComment: async (commentId, pageUrl) => { await send({ type: "PREPARE_COMMENT_NAVIGATION", comment_id: commentId, page_url: pageUrl }); targetWindow.location.assign(pageUrl); }, useAccessForm: () => Boolean(courseHandle), onAccessSubmit: async (input) => {
+  const sendScormCommand = (commandType: string, payload: unknown = {}) => send({ type: "SCORM_TOP_COMMAND", command_type: commandType, request_id: targetWindow.crypto.randomUUID(), payload });
+  const scormRoute = /\/mod\/scorm\/player\.php$/.test(targetWindow.location.pathname);
+  const optionalFramePatterns = typeof __OPTIONAL_FRAME_PATTERNS__ !== "undefined" ? __OPTIONAL_FRAME_PATTERNS__ : [];
+  let permissionOrigin = inaccessibleFrameOrigins(targetDocument).find((origin) => optionalFramePatterns.some((pattern) => matchPattern(`${origin}/`, pattern)));
+  const loadPageComments = async (pageUrl: string) => { const sequence = ++commentSequence; overlay.setCommentList([]); overlay.setRendererComments([]); try { const comments = await send<PageComment[]>({ type: "LIST_COURSE_COMMENTS" }); if (sequence === commentSequence && context.page_url === pageUrl) { latestComments = comments; overlay.setCommentList(comments); overlay.setRendererComments(scormRoute ? [] : comments); if (scormRoute && embeddedPageUrl) void sendScormCommand("SCORM_SET_COMMENTS", { comments: comments.filter((comment) => comment.page_url === embeddedPageUrl) }).catch(() => undefined); const pending: { comment_id?: string } = await send<{ comment_id?: string }>({ type: "CONSUME_COMMENT_NAVIGATION" }).catch(() => ({})); if (pending.comment_id) overlay.takeToContext(pending.comment_id); } } catch { if (sequence === commentSequence) { latestComments = []; overlay.setCommentList([]); overlay.setRendererComments([]); } } };
+  overlay = mountReviewOverlay(targetDocument, context, "connecting", { onRequestInteraction: (intent) => { interactionController.request(intent); }, onRequestPermission: () => new Promise<boolean>((resolve) => {
+    if (!permissionOrigin) { resolve(false); return; }
+    sendRuntimeMessage(runtime, { type: "REQUEST_SCORM_PERMISSION", origin: permissionOrigin }, (response) => { const granted = Boolean(response?.ok && (response.data as { granted?: boolean } | undefined)?.granted); if (granted) interactionController.permissionGranted(); resolve(granted); });
+  }), submitEmbedded: async ({ capability, body, category, screenshot }: { capability: string; body: string; category: string; screenshot: boolean }) => { const saved = await send<{ id?: string; screenshot_available?: boolean }>({ type: "CREATE_EMBEDDED_COMMENT", capability, body, category, ...(screenshot ? { screenshot_requested: true } : {}) }); void loadPageComments(context.page_url); return saved; }, navigateToComment: async (commentId, pageUrl) => { await send({ type: "PREPARE_COMMENT_NAVIGATION", comment_id: commentId, page_url: pageUrl }); targetWindow.location.assign(pageUrl); }, useAccessForm: () => Boolean(courseHandle), onAccessSubmit: async (input) => {
     if (!courseHandle) throw new Error("Course not enabled for review");
     const response = await send<{ state: string }>({ type: "REDEEM_REVIEW_ACCESS", course_handle: courseHandle, display_name: input.displayName, email: input.email, role: input.role, invitation_code: input.code });
     if (response.state === "pending") { scheduleApprovalCheck(); return { status: "pending", message: waitingForApproval }; }
@@ -255,6 +299,19 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
     if (context.page_url === contextSnapshot.page_url) void loadPageComments(context.page_url);
     return saved;
   }, editThread: async (commentId, body) => { if (!courseId) throw new Error("Course connection unavailable"); await refreshCourseBindingBeforeComment(send, context, courseId); await send({ type: "EDIT_COMMENT_THREAD", comment_id: commentId, body }); await loadPageComments(context.page_url); }, replyThread: async (commentId, body) => { if (!courseId) throw new Error("Course connection unavailable"); await refreshCourseBindingBeforeComment(send, context, courseId); await send({ type: "REPLY_COMMENT_THREAD", comment_id: commentId, body }); await loadPageComments(context.page_url); }, changeStatus: async (commentId, nextStatus) => { if (!courseId) throw new Error("Course connection unavailable"); await refreshCourseBindingBeforeComment(send, context, courseId); await send({ type: "UPDATE_COMMENT_STATUS", comment_id: commentId, status: nextStatus }); await loadPageComments(context.page_url); }, manageSme: async (commentId, userIds) => { if (!courseId) throw new Error("Course connection unavailable"); await refreshCourseBindingBeforeComment(send, context, courseId); return send({ type: userIds ? "SET_SME_RECIPIENTS" : "GET_SME_RECIPIENTS", comment_id: commentId, ...(userIds ? { user_ids: userIds } : {}) }); }, deleteThread: async (commentId) => { if (!courseId) throw new Error("Course connection unavailable"); await refreshCourseBindingBeforeComment(send, context, courseId); await send({ type: "DELETE_COMMENT_THREAD", comment_id: commentId }); await loadPageComments(context.page_url); }, uploadScreenshot: (commentId, dataUrl) => send({ type: "UPLOAD_SCREENSHOT", comment_id: commentId, data_url: dataUrl }), cancelScreenshot: (commentId) => send({ type: "CANCEL_SCREENSHOT", comment_id: commentId }) }, buildDiagnostics);
+  interactionController = createInteractionTargetController({ scorm: scormRoute, requestablePermission: false, loadingTimeoutMs: Math.max(250, framePollDelay * 3), setTimeout: (handler, delay) => targetWindow.setTimeout(handler, delay), clearTimeout: (timer) => targetWindow.clearTimeout(timer as number), onState: (state) => { overlay.setInteractionState(state); if (state === "unavailable") overlay.showFrameFallback(); else overlay.hideFrameFallback(); }, onReplay: (intent) => { void sendScormCommand(intent === "selection" ? "SCORM_START_SELECTION" : "SCORM_START_MARKER").catch(() => interactionController.workerLost()); }, onCancel: () => { void sendScormCommand("SCORM_CANCEL_MARKER").catch(() => undefined); } });
+  const topMessageListener: RuntimeListener = (message) => {
+    const record = message as { type?: unknown; event?: any; capability?: unknown };
+    if (record.type === "SCORM_PERMISSION_REVOKED") { interactionController.permissionRevoked(); return; }
+    if (record.type === "REVIEW_WORKER_READY") { interactionController.workerReady(); if (embeddedPageUrl) void sendScormCommand("SCORM_SET_COMMENTS", { comments: latestComments.filter((comment) => comment.page_url === embeddedPageUrl) }).catch(() => undefined); return; }
+    if (record.type !== "SCORM_WORKER_EVENT" || !record.event) return;
+    const event = record.event; embeddedPageUrl = typeof event.page_url === "string" ? event.page_url : embeddedPageUrl;
+    if (event.type === "SCORM_SELECTION_CHANGED") overlay.setInteractionState("embedded", event.payload?.has_selection === true);
+    else if (event.type === "SCORM_ANCHOR_CAPTURED" && typeof record.capability === "string") { interactionController.cancel(); const { anchor_type, selected_quote, prefix, suffix, css_selector, relative_x, relative_y } = event.payload; const anchor = anchor_type === "text_highlight" ? { anchor_type, selected_quote, prefix, suffix } : { anchor_type, css_selector, relative_x, relative_y }; targetDocument.documentElement.dispatchEvent(new targetWindow.CustomEvent("moodle-review:embedded-anchor", { detail: { capability: record.capability, anchor } })); }
+    else if (event.type === "SCORM_PAGE_IDENTITY_CHANGED") void sendScormCommand("SCORM_SET_COMMENTS", { comments: latestComments.filter((comment) => comment.page_url === embeddedPageUrl) }).catch(() => undefined);
+    else if (event.type === "SCORM_COMMENTS_CHANGED") void loadPageComments(context.page_url);
+  };
+  runtime.onMessage?.addListener(topMessageListener);
   let requestSequence = 0;
 
   const refresh = () => {
@@ -306,19 +363,27 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
     if (hasDescendantReviewOverlay(targetDocument)) { overlay.hideFrameFallback(); return; }
     const inaccessible = inaccessibleFrameOrigins(targetDocument);
     sendRuntimeMessage(runtime, { type: "GET_REVIEW_FRAME_STATUS" }, (response) => {
-      const status = response?.data as { ready_origins?: unknown; active_embedded_count?: unknown } | undefined;
+      const status = response?.data as { ready_origins?: unknown; active_embedded_count?: unknown; granted_optional_patterns?: unknown } | undefined;
       if (response?.ok && typeof status?.active_embedded_count === "number" && status.active_embedded_count > 0) {
-        overlay.hideFrameFallback();
+        interactionController.workerReady();
         return;
       }
-      if (!inaccessible.length) { overlay.hideFrameFallback(); return; }
+      if (!inaccessible.length) return;
+      const permissionCandidate = inaccessible.find((origin) => optionalFramePatterns.some((pattern) => matchPattern(`${origin}/`, pattern)));
+      if (permissionCandidate) {
+        permissionOrigin = permissionCandidate;
+        const matchingPattern = optionalFramePatterns.find((pattern) => matchPattern(`${permissionCandidate}/`, pattern));
+        const grantedPatterns = Array.isArray(status?.granted_optional_patterns)
+          ? status.granted_optional_patterns.filter((value): value is string => typeof value === "string")
+          : [];
+        if (!matchingPattern || !grantedPatterns.includes(matchingPattern)) {
+          interactionController.permissionRequired();
+          return;
+        }
+      }
       const ready = status?.ready_origins;
       const trusted = response?.ok && Array.isArray(ready) ? new Set(ready.filter((value): value is string => typeof value === "string")) : new Set<string>();
-      if (inaccessible.some((origin) => !trusted.has(origin))) {
-        overlay.showFrameFallback();
-      } else {
-        overlay.hideFrameFallback();
-      }
+      if (inaccessible.every((origin) => trusted.has(origin))) interactionController.workerReady();
     });
   };
   fallbackTimer = scheduleTimeout(checkFrames, Math.min(250, framePollDelay));
@@ -333,7 +398,7 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
   const onFrameReady = (event: MessageEvent) => { if (event.data?.type === "MOODLE_REVIEW_FRAME_READY") checkFrames(); };
   targetWindow.addEventListener("message", onFrameReady);
   refresh();
-  return () => { stopped = true; clearApprovalTimer(); targetDocument.removeEventListener("visibilitychange", onVisibility); cancelTimeout(fallbackTimer); cancelFramePoll(framePoll); targetWindow.removeEventListener("message", onFrameReady); for (const eventName of ["popstate", "hashchange", "moodle-review:navigate"]) targetWindow.removeEventListener(eventName, clearNavigatedPage); lifecycle.teardown(); overlay.destroy(); };
+  return () => { stopped = true; interactionController.destroy(); runtime.onMessage?.removeListener(topMessageListener); clearApprovalTimer(); targetDocument.removeEventListener("visibilitychange", onVisibility); cancelTimeout(fallbackTimer); cancelFramePoll(framePoll); targetWindow.removeEventListener("message", onFrameReady); for (const eventName of ["popstate", "hashchange", "moodle-review:navigate"]) targetWindow.removeEventListener(eventName, clearNavigatedPage); lifecycle.teardown(); overlay.destroy(); };
 }
 
 type RuntimeResponse = { ok?: boolean; status?: ConnectionStatus; error?: string; data?: unknown } | undefined;
@@ -433,6 +498,13 @@ function startActiveEmbeddedReview(targetWindow: Window & typeof globalThis, tar
       generation,
       courseId: trusted.course_id,
       emit: (event) => { sendRuntimeMessage(runtime, event, () => undefined); },
+      mutate: async (type, commentId, value) => {
+        const message = type === "edit" ? { type: "EDIT_COMMENT_THREAD", comment_id: commentId, body: value }
+          : type === "reply" ? { type: "REPLY_COMMENT_THREAD", comment_id: commentId, body: value }
+            : type === "status" ? { type: "UPDATE_COMMENT_STATUS", comment_id: commentId, status: value }
+              : { type: "DELETE_COMMENT_THREAD", comment_id: commentId };
+        await send(message);
+      },
       createLifecycle: createLifecycleController,
     });
     setCommandHandler((message) => worker?.handleCommand(message));

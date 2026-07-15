@@ -21,6 +21,7 @@ export type ScormWorkerOptions = {
   emit(event: ScormEvent): void;
   createLifecycle: LifecycleFactory;
   createRenderer?: (document: Document, pageUrl: string) => CommentRenderer;
+  mutate?: (type: "edit" | "reply" | "status" | "delete", commentId: string, value?: string) => Promise<void>;
   navigate?: (destination: URL, mode: "hash" | "route") => boolean;
 };
 
@@ -41,7 +42,6 @@ export function embeddedPageIdentity(window: Window & typeof globalThis, documen
 
 export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
   const { window, document } = options;
-  const makeRenderer = options.createRenderer ?? ((target, pageUrl) => createCommentRenderer(target, pageUrl));
   const navigate = options.navigate ?? ((destination: URL, mode: "hash" | "route") => {
     if (mode === "hash") {
       window.location.hash = destination.hash;
@@ -52,7 +52,7 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
   });
   let identity = embeddedPageIdentity(window, document);
   let navigationSignature = `${window.location.href}\n${document.title}`;
-  let renderer = makeRenderer(document, identity.pageUrl);
+  let renderer: CommentRenderer;
   let cachedSelection: TextAnchor | undefined;
   let markerActive = false;
   let destroyed = false;
@@ -71,6 +71,11 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
   }) as Extract<ScormEvent, { type: T }>;
 
   const emitSelectionState = () => options.emit(envelope("SCORM_SELECTION_CHANGED", { has_selection: Boolean(cachedSelection) }));
+  const mutation = async (type: "edit" | "reply" | "status" | "delete", commentId: string, value?: string) => { await options.mutate?.(type, commentId, value); options.emit(envelope("SCORM_COMMENTS_CHANGED", {})); };
+  const createRenderer = (pageUrl: string) => options.createRenderer
+    ? options.createRenderer(document, pageUrl)
+    : createCommentRenderer(document, pageUrl, { editThread: (id, body) => mutation("edit", id, body), replyThread: (id, body) => mutation("reply", id, body), changeStatus: (id, status) => mutation("status", id, status), deleteThread: (id) => mutation("delete", id) });
+  renderer = createRenderer(identity.pageUrl);
 
   const onSelectionChange = () => {
     if (destroyed) return;
@@ -118,7 +123,7 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
     renderer.destroy();
     identity = next;
     navigationSignature = nextNavigationSignature;
-    renderer = makeRenderer(document, identity.pageUrl);
+    renderer = createRenderer(identity.pageUrl);
     emitSelectionState();
     options.emit(envelope("SCORM_PAGE_IDENTITY_CHANGED", { page_title: identity.pageTitle, embedded_locator: identity.embeddedLocator }));
   };

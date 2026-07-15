@@ -1,6 +1,7 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig, type Plugin } from "vite";
+import { buildSync } from "esbuild";
 import { loadBuildConfig, loadExtensionVersion } from "./src/build-config.ts";
 
 const packageJson = JSON.parse(readFileSync(resolve("package.json"), "utf8"));
@@ -24,6 +25,20 @@ function manifestPlugin(): Plugin {
   };
 }
 
+function classicEntryBundlesPlugin(): Plugin {
+  return {
+    name: "classic-self-contained-extension-entries",
+    closeBundle() {
+      const define = {
+        __MOODLE_PATTERNS__: JSON.stringify(moodlePatterns), __OPTIONAL_FRAME_PATTERNS__: JSON.stringify(optionalPatterns),
+        __REVIEW_SERVICE_ORIGIN__: JSON.stringify(serviceOrigin), __EXTENSION_VERSION__: JSON.stringify(version), __BUILD_COMMIT__: JSON.stringify(buildCommit),
+      };
+      for (const entry of ["background", "content"]) buildSync({ entryPoints: [resolve(`src/${entry}.ts`)], outfile: resolve(`dist/${entry}.js`), bundle: true, format: "iife", platform: "browser", target: "chrome120", define, minify: true });
+      rmSync(resolve("dist/chunks"), { recursive: true, force: true });
+    },
+  };
+}
+
 export default defineConfig({
   publicDir: false,
   define: {
@@ -40,5 +55,5 @@ export default defineConfig({
       output: { entryFileNames: "[name].js", chunkFileNames: "chunks/[name]-[hash].js" },
     },
   },
-  plugins: [manifestPlugin()],
+  plugins: [manifestPlugin(), classicEntryBundlesPlugin()],
 });

@@ -152,6 +152,17 @@ class DeploymentPackageTests(unittest.TestCase):
             self.assertIn(token, script)
         self.assertNotIn("pilot-extension.pem", script)
 
+    def test_release_uses_the_exact_reviewed_optional_frame_pattern_file(self):
+        config = ROOT / "deploy/config/pilot-optional-frame-patterns.txt"
+        self.assertTrue(config.is_file())
+        patterns = [line.strip() for line in config.read_text().splitlines() if line.strip()]
+        for pattern in patterns:
+            self.assertRegex(pattern, r"^https://[^/]+/\*$")
+        script = (ROOT / "deploy/scripts/release-pilot-extension.sh").read_text()
+        self.assertIn("pilot-optional-frame-patterns.txt", script)
+        self.assertIn("CONFIGURED_OPTIONAL_FRAME_PATTERNS", script)
+        self.assertIn('OPTIONAL_FRAME_PATTERNS="$CONFIGURED_OPTIONAL_FRAME_PATTERNS"', script)
+
     def test_release_script_rechecks_clean_tree_and_unchanged_head_before_publish(self):
         script = (ROOT / "deploy/scripts/release-pilot-extension.sh").read_text()
         publish = script.index('python3 "$ROOT/deploy/scripts/release_artifacts.py"')

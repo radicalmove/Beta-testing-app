@@ -2,11 +2,12 @@ import { ApiClient, authenticate, getActiveToken, lookupReviewCourse, redeemRevi
 import { authorizeAuthenticateSender, authorizeResolveSender, handleCreateCommentBridge, handleCreateEmbeddedCommentBridge, handleDeleteCommentBridge, handleListCourseCommentsBridge, handleListPageCommentsBridge, handleResolveCourseBridge, normalizeErrorMessage, validateAuthenticateMessage, validateCancelScreenshotMessage, validateUploadScreenshotMessage, validateViewerResponse, type CreateCommentPayload, type ResolveCoursePayload } from "./background-bridge.ts";
 import { EmbeddedAnchorCapabilities, issueEmbeddedAnchorFromWorker } from "./embedded-anchor-capabilities.ts";
 import { validateScreenshotDataUrl } from "./screenshot-validation.ts";
-import { reconcileOptionalContentScript } from "./optional-content-scripts";
+import { optionalPatternForOrigin, reconcileOptionalContentScript, requestOptionalFramePermission } from "./optional-content-scripts";
 import { matchesCurrentNavigationDocument, ReviewContextCache, validateContextMessage, type ReviewSender, type StoredReviewContext } from "./review-context.ts";
 import { ScreenshotCapabilities } from "./screenshot-capabilities.ts";
 import { PendingAccessStore, PendingApprovalManager } from "./pending-access.ts";
 import { FrameCoordinatorRuntime } from "./frame-coordination-runtime.ts";
+import { validateScormMessage, type ScormCommand, type ScormEvent } from "./scorm-protocol.ts";
 
 declare const chrome: any;
 declare const __MOODLE_PATTERNS__: string[];
@@ -17,6 +18,13 @@ const DEFAULT_SERVICE_ORIGIN = __REVIEW_SERVICE_ORIGIN__;
 
 let optionalRegistration = Promise.resolve();
 const reviewContexts = new ReviewContextCache();
+const latestWorkerEvent = new Map<number, ScormEvent>();
+const seenWorkerEventIds = new Map<number, Set<string>>();
+function rememberWorkerEvent(tabId: number, requestId: string): void {
+  const seen = seenWorkerEventIds.get(tabId) ?? new Set<string>();
+  if (seen.has(requestId)) throw new Error("Duplicate SCORM event request id");
+  seen.add(requestId); if (seen.size > 256) seen.delete(seen.values().next().value!); seenWorkerEventIds.set(tabId, seen);
+}
 const frameCoordination = new FrameCoordinatorRuntime({
   send: (tabId, frameId, message) => new Promise((resolve, reject) => {
     chrome.tabs.sendMessage(tabId, message, { frameId }, (response: unknown) => {
@@ -66,7 +74,15 @@ refreshOptionalContentScript();
 chrome.runtime.onStartup.addListener(refreshOptionalContentScript);
 chrome.runtime.onInstalled.addListener(refreshOptionalContentScript);
 chrome.permissions.onAdded.addListener(refreshOptionalContentScript);
-chrome.permissions.onRemoved.addListener(refreshOptionalContentScript);
+chrome.permissions.onRemoved.addListener(() => {
+  refreshOptionalContentScript();
+  void chrome.storage.session.remove("embeddedAnchorCapabilities");
+  for (const tabId of latestWorkerEvent.keys()) {
+    chrome.tabs.sendMessage(tabId, { type: "SCORM_PERMISSION_REVOKED" }, { frameId: 0 }, () => void chrome.runtime.lastError);
+    latestWorkerEvent.delete(tabId); seenWorkerEventIds.delete(tabId); frameCoordination.removeTab(tabId);
+    const context = reviewContexts.exportTab(tabId); if (context) frameCoordination.bindCourse(tabId, context.id);
+  }
+});
 
 async function serviceOrigin(): Promise<string> {
   return DEFAULT_SERVICE_ORIGIN;
@@ -164,15 +180,31 @@ async function deleteComment(commentId: string, _courseId: string): Promise<unkn
   return {};
 }
 
-chrome.tabs?.onRemoved?.addListener((tabId: number) => { reviewContexts.removeTab(tabId); frameCoordination.removeTab(tabId); void chrome.storage.session.remove(`reviewContext:${tabId}`); });
+chrome.tabs?.onRemoved?.addListener((tabId: number) => { latestWorkerEvent.delete(tabId); seenWorkerEventIds.delete(tabId); reviewContexts.removeTab(tabId); frameCoordination.removeTab(tabId); void chrome.storage.session.remove(`reviewContext:${tabId}`); });
 chrome.tabs?.onRemoved?.addListener((tabId: number) => chrome.storage.session.remove(`commentNavigation:${tabId}`));
-chrome.webNavigation?.onCommitted?.addListener((details: { tabId: number; frameId: number }) => { if (details.frameId === 0) { reviewContexts.removeTab(details.tabId); frameCoordination.removeTab(details.tabId); void chrome.storage.session.remove(`reviewContext:${details.tabId}`); } });
+chrome.webNavigation?.onCommitted?.addListener((details: { tabId: number; frameId: number }) => { if (details.frameId === 0) { latestWorkerEvent.delete(details.tabId); seenWorkerEventIds.delete(details.tabId); reviewContexts.removeTab(details.tabId); frameCoordination.removeTab(details.tabId); void chrome.storage.session.remove(`reviewContext:${details.tabId}`); } });
 
 chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & { tab?: { id?: number; windowId?: number } }, sendResponse: (value: unknown) => void) => {
   void screenshotCapabilities.cleanup().catch(() => undefined);
   void embeddedAnchorCapabilities.cleanup().catch(() => undefined);
   let operation: Promise<unknown> | undefined;
-  if (message && typeof message === "object" && (message as { type?: unknown }).type === "LOOKUP_REVIEW_COURSE") {
+  if (message && typeof message === "object" && (message as { type?: unknown }).type === "REQUEST_SCORM_PERMISSION") {
+    const record = message as Record<string, unknown>;
+    let trustedMoodle = false;
+    try { trustedMoodle = sender.id === chrome.runtime.id && sender.frameId === 0 && typeof sender.url === "string" && Boolean(optionalPatternForOrigin(new URL(sender.url).origin, __MOODLE_PATTERNS__)); } catch { /* invalid sender URL */ }
+    if (Object.keys(record).sort().join() !== "origin,type" || typeof record.origin !== "string" || typeof sender.tab?.id !== "number" || !trustedMoodle) operation = Promise.reject(new Error("Invalid SCORM permission request"));
+    else {
+      // requestOptionalFramePermission invokes chrome.permissions.request before any await.
+      operation = requestOptionalFramePermission(sender, record.origin, {
+        optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, request: (origins) => chrome.permissions.request({ origins }),
+      }).then(async (granted) => {
+        if (!granted) return { granted: false };
+        await optionalRegistration; refreshOptionalContentScript(); await optionalRegistration;
+        try { await chrome.scripting.executeScript({ target: { tabId: sender.tab!.id!, allFrames: true }, files: ["content.js"] }); return { granted: true, reload_required: false }; }
+        catch { return { granted: true, reload_required: true }; }
+      });
+    }
+  } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "LOOKUP_REVIEW_COURSE") {
     operation = (async () => {
       if (!await authorizeResolveSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) })) throw new Error("Unauthorized course lookup sender");
       const candidate = message as { moodle_origin?: unknown; moodle_course_id?: unknown };
@@ -262,6 +294,17 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
         return resolved;
       },
     });
+  } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "SCORM_TOP_COMMAND") {
+    operation = (async () => {
+      const record = message as Record<string, unknown>;
+      if (Object.keys(record).sort().join() !== "command_type,payload,request_id,type" || typeof sender.tab?.id !== "number" || sender.frameId !== 0
+        || typeof record.request_id !== "string" || typeof record.command_type !== "string" || !["SCORM_START_SELECTION", "SCORM_START_MARKER", "SCORM_CANCEL_MARKER", "SCORM_SET_COMMENTS"].includes(record.command_type)) throw new Error("Invalid top SCORM command");
+      if (!await authorizeAuthenticateSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, hasPermission: async () => false })) throw new Error("Unauthorized top SCORM command");
+      const tabId = sender.tab.id; const owner = frameCoordination.currentOwner(tabId); const courseId = reviewContexts.courseId(sender); const state = latestWorkerEvent.get(tabId);
+      if (!owner || !courseId || !state || state.worker_instance_id !== owner.workerInstanceId || state.generation !== owner.generation) throw new Error("SCORM worker is not ready");
+      const command = validateScormMessage({ protocol: 1, type: record.command_type, request_id: record.request_id, worker_instance_id: owner.workerInstanceId, generation: owner.generation, course_id: courseId, page_url: state.page_url, payload: record.payload }) as ScormCommand;
+      return frameCoordination.sendCommand(tabId, command);
+    })();
   } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "SCORM_ANCHOR_CAPTURED") {
     operation = (async () => {
       if (typeof sender.tab?.id !== "number" || !await authorizeResolveSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) })) throw new Error("Unauthorized SCORM anchor sender");
@@ -271,7 +314,18 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
         currentOwner: frameCoordination.currentOwner(sender.tab.id),
         capabilities: embeddedAnchorCapabilities,
       });
+      const event = validateScormMessage(message) as ScormEvent; rememberWorkerEvent(sender.tab.id, event.request_id); latestWorkerEvent.set(sender.tab.id, event);
+      chrome.tabs.sendMessage(sender.tab.id, { type: "SCORM_WORKER_EVENT", event: message, capability }, { frameId: 0 }, () => void chrome.runtime.lastError);
       return { capability };
+    })();
+  } else if (message && typeof message === "object" && ["SCORM_SELECTION_CHANGED", "SCORM_PAGE_IDENTITY_CHANGED", "SCORM_COMMENTS_CHANGED"].includes((message as { type?: string }).type ?? "")) {
+    operation = (async () => {
+      if (typeof sender.tab?.id !== "number" || typeof sender.frameId !== "number") throw new Error("Invalid SCORM event sender");
+      const event = validateScormMessage(message) as ScormEvent; rememberWorkerEvent(sender.tab.id, event.request_id); const owner = frameCoordination.currentOwner(sender.tab.id); const courseId = reviewContexts.courseId(sender);
+      if (!owner || owner.frameId !== sender.frameId || owner.workerInstanceId !== event.worker_instance_id || owner.generation !== event.generation || courseId !== event.course_id) throw new Error("Stale SCORM event");
+      latestWorkerEvent.set(sender.tab.id, event);
+      chrome.tabs.sendMessage(sender.tab.id, { type: "SCORM_WORKER_EVENT", event }, { frameId: 0 }, () => void chrome.runtime.lastError);
+      return {};
     })();
   } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "CREATE_EMBEDDED_COMMENT") {
     operation = handleCreateEmbeddedCommentBridge(message, sender, {
@@ -416,7 +470,8 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       if (control.type === "ACK_REVIEW_FRAME_DORMANT") return { dormant: true };
       if (control.type === "RENEW_REVIEW_FRAME_LEASE") return { valid: frameCoordination.snapshot(sender.tab!.id!).activeFrameIds.includes(sender.frameId!) };
       const activeEmbeddedCount = typeof sender.tab?.id === "number" ? frameCoordination.snapshot(sender.tab.id).activeFrameIds.filter((frameId) => frameId !== 0).length : 0;
-      return { ready_count: reviewContexts.readyFrameCount(sender), ready_origins: reviewContexts.readyOrigins(sender), active_embedded_count: activeEmbeddedCount };
+      const granted = await chrome.permissions.getAll();
+      return { ready_count: reviewContexts.readyFrameCount(sender), ready_origins: reviewContexts.readyOrigins(sender), active_embedded_count: activeEmbeddedCount, granted_optional_patterns: (granted.origins ?? []).filter((pattern: string) => __OPTIONAL_FRAME_PATTERNS__.includes(pattern)) };
     })();
   }
   if (!operation) return false;

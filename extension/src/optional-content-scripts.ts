@@ -1,5 +1,26 @@
 export const OPTIONAL_CONTENT_SCRIPT_ID = "moodle-review-optional-frames";
 
+export function optionalPatternForOrigin(origin: string, patterns: string[]): string | undefined {
+  let candidate: URL; try { candidate = new URL(origin); } catch { return undefined; }
+  if (candidate.origin !== origin || candidate.protocol !== "https:") return undefined;
+  return patterns.find((pattern) => {
+    const match = /^https:\/\/([^/]+)\/\*$/.exec(pattern); if (!match) return false;
+    const host = match[1]!;
+    return host === candidate.hostname || (host.startsWith("*.") && (candidate.hostname === host.slice(2) || candidate.hostname.endsWith(`.${host.slice(2)}`)));
+  });
+}
+
+export function requestOptionalFramePermission(
+  sender: { frameId?: number }, origin: string,
+  dependencies: { optionalPatterns: string[]; request(origins: string[]): Promise<boolean> },
+): Promise<boolean> {
+  if (sender.frameId !== 0) return Promise.reject(new Error("Permission request must come from frame zero"));
+  const pattern = optionalPatternForOrigin(origin, dependencies.optionalPatterns);
+  if (!pattern) return Promise.reject(new Error("SCORM origin is not declared by this build"));
+  // Deliberately invoke permissions.request in the same user-gesture call stack.
+  return dependencies.request([pattern]);
+}
+
 type RegisteredContentScript = {
   id: string;
   matches?: string[];

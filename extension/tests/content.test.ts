@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Window } from "happy-dom";
 
-import { bootstrapContentScript, countInaccessibleFrames, createLifecycleController, isConfiguredFrame, refreshCourseBindingBeforeComment, sendRuntimeMessage, startCourseReview, startEmbeddedReview } from "../src/content.ts";
+import { bootstrapContentScript, countInaccessibleFrames, createInteractionTargetController, createLifecycleController, isConfiguredFrame, refreshCourseBindingBeforeComment, sendRuntimeMessage, startCourseReview, startEmbeddedReview } from "../src/content.ts";
 
 test("invalidated extension contexts fail quietly instead of throwing from a stale page timer", () => {
   let response: unknown;
@@ -226,6 +226,48 @@ test("embedded review obtains trusted course context and updates its hash identi
   await new Promise((resolve) => setTimeout(resolve, 140));
   assert.ok(messages.some((message: any) => message.type === "REVIEW_FRAME_READY"));
   cleanup();
+});
+
+test("interaction target queues one intent while loading and replays it to an embedded worker", () => {
+  let deadline!: () => void;
+  const states: string[] = [];
+  const intents: string[] = [];
+  let cancellations = 0;
+  const controller = createInteractionTargetController({ scorm: true, requestablePermission: false, loadingTimeoutMs: 100,
+    setTimeout: (handler) => { deadline = handler; return 1; }, clearTimeout: () => undefined,
+    onState: (state) => states.push(state), onReplay: (intent) => intents.push(intent), onCancel: () => { cancellations += 1; } });
+  controller.request("marker"); controller.request("selection");
+  assert.equal(controller.queuedIntent(), "selection");
+  controller.workerReady();
+  assert.deepEqual(states, ["loading", "embedded"]);
+  assert.deepEqual(intents, ["selection"]);
+  deadline();
+  assert.equal(states.at(-1), "embedded");
+  controller.request("marker"); controller.request("marker");
+  assert.equal(cancellations, 1);
+  assert.equal(controller.queuedIntent(), undefined);
+});
+
+test("requestable permission never falls through to parent fallback", () => {
+  let deadline!: () => void;
+  const states: string[] = [];
+  const controller = createInteractionTargetController({ scorm: true, requestablePermission: true, loadingTimeoutMs: 100,
+    setTimeout: (handler) => { deadline = handler; return 1; }, clearTimeout: () => undefined,
+    onState: (state) => states.push(state), onReplay: () => undefined });
+  assert.equal(deadline, undefined, "permission-required must not start a fallback deadline");
+  controller.permissionDenied(); controller.permissionRevoked();
+  assert.deepEqual(states, ["permission-required"]);
+  assert.equal(controller.state(), "permission-required");
+});
+
+test("unsupported SCORM becomes unavailable after its bounded loading deadline", () => {
+  let deadline!: () => void;
+  const states: string[] = [];
+  createInteractionTargetController({ scorm: true, requestablePermission: false, loadingTimeoutMs: 100,
+    setTimeout: (handler) => { deadline = handler; return 1; }, clearTimeout: () => undefined,
+    onState: (state) => states.push(state), onReplay: () => undefined });
+  deadline();
+  assert.deepEqual(states, ["loading", "unavailable"]);
 });
 
 test("embedded review no longer loads a duplicate course comment list", async () => {
