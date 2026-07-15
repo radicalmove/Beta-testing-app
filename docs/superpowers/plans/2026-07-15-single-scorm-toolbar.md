@@ -261,23 +261,23 @@ Commit: `feat(review): persist embedded comment navigation metadata`
 - Modify: `deploy/scripts/release-pilot-extension.sh`
 - Modify: `tests/test_deployment_package.py`
 
-- [ ] **Step 1: Write failing orchestration tests**
+- [x] **Step 1: Write failing orchestration tests**
 
 Cover local Moodle interaction versus delegated SCORM interaction, cached-selection button labels, queued marker intent while loading, cancel propagation, cancellation before replacement, replay after worker replacement/service-worker restart, course-list versus worker projection partitioning, and mutation refresh through `SCORM_COMMENTS_CHANGED`. With an injected clock, prove that an unsupported or never-registering frame remains `loading` only for a bounded interval and then becomes `unavailable` with parent-page fallback. Prove that missing, denied, or revoked-but-requestable permission instead remains `permission-required` with **Allow SCORM review access**, never showing fallback while permission remains actionable. Add stateful request tracking tests for duplicate request IDs, nonzero-frame top commands, non-elected worker events, mismatched ack type/page/course/instance/generation, stale async acknowledgements, and command timeout. Add permission tests for a manifest-declared candidate, frame-0-only request, synchronous user-gesture `chrome.permissions.request` before any `await`, denial/retry, revocation cleanup/capability invalidation, and injection into already-loaded frames or an explicit reload-required state.
 
-- [ ] **Step 2: Verify red**
+- [x] **Step 2: Verify red**
 
 Run: `cd extension && node --test tests/content.test.ts tests/overlay.test.ts tests/scorm-worker.test.ts tests/background-frame-coordination.test.ts tests/optional-permissions.test.ts tests/build-config.test.ts tests/optional-content-scripts.test.ts`
 
 Expected: FAIL because the top overlay cannot yet delegate or maintain desired interaction state.
 
-- [ ] **Step 3: Implement the top orchestrator**
+- [x] **Step 3: Implement the top orchestrator**
 
 Add an interaction target state (`local | loading | embedded | permission-required | unavailable`), one queued intent, and one current embedded projection owned by the top controller. Route ordinary Moodle pages locally and SCORM commands through bounded, correlated runtime requests. Use an injected clock/timer for a bounded loading deadline: transition to `unavailable` and expose parent-page fallback only when no supported/requestable frame can register by the deadline. A manifest-declared origin without permission remains `permission-required` before and after denial/revocation, and never falls through to `unavailable` while permission is requestable. Maintain a bounded replay/pending-request map in the runtime/background; reject duplicate/stale events and require exact acknowledgements. On worker-ready/replaced, replay desired marker mode and the current exact-page projection unless cancellation cleared the intent. Renderer mutations emit `SCORM_COMMENTS_CHANGED`; the top list and worker projection both refresh.
 
 Implement **Allow SCORM review access** rather than assuming it exists. Offer only origins matching build-time optional patterns; accept requests only from frame 0; call `chrome.permissions.request` synchronously in the click handler; register/inject `content.js` after grant or show a precise reload-required state. On revocation, remove dynamic registrations, invalidate related workers/capabilities, and fall back safely. Determine the approved UC pilot cross-origin iframe origins from representative course iframe `src` values, record only those concrete Chrome match patterns in `deploy/config/pilot-optional-frame-patterns.txt`, make the release script pass that exact comma-separated value to the build, and never request undeclared origins. Deployment tests must fail if the release omits the configured patterns.
 
-- [ ] **Step 4: Verify green and commit**
+- [x] **Step 4: Verify green and commit**
 
 Run: `cd extension && node --test tests/content.test.ts tests/overlay.test.ts tests/scorm-worker.test.ts tests/background-frame-coordination.test.ts tests/optional-permissions.test.ts tests/build-config.test.ts tests/optional-content-scripts.test.ts && npm run typecheck`
 
