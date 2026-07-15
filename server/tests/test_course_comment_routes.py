@@ -143,6 +143,17 @@ def test_embedded_navigation_metadata_round_trips_through_course_comment_list(cl
     assert listed.json()[0]["embedded_locator"] == payload["embedded_locator"]
 
 
+def test_embedded_parent_with_out_of_range_port_returns_validation_error(client):
+    headers = extension_headers(client)
+    course = client.post("/api/courses/resolve", headers=headers, json={"course_url": "https://moodle.example/course/view.php?id=21", "title": "Law", "moodle_course_id": 21})
+    response = client.post("/api/comments", headers=headers, json={
+        "course_id": course.json()["id"], "page_url": "https://rise.example/scorm/index.html", "page_title": "Lesson", "body": "Clarify",
+        "anchor_type": "visual_pin", "css_selector": "#main", "relative_x": .2, "relative_y": .3,
+        "parent_activity_url": "https://moodle.example:99999/mod/scorm/player.php", "embedded_locator": "#/lessons/one",
+    })
+    assert response.status_code == 422
+
+
 def test_extension_course_confirmation_rejects_a_confirmed_source_without_deleting_it(client):
     headers = extension_headers(client, UserRole.LD_DCD)
     session = client.db_factory()

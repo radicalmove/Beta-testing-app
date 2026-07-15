@@ -260,6 +260,10 @@ test("page comment response rejects extra fields and wrong pages", () => {
   assert.equal(validatePageCommentsResponse([{ ...base, parent_activity_url: "https://moodle.example/mod/scorm/player.php?a=9", embedded_locator: "#/lessons/one" }], pageUrl).length, 1);
   assert.throws(() => validatePageCommentsResponse([{ ...base, parent_activity_url: "http://moodle.example/x", embedded_locator: "#/lessons/one" }], pageUrl), /Invalid page comments response/);
   assert.throws(() => validatePageCommentsResponse([{ ...base, parent_activity_url: "https://user:pass@moodle.example/x", embedded_locator: "#/lessons/one" }], pageUrl), /Invalid page comments response/);
+  assert.throws(() => validatePageCommentsResponse([{ ...base, parent_activity_url: "HTTPS://moodle.example/x", embedded_locator: "#/lessons/one" }], pageUrl), /Invalid page comments response/);
+  assert.throws(() => validatePageCommentsResponse([{ ...base, parent_activity_url: "https://moodle.example:99999/x", embedded_locator: "#/lessons/one" }], pageUrl), /Invalid page comments response/);
+  assert.throws(() => validatePageCommentsResponse([{ ...base, parent_activity_url: "https://moodle.example:443/x", embedded_locator: "#/lessons/one" }], pageUrl), /Invalid page comments response/);
+  assert.equal(validatePageCommentsResponse([{ ...base, parent_activity_url: "https://moodle.example:8443/x", embedded_locator: "#/lessons/one" }], pageUrl).length, 1);
   assert.throws(() => validatePageCommentsResponse([{ ...base, parent_activity_url: "https://moodle.example/x", embedded_locator: "#/lesson one" }], pageUrl), /Invalid page comments response/);
   assert.throws(() => validatePageCommentsResponse([{ ...base, parent_activity_url: null, embedded_locator: "#/lessons/one" }], pageUrl), /Invalid page comments response/);
 });

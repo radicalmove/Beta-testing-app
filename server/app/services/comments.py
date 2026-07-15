@@ -8,6 +8,7 @@ from sqlalchemy.orm import aliased
 from sqlalchemy.orm import Session as DbSession
 
 from app.models import AnchorType, Attachment, Comment, CommentCategory, CommentReadState, CommentReply, CommentShare, CommentStatus, CommentStatusEvent, CourseMembership, MembershipState, PageLocation, User, UserRole
+from app.url_validation import canonical_https_url
 from app.security import utc_now
 
 
@@ -281,11 +282,7 @@ def create_comment(db: DbSession, author: User, *, course_id: uuid.UUID, page_ur
     if (parent_activity_url is None) != (embedded_locator is None):
         raise ValueError("parent_activity_url and embedded_locator must be supplied together")
     if parent_activity_url is not None:
-        parent = urlsplit(parent_activity_url)
-        if parent_activity_url != parent_activity_url.strip() or parent.scheme != "https" or not parent.netloc or parent.username is not None or parent.password is not None or any(ord(character) <= 32 or ord(character) == 127 for character in parent_activity_url):
-            raise ValueError("parent_activity_url must be an absolute credential-free HTTPS URL")
-        if len(parent_activity_url) > 4096:
-            raise ValueError("parent_activity_url is too long")
+        canonical_https_url(parent_activity_url, "parent_activity_url", max_length=4096)
         if not embedded_locator or len(embedded_locator) > 2048 or embedded_locator != embedded_locator.strip() or any(ord(character) <= 32 or ord(character) == 127 or character == "\\" for character in embedded_locator) or not embedded_locator.startswith(("#", "/")) or embedded_locator.startswith("//"):
             raise ValueError("embedded_locator must be a safe Rise hash or root-relative route")
     if (relative_x is not None and not 0 <= relative_x <= 1) or (relative_y is not None and not 0 <= relative_y <= 1):

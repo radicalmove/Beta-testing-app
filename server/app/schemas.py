@@ -3,6 +3,8 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.url_validation import canonical_https_url
+
 
 def _absolute_http_url(value: str, field_name: str) -> str:
     if value != value.strip():
@@ -143,12 +145,7 @@ class CommentCreateRequest(BaseModel):
     def parent_activity_is_https_moodle_url(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        if value != value.strip() or any(ord(character) <= 32 or ord(character) == 127 for character in value):
-            raise ValueError("parent_activity_url must not contain whitespace")
-        parsed = urlsplit(value)
-        if parsed.scheme != "https" or not parsed.netloc or parsed.username is not None or parsed.password is not None:
-            raise ValueError("parent_activity_url must be an absolute credential-free HTTPS URL")
-        return value
+        return canonical_https_url(value, "parent_activity_url", max_length=4096)
 
     @field_validator("embedded_locator")
     @classmethod

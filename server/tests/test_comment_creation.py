@@ -73,7 +73,9 @@ def test_embedded_navigation_metadata_rejects_partial_pairs(values):
 
 
 @pytest.mark.parametrize("parent", [
-    "http://moodle.example/mod/scorm/player.php?a=9", "javascript:alert(1)", "https://user:pass@moodle.example/x", " https://moodle.example/x", "https://moodle.example/x ",
+    "http://moodle.example/mod/scorm/player.php?a=9", "HTTPS://moodle.example/mod/scorm/player.php?a=9", "javascript:alert(1)",
+    "https://user:pass@moodle.example/x", "https://moodle.example:99999/x", "https://moodle.example:443/x",
+    " https://moodle.example/x", "https://moodle.example/x ",
 ])
 def test_embedded_parent_activity_requires_clean_credential_free_https(parent):
     with pytest.raises(ValidationError):
@@ -82,6 +84,18 @@ def test_embedded_parent_activity_requires_clean_credential_free_https(parent):
             anchor_type="visual_pin", css_selector="#main", relative_x=.2, relative_y=.3,
             parent_activity_url=parent, embedded_locator="#/lessons/one",
         )
+
+
+@pytest.mark.parametrize("parent", [
+    "https://moodle.example/x", "https://moodle.example:8443/x", "https://moodle.example:1/x", "https://moodle.example:65535/x",
+])
+def test_embedded_parent_activity_accepts_canonical_https_ports(parent):
+    request = CommentCreateRequest(
+        course_id="00000000-0000-0000-0000-000000000001", page_url="https://rise.example/index.html", page_title="Lesson", body="Fix",
+        anchor_type="visual_pin", css_selector="#main", relative_x=.2, relative_y=.3,
+        parent_activity_url=parent, embedded_locator="#/lessons/one",
+    )
+    assert request.parent_activity_url == parent
 
 
 @pytest.mark.parametrize("locator", ["lesson/one", "https://evil.example/x", "//evil.example/x", " javascript:alert(1)", "#/lesson one", "#/lesson\none"])
