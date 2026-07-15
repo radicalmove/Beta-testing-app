@@ -21,6 +21,7 @@ export type ScormWorkerOptions = {
   emit(event: ScormEvent): void;
   createLifecycle: LifecycleFactory;
   createRenderer?: (document: Document, pageUrl: string) => CommentRenderer;
+  navigate?: (destination: URL, mode: "hash" | "route") => boolean;
 };
 
 type PageIdentity = { pageUrl: string; pageTitle: string; embeddedLocator: string };
@@ -41,6 +42,14 @@ export function embeddedPageIdentity(window: Window & typeof globalThis, documen
 export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
   const { window, document } = options;
   const makeRenderer = options.createRenderer ?? ((target, pageUrl) => createCommentRenderer(target, pageUrl));
+  const navigate = options.navigate ?? ((destination: URL, mode: "hash" | "route") => {
+    if (mode === "hash") {
+      window.location.hash = destination.hash;
+      return window.location.hash === destination.hash;
+    }
+    window.location.assign(destination.href);
+    return true;
+  });
   let identity = embeddedPageIdentity(window, document);
   let navigationSignature = `${window.location.href}\n${document.title}`;
   let renderer = makeRenderer(document, identity.pageUrl);
@@ -167,7 +176,14 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
         case "SCORM_START_MARKER": startMarker(); return acknowledgement(command, true);
         case "SCORM_CANCEL_MARKER": stopMarker(); return acknowledgement(command, true);
         case "SCORM_SET_COMMENTS": renderer.setComments(command.payload.comments.filter((comment) => comment.page_url === identity.pageUrl)); return acknowledgement(command, true);
-        case "SCORM_APPLY_LOCATOR": window.location.hash = command.payload.embedded_locator.startsWith("#") ? command.payload.embedded_locator : new URL(command.payload.embedded_locator, window.location.href).hash; return acknowledgement(command, true);
+        case "SCORM_APPLY_LOCATOR": {
+          try {
+            const destination = new URL(command.payload.embedded_locator, window.location.href);
+            if (destination.origin !== window.location.origin) return acknowledgement(command, false, "LOCATOR_ORIGIN_MISMATCH");
+            const mode = command.payload.embedded_locator.startsWith("#") ? "hash" : "route";
+            return acknowledgement(command, navigate(destination, mode), "NAVIGATION_FAILED");
+          } catch { return acknowledgement(command, false, "NAVIGATION_FAILED"); }
+        }
         case "SCORM_TAKE_TO_CONTEXT": return acknowledgement(command, renderer.takeToContext(command.payload.comment_id), "COMMENT_NOT_FOUND");
       }
     },

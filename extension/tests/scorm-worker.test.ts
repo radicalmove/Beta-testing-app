@@ -37,7 +37,7 @@ function selectText(window: Window, text: Text, start: number, end: number) {
   window.document.dispatchEvent(new window.Event("selectionchange"));
 }
 
-function createHarness() {
+function createHarness(navigate?: (destination: URL, mode: "hash" | "route") => boolean) {
   const window = new Window({ url: "https://rise.example/activity#/lesson/1" });
   window.document.title = "Lesson 1";
   window.document.body.innerHTML = "<main><h1>Lesson 1</h1><p id='copy'>Meaningful Rise lesson content.</p><button id='area'>Area</button></main>";
@@ -60,6 +60,7 @@ function createHarness() {
     courseId,
     emit: (event) => { events.push(event); },
     createRenderer,
+    navigate,
     createLifecycle: (_window, _document, callback) => { refresh = callback; return { teardown: () => { tornDown = true; }, flush: callback }; },
   });
   return { window, events, projections, worker, refresh: () => refresh?.(), rendererDestroyed: () => rendererDestroyed, tornDown: () => tornDown, takenToContext: () => takenToContext };
@@ -205,5 +206,37 @@ test("stale-context errors remain correlated to the triggering command after a p
   assert.equal(acknowledgement.ok, false);
   assert.equal(acknowledgement.ok ? undefined : acknowledgement.error_code, "STALE_CONTEXT");
   assert.doesNotThrow(() => validateScormAckFor(stale, acknowledgement));
+  worker.destroy();
+});
+
+test("apply-locator navigates a validated same-origin route without dropping its query or hash", () => {
+  const { window, worker } = createHarness();
+  const apply = command(window, "SCORM_APPLY_LOCATOR", { embedded_locator: "/activity/lesson/2?mode=review#/step/3" });
+  const acknowledgement = worker.handleCommand(apply);
+  assert.equal(acknowledgement.ok, true);
+  assert.equal(window.location.href, "https://rise.example/activity/lesson/2?mode=review#/step/3");
+  worker.destroy();
+});
+
+test("apply-locator retains hash-only Rise navigation on the current document", () => {
+  const { window, worker } = createHarness();
+  const apply = command(window, "SCORM_APPLY_LOCATOR", { embedded_locator: "#/lesson/4" });
+  const acknowledgement = worker.handleCommand(apply);
+  assert.equal(acknowledgement.ok, true);
+  assert.equal(window.location.href, "https://rise.example/activity#/lesson/4");
+  worker.destroy();
+});
+
+test("apply-locator does not acknowledge success when route navigation fails", () => {
+  const attempts: Array<{ href: string; mode: string }> = [];
+  const { window, worker } = createHarness((destination, mode) => {
+    attempts.push({ href: destination.href, mode });
+    return false;
+  });
+  const apply = command(window, "SCORM_APPLY_LOCATOR", { embedded_locator: "/activity/lesson/2?mode=review#/step/3" });
+  const acknowledgement = worker.handleCommand(apply);
+  assert.equal(acknowledgement.ok, false);
+  assert.equal(acknowledgement.ok ? undefined : acknowledgement.error_code, "NAVIGATION_FAILED");
+  assert.deepEqual(attempts, [{ href: "https://rise.example/activity/lesson/2?mode=review#/step/3", mode: "route" }]);
   worker.destroy();
 });
