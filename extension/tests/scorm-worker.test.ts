@@ -182,7 +182,7 @@ test("comment projection is limited to the worker's exact page and take-to-conte
   const other = "https://rise.example/activity#moodle-review-page=Lesson%202";
   const makeComment = (id: string, pageUrl: string): PageComment => ({
     id, body: "Feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" },
-    page_url: pageUrl, page_title: "Embedded activity · Lesson 1", anchor_type: "visual_pin", selected_quote: null, prefix: null, suffix: null,
+    page_url: pageUrl, page_title: "Embedded activity · Lesson 1", parent_activity_url: null, embedded_locator: null, anchor_type: "visual_pin", selected_quote: null, prefix: null, suffix: null,
     css_selector: "#area", dom_selector: null, relative_x: 0.5, relative_y: 0.5, replies: [], status_history: [],
     capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false },
   });

@@ -24,6 +24,8 @@ const comment = {
   author: { display_name: "Reviewer", role: "beta_tester" },
   page_url: pageUrl,
   page_title: "Embedded activity · Lesson one",
+  parent_activity_url: null,
+  embedded_locator: null,
   anchor_type: "text_highlight",
   selected_quote: "important phrase",
   prefix: "Before ",

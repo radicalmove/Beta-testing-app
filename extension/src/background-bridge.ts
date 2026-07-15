@@ -6,7 +6,7 @@ export type CancelScreenshotPayload = { comment_id: string };
 export type ViewerIdentity = { course_id: string; user: { id: string; display_name: string | null; email: string; role: string } };
 type PublicAuthor = { display_name: string; role: string };
 export type CommentCapabilities = { can_reply: boolean; can_edit?: boolean; can_change_status: boolean; can_share_with_sme: boolean; can_delete: boolean; allowed_statuses?: string[] };
-export type PageComment = { id: string; body: string; category: string; status: string; author: PublicAuthor; page_url: string; page_title: string; anchor_type: "text_highlight" | "visual_pin"; selected_quote: string | null; prefix: string | null; suffix: string | null; css_selector: string | null; dom_selector: string | null; relative_x: number | null; relative_y: number | null; replies: Array<{ id: string; body: string; author: PublicAuthor }>; status_history: Array<{ status: string; created_at: string; actor: string }>; capabilities: CommentCapabilities };
+export type PageComment = { id: string; body: string; category: string; status: string; author: PublicAuthor; page_url: string; page_title: string; parent_activity_url: string | null; embedded_locator: string | null; anchor_type: "text_highlight" | "visual_pin"; selected_quote: string | null; prefix: string | null; suffix: string | null; css_selector: string | null; dom_selector: string | null; relative_x: number | null; relative_y: number | null; replies: Array<{ id: string; body: string; author: PublicAuthor }>; status_history: Array<{ status: string; created_at: string; actor: string }>; capabilities: CommentCapabilities };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function normalizeErrorMessage(error: unknown): string {
@@ -42,7 +42,7 @@ const exactKeys = (value: Record<string, unknown>, keys: string[]) => Object.key
 export function validatePageCommentsResponse(value: unknown, requestedPageUrl?: string): PageComment[] {
   const invalid = (): never => { throw new Error("Invalid page comments response"); };
   if (!Array.isArray(value) || value.length > 500) return invalid();
-  const commentKeys = ["id", "body", "category", "status", "author", "page_url", "page_title", "anchor_type", "selected_quote", "prefix", "suffix", "css_selector", "dom_selector", "relative_x", "relative_y", "replies", "status_history", "capabilities"];
+  const commentKeys = ["id", "body", "category", "status", "author", "page_url", "page_title", "parent_activity_url", "embedded_locator", "anchor_type", "selected_quote", "prefix", "suffix", "css_selector", "dom_selector", "relative_x", "relative_y", "replies", "status_history", "capabilities"];
   const roles = ["beta_tester", "sme", "ld_dcd", "admin"];
   const statuses = ["open", "in_progress", "awaiting_sme", "resolved", "deferred"];
   return value.map((entry) => {
@@ -52,6 +52,9 @@ export function validatePageCommentsResponse(value: unknown, requestedPageUrl?: 
     const capabilities = row.capabilities as Record<string, unknown>;
     if (!exactKeys(row, commentKeys) || !uuid.test(row.id as string) || !author || !exactKeys(author, ["display_name", "role"]) || !bounded(author.display_name, 100) || !(author.display_name as string).trim() || !roles.includes(author.role as string) || (requestedPageUrl !== undefined && row.page_url !== requestedPageUrl) || !exactHttpUrl(row.page_url) || !bounded(row.body, 10000) || !(row.body as string).trim() || !bounded(row.page_title, 512) || !(row.page_title as string).trim() || !statuses.includes(row.status as string) || !bounded(row.category, 64)) return invalid();
     if (!capabilities || ["can_reply", "can_change_status", "can_share_with_sme", "can_delete"].some((key) => typeof capabilities[key] !== "boolean") || (capabilities.can_edit !== undefined && typeof capabilities.can_edit !== "boolean") || (capabilities.allowed_statuses !== undefined && (!Array.isArray(capabilities.allowed_statuses) || capabilities.allowed_statuses.some((value) => !statuses.includes(value as string))))) return invalid();
+    const pairedNavigation = row.parent_activity_url === null && row.embedded_locator === null;
+    const validNavigation = exactHttpsUrl(row.parent_activity_url) && validEmbeddedLocator(row.embedded_locator);
+    if (!pairedNavigation && !validNavigation) return invalid();
     if (!["text_highlight", "visual_pin"].includes(row.anchor_type as string) || !bounded(row.selected_quote, 20000, true) || !bounded(row.prefix, 2000, true) || !bounded(row.suffix, 2000, true) || !bounded(row.css_selector, 4000, true) || !bounded(row.dom_selector, 4000, true)) return invalid();
     for (const coordinate of [row.relative_x, row.relative_y]) if (coordinate !== null && (typeof coordinate !== "number" || !Number.isFinite(coordinate) || coordinate < 0 || coordinate > 1)) return invalid();
     if (!Array.isArray(row.replies) || row.replies.length > 1000 || !Array.isArray(row.status_history) || row.status_history.length > 1000) return invalid();
@@ -66,6 +69,17 @@ export function validatePageCommentsResponse(value: unknown, requestedPageUrl?: 
     }
     return row as PageComment;
   });
+}
+
+function exactHttpsUrl(value: unknown): value is string {
+  if (!exactHttpUrl(value) || !value.startsWith("https://")) return false;
+  const parsed = new URL(value);
+  return !parsed.username && !parsed.password;
+}
+
+function validEmbeddedLocator(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 2048 && value.trim() === value
+    && !/[\u0000-\u0020\u007f\\]/.test(value) && (value.startsWith("#") || value.startsWith("/")) && !value.startsWith("//");
 }
 
 export async function handleListCourseCommentsBridge(message: unknown, sender: { id?: string; url?: string }, dependencies: { authorize(sender: { id?: string; url?: string }): Promise<boolean>; courseId(sender: { id?: string; url?: string }): string | undefined; list(courseId: string): Promise<unknown> }): Promise<PageComment[]> {

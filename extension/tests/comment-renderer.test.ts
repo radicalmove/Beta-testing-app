@@ -17,6 +17,8 @@ const comment = (overrides: Partial<PageComment> = {}): PageComment => ({
   author: { display_name: "Reviewer", role: "beta_tester" },
   page_url: pageUrl,
   page_title: "Week 2",
+  parent_activity_url: null,
+  embedded_locator: null,
   anchor_type: "visual_pin",
   selected_quote: null,
   prefix: null,

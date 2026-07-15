@@ -266,7 +266,7 @@ def replace_sme_recipients(db: DbSession, actor: User, comment_id: uuid.UUID, us
     return comment
 
 
-def create_comment(db: DbSession, author: User, *, course_id: uuid.UUID, page_url: str, page_title: str, body: str, category: str = "general", anchor_type: str = "", selected_quote: str | None = None, prefix: str | None = None, suffix: str | None = None, css_selector: str | None = None, dom_selector: str | None = None, relative_x: float | None = None, relative_y: float | None = None) -> Comment:
+def create_comment(db: DbSession, author: User, *, course_id: uuid.UUID, page_url: str, page_title: str, body: str, category: str = "general", anchor_type: str = "", selected_quote: str | None = None, prefix: str | None = None, suffix: str | None = None, css_selector: str | None = None, dom_selector: str | None = None, relative_x: float | None = None, relative_y: float | None = None, parent_activity_url: str | None = None, embedded_locator: str | None = None) -> Comment:
     if not body.strip():
         raise ValueError("body is required")
     if not page_title.strip():
@@ -278,6 +278,16 @@ def create_comment(db: DbSession, author: User, *, course_id: uuid.UUID, page_ur
         raise ValueError("page_url must be an absolute http or https URL")
     if (relative_x is None) != (relative_y is None):
         raise ValueError("relative_x and relative_y must be supplied together")
+    if (parent_activity_url is None) != (embedded_locator is None):
+        raise ValueError("parent_activity_url and embedded_locator must be supplied together")
+    if parent_activity_url is not None:
+        parent = urlsplit(parent_activity_url)
+        if parent_activity_url != parent_activity_url.strip() or parent.scheme != "https" or not parent.netloc or parent.username is not None or parent.password is not None or any(ord(character) <= 32 or ord(character) == 127 for character in parent_activity_url):
+            raise ValueError("parent_activity_url must be an absolute credential-free HTTPS URL")
+        if len(parent_activity_url) > 4096:
+            raise ValueError("parent_activity_url is too long")
+        if not embedded_locator or len(embedded_locator) > 2048 or embedded_locator != embedded_locator.strip() or any(ord(character) <= 32 or ord(character) == 127 or character == "\\" for character in embedded_locator) or not embedded_locator.startswith(("#", "/")) or embedded_locator.startswith("//"):
+            raise ValueError("embedded_locator must be a safe Rise hash or root-relative route")
     if (relative_x is not None and not 0 <= relative_x <= 1) or (relative_y is not None and not 0 <= relative_y <= 1):
         raise ValueError("relative coordinates must be between 0 and 1")
     has_quote = bool(selected_quote and selected_quote.strip())
@@ -292,7 +302,7 @@ def create_comment(db: DbSession, author: User, *, course_id: uuid.UUID, page_ur
     else:
         raise ValueError("Invalid anchor type")
     instant = utc_now()
-    location = PageLocation(course_id=course_id, page_url=page_url.strip(), page_title=page_title.strip(), anchor_type=anchor_type, selected_quote=selected_quote, prefix=prefix, suffix=suffix, css_selector=css_selector, dom_selector=dom_selector, relative_x=relative_x, relative_y=relative_y, created_at=instant)
+    location = PageLocation(course_id=course_id, page_url=page_url.strip(), page_title=page_title.strip(), anchor_type=anchor_type, selected_quote=selected_quote, prefix=prefix, suffix=suffix, css_selector=css_selector, dom_selector=dom_selector, relative_x=relative_x, relative_y=relative_y, parent_activity_url=parent_activity_url, embedded_locator=embedded_locator, created_at=instant)
     db.add(location)
     db.flush()
     comment = Comment(course_id=course_id, location_id=location.id, author_user_id=author.id, author_role=author.role, body=body.strip(), category=CommentCategory(category), status=CommentStatus.OPEN, created_at=instant, updated_at=instant)

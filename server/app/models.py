@@ -218,10 +218,13 @@ class PageLocation(Base):
     dom_selector: Mapped[str | None] = mapped_column(Text)
     relative_x: Mapped[float | None] = mapped_column(Float)
     relative_y: Mapped[float | None] = mapped_column(Float)
+    parent_activity_url: Mapped[str | None] = mapped_column(Text)
+    embedded_locator: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     __table_args__ = (
         CheckConstraint("anchor_type IN ('text_highlight', 'visual_pin')", name="ck_page_locations_anchor_type"),
+        CheckConstraint("(parent_activity_url IS NULL) = (embedded_locator IS NULL)", name="ck_page_locations_embedded_navigation_pair"),
         Index("ix_page_locations_course_page", "course_id", "page_url"),
     )
 

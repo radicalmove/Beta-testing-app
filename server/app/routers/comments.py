@@ -23,6 +23,7 @@ def _page_comment_json(projected: PageComment, viewer: User) -> dict:
     return {
         "id": str(comment.id), "body": comment.body, "category": comment.category.value,
         "status": comment.status.value, "author": {"display_name": author.display_name, "role": author.role.value}, "page_url": location.page_url, "page_title": location.page_title,
+        "parent_activity_url": location.parent_activity_url, "embedded_locator": location.embedded_locator,
         "anchor_type": location.anchor_type.value if hasattr(location.anchor_type, "value") else location.anchor_type, "selected_quote": location.selected_quote,
         "prefix": location.prefix, "suffix": location.suffix, "css_selector": location.css_selector,
         "dom_selector": location.dom_selector, "relative_x": location.relative_x, "relative_y": location.relative_y,

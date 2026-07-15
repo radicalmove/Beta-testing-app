@@ -130,11 +130,36 @@ class CommentCreateRequest(BaseModel):
     dom_selector: str | None = Field(default=None, max_length=4000)
     relative_x: float | None = Field(default=None, ge=0, le=1)
     relative_y: float | None = Field(default=None, ge=0, le=1)
+    parent_activity_url: str | None = Field(default=None, min_length=1, max_length=4096)
+    embedded_locator: str | None = Field(default=None, min_length=1, max_length=2048)
 
     @field_validator("page_url")
     @classmethod
     def page_url_is_http_url(cls, value: str) -> str:
         return _absolute_http_url(value, "page_url")
+
+    @field_validator("parent_activity_url")
+    @classmethod
+    def parent_activity_is_https_moodle_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if value != value.strip() or any(ord(character) <= 32 or ord(character) == 127 for character in value):
+            raise ValueError("parent_activity_url must not contain whitespace")
+        parsed = urlsplit(value)
+        if parsed.scheme != "https" or not parsed.netloc or parsed.username is not None or parsed.password is not None:
+            raise ValueError("parent_activity_url must be an absolute credential-free HTTPS URL")
+        return value
+
+    @field_validator("embedded_locator")
+    @classmethod
+    def embedded_locator_is_safe_rise_route(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if value != value.strip() or any(ord(character) <= 32 or ord(character) == 127 or character == "\\" for character in value):
+            raise ValueError("embedded_locator contains unsafe characters")
+        if (not value.startswith(("#", "/"))) or value.startswith("//"):
+            raise ValueError("embedded_locator must be a Rise hash or root-relative route")
+        return value
 
     @model_validator(mode="after")
     def valid_anchor(self):
@@ -146,6 +171,8 @@ class CommentCreateRequest(BaseModel):
             raise ValueError("Invalid anchor type")
         if (self.relative_x is None) != (self.relative_y is None):
             raise ValueError("relative_x and relative_y must be supplied together")
+        if (self.parent_activity_url is None) != (self.embedded_locator is None):
+            raise ValueError("parent_activity_url and embedded_locator must be supplied together")
         quote = self.selected_quote and self.selected_quote.strip()
         selector = (self.css_selector and self.css_selector.strip()) or (self.dom_selector and self.dom_selector.strip())
         context = (self.prefix and self.prefix.strip()) or (self.suffix and self.suffix.strip())

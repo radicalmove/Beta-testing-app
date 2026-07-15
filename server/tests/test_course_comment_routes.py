@@ -124,6 +124,23 @@ def test_course_comment_list_includes_locations_and_excludes_other_courses(clien
     assert response.status_code == 200
     assert {item["page_title"] for item in response.json()} == {"Page 91", "Page 92"}
     assert all(item["page_url"].endswith(("91", "92")) for item in response.json())
+    assert all(item["parent_activity_url"] is None and item["embedded_locator"] is None for item in response.json())
+
+
+def test_embedded_navigation_metadata_round_trips_through_course_comment_list(client):
+    headers = extension_headers(client)
+    course = client.post("/api/courses/resolve", headers=headers, json={"course_url": "https://moodle.example/course/view.php?id=20", "title": "Law", "moodle_course_id": 20})
+    payload = {
+        "course_id": course.json()["id"], "page_url": "https://rise.example/scorm/index.html", "page_title": "Lesson 1", "body": "Clarify",
+        "anchor_type": "visual_pin", "css_selector": "#main", "relative_x": .2, "relative_y": .3,
+        "parent_activity_url": "https://moodle.example/mod/scorm/player.php?a=9", "embedded_locator": "/activity/index.html#/lessons/one",
+    }
+    created = client.post("/api/comments", headers=headers, json=payload)
+    assert created.status_code == 201
+    listed = client.get(f"/api/comments?course_id={course.json()['id']}", headers=headers)
+    assert listed.status_code == 200
+    assert listed.json()[0]["parent_activity_url"] == payload["parent_activity_url"]
+    assert listed.json()[0]["embedded_locator"] == payload["embedded_locator"]
 
 
 def test_extension_course_confirmation_rejects_a_confirmed_source_without_deleting_it(client):
