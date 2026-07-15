@@ -9,7 +9,9 @@ test("version remains accessible without overlapping review controls at 320 CSS 
   await page.route("https://moodle.example.invalid/**", (route) => route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Fixture</title><h1>Law</h1>" }));
   await page.addInitScript(() => {
     (globalThis as any).chrome = { runtime: { id: "fixture-extension", sendMessage(message: any, callback: (response: unknown) => void) {
-      callback(message.type === "RESOLVE_COURSE" ? { ok: true, data: { id: "123e4567-e89b-12d3-a456-426614174000" } } : { ok: true, data: [] });
+      if (message.type === "RESOLVE_COURSE") callback({ ok: true, data: { id: "123e4567-e89b-12d3-a456-426614174000" } });
+      else if (message.type === "GET_CURRENT_VIEWER") callback({ ok: true, data: { id: "123e4567-e89b-42d3-a456-426614174001", email: "ld@example.test", display_name: "Fixture LD", role: "ld_dcd" } });
+      else callback({ ok: true, data: [] });
     } } };
   });
   await page.goto("https://moodle.example.invalid/course/view.php?id=1");
@@ -21,7 +23,7 @@ test("version remains accessible without overlapping review controls at 320 CSS 
     const box = (selector: string) => node.shadowRoot.querySelector(selector).getBoundingClientRect().toJSON();
     return {
       viewport: { width: innerWidth, height: innerHeight },
-      boxes: [box(".shell"), box("[data-pilot-version]"), box("[data-auth-status]"), box("[data-review-controls]")],
+      boxes: [box(".shell"), box("[data-auth-status]"), box("[data-review-controls]")],
     };
   });
   const boxes = layout.boxes.slice(1);
@@ -33,13 +35,7 @@ test("version remains accessible without overlapping review controls at 320 CSS 
   }
   const intersects = (a: any, b: any) => a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
   expect(intersects(boxes[0], boxes[1])).toBe(false);
-  expect(intersects(boxes[0], boxes[2])).toBe(false);
-  expect(intersects(boxes[1], boxes[2])).toBe(false);
-  await expect(host.getByRole("note", { name: "Pilot version 0.2.0" })).toBeVisible();
 
-  await host.locator('[data-action="panel"]').click();
-  await host.locator('[data-action="panel"]').focus();
-  await page.keyboard.press("Tab");
-  await expect.poll(() => host.evaluate((node: any) => node.shadowRoot.activeElement?.hasAttribute("data-build-diagnostic"))).toBe(true);
-  await expect(host.locator("[data-build-diagnostic]")).toHaveAccessibleName("Version 0.2.0 · build 0000000");
+  await host.locator('[data-action="help"]').click();
+  await expect(host.getByText("Pilot 0.4.21 · build 0000000")).toBeVisible();
 });

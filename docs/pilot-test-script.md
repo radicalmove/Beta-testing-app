@@ -1,5 +1,25 @@
 # CRJU150 pilot test script
 
+## Install and confirm the pilot build
+
+Use only this unpacked-extension folder in both browsers:
+
+`/Users/rcd58/OpenAI Projects/Beta Testing App/pilot-builds/moodle-review-extension`
+
+In `chrome://extensions` or `edge://extensions`, enable Developer mode, remove any older Moodle Course Review entries, choose **Load unpacked**, and select that folder. Confirm the extension details and the in-course help/version diagnostic both report **0.4.21**. After every replacement build, click **Reload** on the extension card and then reload the Moodle tab. Do not load `extension/dist` or a release-history folder alongside it.
+
+If Chrome or Edge shows historical errors after a reload, open the extension's **Errors** page, choose **Clear all**, reload the extension, and reload the Moodle tab. An old warning is not a current failure unless it returns after those steps.
+
+## Single-toolbar SCORM acceptance
+
+Open the CRJU150 SCORM player and confirm there is exactly one teal review toolbar, owned by the Moodle page and fixed at bottom right. There must never be a second toolbar inside Rise, including after scrolling, changing Rise lessons, reloading, or waiting for the activity to settle.
+
+Select text inside Rise, then click the Moodle toolbar: the selection must remain available for a highlighted comment. Start marker mode, cancel it, and confirm the pointer returns to normal and no comment is created. Start it again, place a marker inside Rise, save, refresh, and confirm both highlights and markers restore and open their threads in context. From **Comments**, choose a SCORM comment and confirm Moodle opens the correct activity, Rise opens the correct internal lesson, scrolls to the marker, and opens its thread.
+
+Also test a late/replaced Rise worker by reloading the activity and navigating between Rise lessons. There must remain one toolbar, old workers must not place markers, and existing comments must restore against the active lesson.
+
+For an origin that needs optional frame access, deny the permission once and confirm the toolbar explains that access is required without creating a fallback toolbar. Grant access, reload when prompted, and repeat marker/highlight creation. Then revoke the permission in browser extension site settings: interaction must stop safely and recover after access is granted and the page is reloaded.
+
 Record browser/version, stable extension ID, service origin, role, time, result, and requested screenshots.
 
 Use these exact CRJU150 pilot routes:

@@ -38,9 +38,8 @@ def assert_production_manifest(manifest: dict) -> None:
 class DeploymentPackageTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        required = [ROOT / "extension/dist/manifest.json", ROOT / "extension/dist/content.js", ROOT / "extension/dist/background.js"]
-        if all(path.is_file() for path in required):
-            return
+        # Never accept a development/E2E dist left by an earlier command as
+        # production packaging evidence; build the exact production fixture.
         cls._build_directory = tempfile.TemporaryDirectory()
         private_key = Path(cls._build_directory.name) / "pilot-test.pem"
         subprocess.run(["openssl", "genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048", "-out", str(private_key)], check=True, capture_output=True)
@@ -124,6 +123,8 @@ class DeploymentPackageTests(unittest.TestCase):
         self.assertIn("tailscale serve", operations)
         self.assertIn("disposable", operations.lower())
         for token in ("CRJU150", "896", "9972", "9976", "118172", "146308", "Reviewer", "LD", "SME"):
+            self.assertIn(token, pilot)
+        for token in ("0.4.21", "pilot-builds/moodle-review-extension", "chrome://extensions", "edge://extensions", "exactly one teal review toolbar", "Clear all", "revoke the permission"):
             self.assertIn(token, pilot)
         for route in (
             "https://my.uconline.ac.nz/course/view.php?id=896",

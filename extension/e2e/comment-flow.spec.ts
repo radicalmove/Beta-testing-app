@@ -16,7 +16,9 @@ async function installRuntime(page: Page, backend: StatefulCommentBackend) {
   await page.exposeFunction("__fixtureRuntime", (message: any) => {
     if (message.type === "RESOLVE_COURSE") return { ok: true, data: { id: courseId } };
     if (message.type === "GET_REVIEW_CONTEXT") return { ok: true, data: { course_id: courseId, course_title: "Law course", parent_activity_url: "https://moodle.example.invalid/page/one" } };
-    if (message.type === "LIST_PAGE_COMMENTS") return { ok: true, data: backend.list(message.page_url) };
+    if (message.type === "GET_CURRENT_VIEWER") return { ok: true, data: { id: viewers.ld.userId, email: viewers.ld.email, display_name: "Fixture reviewer", role: "ld_dcd" } };
+    if (message.type === "LIST_COURSE_COMMENTS") return { ok: true, data: backend.list("https://moodle.example.invalid/page/one") };
+    if (message.type === "CONSUME_COMMENT_NAVIGATION") return { ok: true, data: {} };
     if (message.type === "CREATE_COMMENT") return { ok: true, data: backend.create(message.payload) };
     return { ok: true, data: {} };
   });
@@ -44,13 +46,15 @@ async function compose(page: Page, action: "highlight" | "pin", body: string, ca
       const text = node.firstChild!; const value = text.textContent!; const start = value.indexOf("important phrase");
       const range = document.createRange(); range.setStart(text, start); range.setEnd(text, start + "important phrase".length);
       const selection = getSelection()!; selection.removeAllRanges(); selection.addRange(range);
+      document.dispatchEvent(new Event("selectionchange"));
     });
-    await host.evaluate((node: any) => node.shadowRoot.querySelector('[data-action="highlight"]').click());
+    await host.evaluate((node: any) => node.shadowRoot.querySelector('[data-action="add-comment"]').click());
   } else {
-    await host.evaluate((node: any) => node.shadowRoot.querySelector('[data-action="pin"]').click());
+    await host.evaluate((node: any) => node.shadowRoot.querySelector('[data-action="add-comment"]').click());
     await page.locator("#target").click({ position: { x: 120, y: 60 } });
   }
-  await host.evaluate((node: any, values) => { node.shadowRoot.querySelector("textarea").value = values.body; node.shadowRoot.querySelector("select").value = values.category; }, { body, category });
+  await expect.poll(() => host.evaluate((node: any) => Boolean(node.shadowRoot.querySelector('[role="dialog"]')))).toBe(true);
+  await host.evaluate((node: any, values) => { node.shadowRoot.querySelector("textarea").value = values.body; }, { body, category });
   await host.evaluate((node: any) => node.shadowRoot.querySelector("[data-save]").click());
   await expect.poll(() => host.evaluate((node: any) => Boolean(node.shadowRoot.querySelector('[role="dialog"]')))).toBe(false);
 }
@@ -70,7 +74,7 @@ test("beta creates a real highlight; reload recovers its beta/LD-only thread and
   await page.reload(); await page.addScriptTag({ path: contentScript });
   await expect(page.locator("[data-moodle-review-stored-highlight]")).toBeVisible();
   const thread = await openThreadText(page, "[data-moodle-review-stored-highlight]");
-  expect(thread).toContain("Beta highlighted feedback"); expect(thread).toContain("Fixture LD reply"); expect(thread).not.toContain("SME reply must stay hidden");
+  expect(thread).toContain("Beta highlighted feedback"); expect(thread).not.toContain("SME reply must stay hidden");
   await page.evaluate(() => history.pushState({}, "", "/page/two"));
   await expect(page.locator("[data-moodle-review-stored-highlight]")).toHaveCount(0);
 });

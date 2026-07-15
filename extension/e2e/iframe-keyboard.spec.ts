@@ -12,6 +12,7 @@ async function openFixture(page: Page) {
           if (message.type === "RESOLVE_COURSE") { callback({ ok: true, data: { id: "123e4567-e89b-12d3-a456-426614174000" } }); return; }
           if (message.type === "GET_REVIEW_CONTEXT") { callback({ ok: true, data: { course_id: "123e4567-e89b-12d3-a456-426614174000", course_title: "Law course", parent_activity_url: "https://moodle.example.invalid/mod/page/view.php?id=9" } }); return; }
           if (message.type === "GET_REVIEW_FRAME_STATUS") { callback({ ok: true, data: { ready_count: 1, ready_origins: [] } }); return; }
+          if (message.type === "GET_CURRENT_VIEWER") { callback({ ok: true, data: { id: "123e4567-e89b-42d3-a456-426614174001", email: "ld@example.test", display_name: "Fixture LD", role: "ld_dcd" } }); return; }
           callback({ ok: true, data: {} });
         },
       },
@@ -30,20 +31,10 @@ async function openFixture(page: Page) {
   await expect.poll(() => page.evaluate(() => Boolean(document.querySelector("#moodle-course-review-overlay")?.shadowRoot))).toBe(true);
 }
 
-test("mixed accessible and inaccessible frames keep iframe review and exact parent fallback", async ({ page }) => {
+test("mixed accessible and inaccessible frames keep one top toolbar and exact fallback", async ({ page }) => {
   await openFixture(page);
   const activity = page.frameLocator('iframe[title="Course activity"]');
-  await expect(activity.locator("#moodle-course-review-overlay")).toHaveCount(1);
-  await expect.poll(() => page.evaluate(() => document.querySelector("#moodle-course-review-overlay")!.shadowRoot!.textContent)).toContain("embedded content—frame access unavailable");
-  await activity.locator("#inside").evaluate((node) => {
-    const text = node.firstChild!;
-    const range = document.createRange(); range.selectNodeContents(text);
-    const selection = getSelection()!; selection.removeAllRanges(); selection.addRange(range);
-    (document.querySelector("#moodle-course-review-overlay")!.shadowRoot!.querySelector('[data-action="highlight"]') as HTMLElement).click();
-  });
-  await expect.poll(() => activity.locator("#moodle-course-review-overlay").evaluate((host: any) => host.shadowRoot.activeElement?.tagName)).toBe("TEXTAREA");
-  await activity.locator("body").press("Escape");
-  await expect.poll(() => activity.locator("#moodle-course-review-overlay").evaluate((host: any) => Boolean(host.shadowRoot.querySelector('[role="dialog"]')))).toBe(false);
-  await expect.poll(() => activity.locator("#moodle-course-review-overlay").evaluate((host: any) => host.shadowRoot.activeElement?.dataset.action)).toBe("highlight");
-  await expect.poll(() => page.evaluate(() => document.querySelector("#moodle-course-review-overlay")!.shadowRoot!.textContent)).toContain("Place a pin on the embedded content instead.");
+  await expect(activity.locator("#moodle-course-review-overlay")).toHaveCount(0);
+  await expect(page.locator("#moodle-course-review-overlay")).toHaveCount(1);
+  await expect.poll(() => page.evaluate(() => document.querySelector("#moodle-course-review-overlay")!.shadowRoot!.textContent)).toContain("Allow SCORM review access");
 });
