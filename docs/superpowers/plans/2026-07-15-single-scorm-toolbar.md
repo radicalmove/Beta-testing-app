@@ -212,21 +212,21 @@ Commit: `feat(review): secure delegated SCORM comment creation`
 - Modify: `extension/tests/scorm-worker.test.ts`
 - Create: `deploy/scripts/test-postgres-migration.sh`
 
-- [ ] **Step 1: Write failing schema/service/route tests**
+- [x] **Step 1: Write failing schema/service/route tests**
 
 Add nullable `parent_activity_url` (absolute HTTPS Moodle URL, max 4096) and `embedded_locator` (bounded validated Rise hash/route, max 2048). Test create/list round-trip, invalid schemes/credentials/whitespace, ordinary comments with null metadata, legacy rows with both fields null, and a database constraint requiring both fields null or both non-null. Update the extension's exact `PageComment` contract and every affected fixture to require both nullable response keys, otherwise valid new server responses would be rejected.
 
-- [ ] **Step 2: Verify red**
+- [x] **Step 2: Verify red**
 
 Run: `cd server && python3 -m pytest -q tests/test_comment_creation.py tests/test_course_comment_routes.py`
 
 Expected: FAIL because the request/model/JSON response omit the fields.
 
-- [ ] **Step 3: Add the nullable columns and validation**
+- [x] **Step 3: Add the nullable columns and validation**
 
 Add both columns to `PageLocation` with a PostgreSQL check constraint enforcing both-or-neither. Require both-or-neither in Pydantic/service validation. Return both nullable keys in every page/course comment JSON response. Extend `validatePageCommentsResponse` and renderer/list fixtures in the same commit. The trusted parent-origin enforcement is already implemented at the extension bridge in Task 5.
 
-- [ ] **Step 4: Verify migration and tests, then commit**
+- [x] **Step 4: Verify migration and tests, then commit**
 
 Run: `cd server && python3 -m pytest -q tests/test_comment_creation.py tests/test_course_comment_routes.py`
 
