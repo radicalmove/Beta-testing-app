@@ -1,6 +1,6 @@
 import { ApiClient, authenticate, getActiveToken, lookupReviewCourse, redeemReviewerInvitation, renewReviewerDevice, resumeReviewerMembership, type SessionToken } from "./api";
 import { authorizeAuthenticateSender, authorizeResolveSender, handleCreateCommentBridge, handleCreateEmbeddedCommentBridge, handleDeleteCommentBridge, handleListCourseCommentsBridge, handleListPageCommentsBridge, handleResolveCourseBridge, normalizeErrorMessage, validateAuthenticateMessage, validateCancelScreenshotMessage, validatePageCommentsResponse, validateUploadScreenshotMessage, validateViewerResponse, type CreateCommentPayload, type ResolveCoursePayload } from "./background-bridge.ts";
-import { EmbeddedCommentNavigation } from "./embedded-comment-navigation.ts";
+import { EmbeddedCommentNavigation, handleCommentNavigationMessage } from "./embedded-comment-navigation.ts";
 import { EmbeddedAnchorCapabilities, issueEmbeddedAnchorFromWorker } from "./embedded-anchor-capabilities.ts";
 import { validateScreenshotDataUrl } from "./screenshot-validation.ts";
 import { grantOptionalFrameAccess, handleOptionalPermissionRevocation, optionalPatternForOrigin, reconcileOptionalContentScript } from "./optional-content-scripts";
@@ -58,7 +58,7 @@ const navigationCommand = async (tabId: number, type: "SCORM_APPLY_LOCATOR" | "S
   if (!acknowledgement.ok) throw new Error(acknowledgement.error_code === "COMMENT_NOT_FOUND" ? "Comment projection is not ready" : "SCORM navigation failed");
 };
 const embeddedNavigation = new EmbeddedCommentNavigation(chrome.storage.session, {
-  current: (tabId) => { const context = reviewContexts.exportTab(tabId); const owner = frameCoordination.currentOwner(tabId); const state = latestWorkerEvent.get(tabId); return { topUrl: context?.parent_activity_url ?? "", workerInstanceId: owner?.workerInstanceId, generation: owner?.generation, pageUrl: state?.page_url }; },
+  current: (tabId) => { const context = reviewContexts.exportTab(tabId); const owner = frameCoordination.currentOwner(tabId); const state = latestWorkerEvent.get(tabId); return { courseId: context?.id, topUrl: context?.parent_activity_url ?? "", workerInstanceId: owner?.workerInstanceId, generation: owner?.generation, pageUrl: state?.page_url }; },
   navigateParent: async (tabId, url) => { await chrome.tabs.update(tabId, { url }); },
   applyLocator: (tabId, locator) => navigationCommand(tabId, "SCORM_APPLY_LOCATOR", { embedded_locator: locator }),
   projectionContains: (tabId, commentId, pageUrl) => { const projection = workerProjections.get(tabId); return projection?.pageUrl === pageUrl && projection.commentIds.has(commentId); },
@@ -202,7 +202,7 @@ async function deleteComment(commentId: string, _courseId: string): Promise<unkn
 }
 
 chrome.tabs?.onRemoved?.addListener((tabId: number) => { latestWorkerEvent.delete(tabId); pendingWorkerReady.delete(tabId); seenWorkerEventIds.delete(tabId); workerProjections.delete(tabId); reviewContexts.removeTab(tabId); frameCoordination.removeTab(tabId); void chrome.storage.session.remove(`reviewContext:${tabId}`); });
-chrome.tabs?.onRemoved?.addListener((tabId: number) => chrome.storage.session.remove(`commentNavigation:${tabId}`));
+chrome.tabs?.onRemoved?.addListener((tabId: number) => { embeddedNavigation.cancel(tabId); void chrome.storage.session.remove(`commentNavigation:${tabId}`); });
 chrome.webNavigation?.onCommitted?.addListener((details: { tabId: number; frameId: number }) => { if (details.frameId === 0) { latestWorkerEvent.delete(details.tabId); pendingWorkerReady.delete(details.tabId); seenWorkerEventIds.delete(details.tabId); workerProjections.delete(details.tabId); reviewContexts.removeTab(details.tabId); frameCoordination.removeTab(details.tabId); void chrome.storage.session.remove(`reviewContext:${details.tabId}`); } });
 
 chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & { tab?: { id?: number; windowId?: number } }, sendResponse: (value: unknown) => void) => {
@@ -399,36 +399,14 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       courseId: () => reviewContexts.courseId(sender), list: listCourseComments,
     });
   } else if (message && typeof message === "object" && ["PREPARE_COMMENT_NAVIGATION", "CONSUME_COMMENT_NAVIGATION"].includes((message as { type?: string }).type ?? "")) {
-    operation = (async () => {
-      if (sender.id !== chrome.runtime.id || sender.frameId !== 0 || typeof sender.tab?.id !== "number"
-        || !await authorizeAuthenticateSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, hasPermission: async () => false })) throw new Error("Unauthorized comment navigation");
-      const tabId = sender.tab.id; const key = `commentNavigation:${tabId}`; const courseId = reviewContexts.courseId(sender);
-      if (!courseId) throw new Error("Comment navigation course unavailable");
-      if ((message as { type: string }).type === "CONSUME_COMMENT_NAVIGATION") {
-        const stored = (await chrome.storage.session.get(key))[key] as { comment_id?: unknown; course_id?: unknown; page_url?: unknown; created_at?: unknown } | undefined;
-        if (!stored || stored.course_id !== courseId || stored.page_url !== sender.url || typeof stored.created_at !== "number" || Date.now() - stored.created_at > 300_000) return {};
-        await chrome.storage.session.remove(key); return { comment_id: stored.comment_id };
-      }
-      const record = message as Record<string, unknown>;
-      if (Object.keys(record).sort().join() !== "comment_id,page_url,type" || typeof record.comment_id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(record.comment_id) || typeof record.page_url !== "string" || record.page_url.length > 4096) throw new Error("Invalid comment navigation");
-      let requestedPage: URL; try { requestedPage = new URL(record.page_url); } catch { throw new Error("Invalid comment navigation"); }
-      if (!["http:", "https:"].includes(requestedPage.protocol) || requestedPage.username || requestedPage.password || requestedPage.href !== record.page_url) throw new Error("Invalid comment navigation");
-      const comments = validatePageCommentsResponse(await listCourseComments(courseId));
-      const comment = comments.find((candidate) => candidate.id === record.comment_id && candidate.page_url === record.page_url);
-      if (!comment) throw new Error("Comment navigation target unavailable");
-      const senderOrigin = new URL(sender.url!).origin;
-      if (comment.parent_activity_url !== null) {
-        if (new URL(comment.parent_activity_url).origin !== senderOrigin) throw new Error("Invalid embedded parent activity");
-        await embeddedNavigation.prepare(tabId, { id: comment.id, courseId, pageUrl: comment.page_url, parentActivityUrl: comment.parent_activity_url, embeddedLocator: comment.embedded_locator });
-        return await embeddedNavigation.advance(tabId);
-      }
-      if (new URL(comment.page_url).origin === senderOrigin) {
-        await chrome.storage.session.set({ [key]: { comment_id: comment.id, course_id: courseId, page_url: comment.page_url, created_at: Date.now() } });
-        return { destination_url: comment.page_url };
-      }
-      await embeddedNavigation.prepare(tabId, { id: comment.id, courseId, pageUrl: comment.page_url, parentActivityUrl: null, embeddedLocator: null });
-      return await embeddedNavigation.advance(tabId);
-    })();
+    operation = handleCommentNavigationMessage(message, sender, {
+      extensionId: chrome.runtime.id,
+      authorizeMoodle: (candidate) => authorizeAuthenticateSender(candidate, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, hasPermission: async () => false }),
+      courseId: (candidate) => reviewContexts.courseId(candidate),
+      listCourseComments: async (courseId) => validatePageCommentsResponse(await listCourseComments(courseId)),
+      storage: chrome.storage.session,
+      navigation: embeddedNavigation,
+    });
   } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "GET_CURRENT_VIEWER") {
     operation = (async () => {
       if (Object.keys(message as object).length !== 1) throw new Error("Invalid GET_CURRENT_VIEWER message");

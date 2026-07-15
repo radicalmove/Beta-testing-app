@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { EmbeddedAnchorCapabilities, issueEmbeddedAnchorFromWorker, type EmbeddedAnchorStorage } from "../src/embedded-anchor-capabilities.ts";
-import { EmbeddedCommentNavigation, type EmbeddedNavigationStorage } from "../src/embedded-comment-navigation.ts";
+import type { PageComment } from "../src/background-bridge.ts";
+import { EmbeddedCommentNavigation, handleCommentNavigationMessage, type EmbeddedNavigationStorage } from "../src/embedded-comment-navigation.ts";
 
 class Storage implements EmbeddedAnchorStorage {
   data: Record<string, unknown> = {};
@@ -64,7 +65,7 @@ test("embedded navigation follows the bounded state machine and consumes only th
   const commands: string[] = []; let projected = false; const opened: string[] = [];
   const navigation = new EmbeddedCommentNavigation(storage, {
     now: () => now,
-    current: () => ({ topUrl, ...worker }),
+    current: () => ({ courseId: id(3), topUrl, ...worker }),
     navigateParent: async (_tabId, url) => { topUrl = url; },
     applyLocator: async () => { commands.push("locator"); },
     projectionContains: () => projected,
@@ -83,6 +84,7 @@ test("embedded navigation follows the bounded state machine and consumes only th
   assert.deepEqual(opened, [id(21)]);
   assert.equal((await storage.get("commentNavigation:7"))["commentNavigation:7"], undefined);
   now += 1;
+  navigation.cancel(7);
 });
 
 test("embedded navigation retries after worker replacement and timeout until expiry", async () => {
@@ -90,7 +92,7 @@ test("embedded navigation retries after worker replacement and timeout until exp
   let worker = { workerInstanceId: id(2), generation: 4, pageUrl: event.page_url };
   const navigation = new EmbeddedCommentNavigation(storage, {
     now: () => now,
-    current: () => ({ topUrl: context.parent_activity_url, ...worker }), navigateParent: async () => undefined,
+    current: () => ({ courseId: id(3), topUrl: context.parent_activity_url, ...worker }), navigateParent: async () => undefined,
     applyLocator: async () => undefined, projectionContains: () => true,
     takeToContext: async () => { attempts += 1; if (attempts === 1) throw new Error("SCORM command timed out"); },
   }, 300_000);
@@ -107,7 +109,7 @@ test("embedded navigation retries after worker replacement and timeout until exp
 test("a worker replaced after locator application receives the locator again", async () => {
   const storage = new NavigationStorage(); let worker = { workerInstanceId: id(2), generation: 4, pageUrl: "https://rise.example/index.html#moodle-review-page=Loading" }; const applied: string[] = [];
   const navigation = new EmbeddedCommentNavigation(storage, {
-    current: () => ({ topUrl: context.parent_activity_url, ...worker }), navigateParent: async () => undefined,
+    current: () => ({ courseId: id(3), topUrl: context.parent_activity_url, ...worker }), navigateParent: async () => undefined,
     applyLocator: async () => { applied.push(worker.workerInstanceId); }, projectionContains: () => false, takeToContext: async () => undefined,
   });
   await navigation.prepare(7, embeddedComment);
@@ -115,12 +117,13 @@ test("a worker replaced after locator application receives the locator again", a
   worker = { workerInstanceId: id(9), generation: 5, pageUrl: worker.pageUrl };
   assert.equal((await navigation.advance(7)).state, "identity-waiting");
   assert.deepEqual(applied, [id(2), id(9)]);
+  navigation.cancel(7);
 });
 
 test("navigation requires exact comment identity and legacy comments never guess an activity", async () => {
   const storage = new NavigationStorage(); let pageUrl = event.page_url; let projected = true; const opened: string[] = [];
   const navigation = new EmbeddedCommentNavigation(storage, {
-    current: () => ({ topUrl: context.parent_activity_url, workerInstanceId: id(2), generation: 4, pageUrl }),
+    current: () => ({ courseId: id(3), topUrl: context.parent_activity_url, workerInstanceId: id(2), generation: 4, pageUrl }),
     navigateParent: async () => assert.fail("legacy navigation must not guess"), applyLocator: async () => assert.fail("legacy navigation must not apply a locator"),
     projectionContains: (_tabId, commentId, exactPageUrl) => projected && commentId === id(21) && exactPageUrl === event.page_url,
     takeToContext: async (_tabId, commentId) => { opened.push(commentId); },
@@ -136,7 +139,7 @@ test("navigation requires exact comment identity and legacy comments never guess
 test("overlapping projection and identity signals open an embedded comment only once", async () => {
   const storage = new NavigationStorage(); let releases!: () => void; const gate = new Promise<void>((resolve) => { releases = resolve; }); let openings = 0;
   const navigation = new EmbeddedCommentNavigation(storage, {
-    current: () => ({ topUrl: context.parent_activity_url, workerInstanceId: id(2), generation: 4, pageUrl: event.page_url }),
+    current: () => ({ courseId: id(3), topUrl: context.parent_activity_url, workerInstanceId: id(2), generation: 4, pageUrl: event.page_url }),
     navigateParent: async () => undefined, applyLocator: async () => undefined, projectionContains: () => true,
     takeToContext: async () => { openings += 1; await gate; },
   });
@@ -147,4 +150,74 @@ test("overlapping projection and identity signals open an embedded comment only 
   assert.equal((await first).state, "complete");
   await assert.rejects(() => second, /unavailable/);
   assert.equal(openings, 1);
+});
+
+test("a stored navigation cannot cross a trusted course rebind", async () => {
+  const storage = new NavigationStorage(); let boundCourse = id(3); let navigations = 0;
+  const navigation = new EmbeddedCommentNavigation(storage, {
+    current: () => ({ courseId: boundCourse, topUrl: context.course_url }), navigateParent: async () => { navigations += 1; },
+    applyLocator: async () => undefined, projectionContains: () => false, takeToContext: async () => undefined,
+  });
+  await navigation.prepare(7, embeddedComment); boundCourse = id(44);
+  await assert.rejects(() => navigation.advance(7), /course context changed/);
+  assert.equal(navigations, 0);
+  assert.equal((await storage.get("commentNavigation:7"))["commentNavigation:7"], undefined);
+});
+
+test("transient navigation failures retry automatically and stop on completion or expiry", async () => {
+  const storage = new NavigationStorage(); let now = 5_000; let attempts = 0; let nextTimer = 1;
+  const timers = new Map<number, () => void>();
+  const navigation = new EmbeddedCommentNavigation(storage, {
+    now: () => now,
+    setTimeout: (callback) => { const token = nextTimer++; timers.set(token, callback); return token; },
+    clearTimeout: (token) => { timers.delete(token as number); },
+    current: () => ({ courseId: id(3), topUrl: context.parent_activity_url, workerInstanceId: id(2), generation: 4, pageUrl: event.page_url }),
+    navigateParent: async () => undefined, applyLocator: async () => undefined, projectionContains: () => true,
+    takeToContext: async () => { attempts += 1; if (attempts === 1) throw new Error("SCORM command timed out"); },
+  }, 1_000);
+  await navigation.prepare(7, embeddedComment);
+  await assert.rejects(() => navigation.advance(7), /timed out/);
+  assert.equal(timers.size, 1);
+  const retry = [...timers.values()][0]; timers.clear(); retry(); await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(attempts, 2); assert.equal(timers.size, 0);
+
+  await navigation.prepare(7, embeddedComment); attempts = 0;
+  await assert.rejects(() => navigation.advance(7), /timed out/); assert.equal(timers.size, 1);
+  now += 1_001; const expiredRetry = [...timers.values()][0]; timers.clear(); expiredRetry(); await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(attempts, 1); assert.equal(timers.size, 0);
+});
+
+test("comment navigation boundary accepts only exact frame-zero configured Moodle messages and current course", async () => {
+  const storage = new NavigationStorage(); const calls: string[] = [];
+  const navigation = new EmbeddedCommentNavigation(storage, {
+    current: () => ({ courseId: id(3), topUrl: context.parent_activity_url, workerInstanceId: id(2), generation: 4, pageUrl: event.page_url }),
+    navigateParent: async () => undefined, applyLocator: async () => undefined, projectionContains: () => true, takeToContext: async () => undefined,
+  });
+  const comment: PageComment = { id: id(21), body: "Feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: event.page_url, page_title: "Embedded activity · Introduction", parent_activity_url: context.parent_activity_url, embedded_locator: "#/lessons/one", anchor_type: "visual_pin", selected_quote: null, prefix: null, suffix: null, css_selector: "#card", dom_selector: null, relative_x: .2, relative_y: .7, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } };
+  const dependencies = {
+    extensionId: "extension", authorizeMoodle: async (candidate: { url?: string }) => candidate.url?.startsWith("https://my.uconline.ac.nz/") === true,
+    courseId: () => id(3), listCourseComments: async () => { calls.push("list"); return [comment]; }, storage, navigation,
+  };
+  const message = { type: "PREPARE_COMMENT_NAVIGATION", comment_id: id(21), page_url: event.page_url };
+  const trusted = { id: "extension", tab: { id: 7 }, frameId: 0, url: context.parent_activity_url };
+  await assert.rejects(() => handleCommentNavigationMessage(message, { ...trusted, id: "other" }, dependencies), /Unauthorized/);
+  await assert.rejects(() => handleCommentNavigationMessage(message, { ...trusted, frameId: 2 }, dependencies), /Unauthorized/);
+  await assert.rejects(() => handleCommentNavigationMessage(message, { ...trusted, url: "https://evil.example/course" }, dependencies), /Unauthorized/);
+  await assert.rejects(() => handleCommentNavigationMessage(message, trusted, { ...dependencies, courseId: () => id(55) }), /course context changed/);
+  assert.equal((await handleCommentNavigationMessage(message, trusted, dependencies) as { state: string }).state, "complete");
+  assert.equal(calls.length, 2, "unauthorized senders are rejected before course API access");
+});
+
+test("consume navigation requires an exact envelope and removes expired top-page records", async () => {
+  const storage = new NavigationStorage(); let now = 10_000;
+  const dependencies = {
+    extensionId: "extension", authorizeMoodle: async () => true, courseId: () => id(3), listCourseComments: async () => [], storage,
+    navigation: new EmbeddedCommentNavigation(storage, { current: () => ({ courseId: id(3), topUrl: context.course_url }), navigateParent: async () => undefined, applyLocator: async () => undefined, projectionContains: () => false, takeToContext: async () => undefined }),
+    now: () => now,
+  };
+  const trusted = { id: "extension", tab: { id: 7 }, frameId: 0, url: "https://my.uconline.ac.nz/course/view.php?id=896" };
+  await assert.rejects(() => handleCommentNavigationMessage({ type: "CONSUME_COMMENT_NAVIGATION", extra: true }, trusted, dependencies), /Invalid/);
+  await storage.set({ "commentNavigation:7": { comment_id: id(21), course_id: id(3), page_url: trusted.url, created_at: now - 300_001 } });
+  assert.deepEqual(await handleCommentNavigationMessage({ type: "CONSUME_COMMENT_NAVIGATION" }, trusted, dependencies), {});
+  assert.equal((await storage.get("commentNavigation:7"))["commentNavigation:7"], undefined);
 });
