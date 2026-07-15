@@ -337,6 +337,20 @@ test("embedded review retries while the top frame is still resolving", async () 
   cleanup();
 });
 
+test("embedded review retries while the course is not yet bound to the tab", async () => {
+  const window = new Window({ url: "https://moodle.example.invalid/embedded" });
+  let attempts = 0;
+  const runtime = { sendMessage: (message: any, callback: (response: any) => void) => {
+    if (message.type === "GET_REVIEW_CONTEXT") { attempts += 1; callback(attempts === 1 ? { ok: false, error: "Course is not bound to tab" } : { ok: true, data: { course_id: "123e4567-e89b-12d3-a456-426614174000", course_title: "Law", parent_activity_url: "https://moodle.example/mod/scorm/player.php?cmid=22" } }); return; }
+    callback({ ok: true, data: {} });
+  } };
+  const cleanup = startEmbeddedReview(window as unknown as globalThis.Window & typeof globalThis, window.document as unknown as Document, runtime, 0);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(attempts, 3);
+  assert.equal(window.document.querySelector("#moodle-course-review-overlay"), null);
+  cleanup();
+});
+
 test("top navigation immediately removes stored markers before delayed responses return", async () => {
   const window = new Window({ url: "https://moodle.example.invalid/mod/page/view.php?id=1" });
   window.document.body.innerHTML = "<h1>Page one</h1><p>An important phrase here</p>";

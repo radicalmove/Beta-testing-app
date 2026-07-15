@@ -17,6 +17,7 @@ const BUILD_DIAGNOSTICS = {
 };
 const OWNER = Symbol.for("moodle-course-review.content-owner");
 const MAX_WORKER_INSTANCE_EPOCH = 2_147_483_647;
+const isTransientReviewContextError = (message: unknown) => message === "Review context unavailable" || message === "Course is not bound to tab";
 type MarkerRoot = {
   hasAttribute(name: string): boolean;
   setAttribute(name: string, value: string): void;
@@ -460,7 +461,7 @@ export function startEmbeddedReview(targetWindow: Window & typeof globalThis, ta
     if (stopped) return;
     if (!context?.ok) {
       attempts += 1;
-      if (attempts < 25 && context?.error === "Review context unavailable") retryTimer = scheduleRetry(register, retryDelay);
+      if (attempts < 25 && isTransientReviewContextError(context?.error)) retryTimer = scheduleRetry(register, retryDelay);
       return;
     }
     attempts = 0;
@@ -514,7 +515,7 @@ function startActiveEmbeddedReview(targetWindow: Window & typeof globalThis, tar
     try { targetWindow.parent.postMessage({ type: "MOODLE_REVIEW_FRAME_READY" }, "*"); } catch { /* trigger only */ }
   }).catch((error: unknown) => {
     attempts += 1;
-    if (!stopped && attempts < 25 && error instanceof Error && error.message === "Review context unavailable") retryTimer = scheduleRetry(obtain, retryDelay);
+    if (!stopped && attempts < 25 && error instanceof Error && isTransientReviewContextError(error.message)) retryTimer = scheduleRetry(obtain, retryDelay);
   });
   obtain();
   return () => { stopped = true; if (retryTimer !== undefined) cancelRetry(retryTimer); setCommandHandler(undefined); worker?.destroy(); worker = undefined; };
