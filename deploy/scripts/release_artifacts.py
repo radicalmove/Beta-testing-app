@@ -40,6 +40,8 @@ def _compatibility_links(delivery: Path, version: str) -> None:
 def _scan_version(releases: Path, version: str, identity: tuple[str, str]) -> None:
     matches=[]
     for entry in releases.iterdir():
+        if entry.name == ".DS_Store":
+            continue
         if entry.is_symlink() or not entry.is_dir():
             raise RuntimeError(f"malformed immutable release entry: {entry}")
         metadata_path=entry/"RELEASE.json"

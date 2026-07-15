@@ -56,6 +56,9 @@ class ReleaseArtifactTests(unittest.TestCase):
  def test_repeated_release_is_deterministic(self):
   with tempfile.TemporaryDirectory() as x:
    r=Path(x); d=self.dist(r); delivery=r/"delivery"; publish(d,delivery,"c"*40,VERSION); z=(delivery/"moodle-review-extension-chrome-edge.zip").read_bytes(); s=(delivery/"SHA256SUMS").read_bytes(); publish(d,delivery,"c"*40,VERSION); self.assertEqual(z,(delivery/"moodle-review-extension-chrome-edge.zip").read_bytes()); self.assertEqual(s,(delivery/"SHA256SUMS").read_bytes())
+ def test_macos_metadata_does_not_corrupt_immutable_release_scan(self):
+  with tempfile.TemporaryDirectory() as x:
+   r=Path(x); delivery=r/"delivery"; publish(self.dist(r,"old"),delivery,"c"*40,"0.1.0"); (delivery/"releases/.DS_Store").write_bytes(b"metadata"); publish(self.dist(r,"new"),delivery,"d"*40,VERSION); self.assertEqual(self.visible(delivery),"d"*40)
  def test_migration_removes_an_existing_legacy_directory(self):
   with tempfile.TemporaryDirectory() as x:
    r=Path(x); delivery=r/"delivery"; delivery.mkdir(); old=delivery/"old"; old.mkdir(); (old/"RELEASE.json").write_text('{"commit":"old"}'); (delivery/"moodle-review-extension").symlink_to("old"); (delivery/".legacy-moodle-review-extension").mkdir()
