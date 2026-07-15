@@ -199,6 +199,16 @@ test("comment projection is limited to the worker's exact page and take-to-conte
   worker.destroy();
 });
 
+test("take-to-context cannot open a comment before its exact worker projection arrives", () => {
+  const { window, worker, takenToContext } = createHarness();
+  const commentId = "00000000-0000-4000-8000-000000000090";
+  const acknowledgement = worker.handleCommand(command(window, "SCORM_TAKE_TO_CONTEXT", { comment_id: commentId }));
+  assert.equal(acknowledgement.ok, false);
+  assert.equal(acknowledgement.ok ? undefined : acknowledgement.error_code, "COMMENT_NOT_FOUND");
+  assert.equal(takenToContext(), "");
+  worker.destroy();
+});
+
 test("stale-context errors remain correlated to the triggering command after a page identity race", () => {
   const { window, worker } = createHarness();
   const stale = { ...command(window, "SCORM_START_MARKER", {}), page_url: "https://rise.example/activity#moodle-review-page=Earlier" };

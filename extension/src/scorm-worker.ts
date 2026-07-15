@@ -59,6 +59,7 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
   let destroyed = false;
   let previousCursor = "";
   let previousCursorPriority = "";
+  let projectedCommentIds = new Set<string>();
 
   const envelope = <T extends ScormEvent["type"]>(type: T, payload: Extract<ScormEvent, { type: T }>["payload"]): Extract<ScormEvent, { type: T }> => ({
     protocol: 1,
@@ -122,6 +123,7 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
     stopMarker();
     renderer.setComments([]);
     renderer.destroy();
+    projectedCommentIds = new Set();
     identity = next;
     navigationSignature = nextNavigationSignature;
     renderer = createRenderer(identity.pageUrl);
@@ -185,7 +187,12 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
         }
         case "SCORM_START_MARKER": startMarker(); return acknowledgement(command, true);
         case "SCORM_CANCEL_MARKER": stopMarker(); return acknowledgement(command, true);
-        case "SCORM_SET_COMMENTS": renderer.setComments(command.payload.comments.filter((comment) => comment.page_url === identity.pageUrl)); return acknowledgement(command, true);
+        case "SCORM_SET_COMMENTS": {
+          const comments = command.payload.comments.filter((comment) => comment.page_url === identity.pageUrl);
+          projectedCommentIds = new Set(comments.map((comment) => comment.id));
+          renderer.setComments(comments);
+          return acknowledgement(command, true);
+        }
         case "SCORM_APPLY_LOCATOR": {
           try {
             const destination = new URL(command.payload.embedded_locator, window.location.href);
@@ -194,7 +201,7 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
             return acknowledgement(command, navigate(destination, mode), "NAVIGATION_FAILED");
           } catch { return acknowledgement(command, false, "NAVIGATION_FAILED"); }
         }
-        case "SCORM_TAKE_TO_CONTEXT": return acknowledgement(command, renderer.takeToContext(command.payload.comment_id), "COMMENT_NOT_FOUND");
+        case "SCORM_TAKE_TO_CONTEXT": return acknowledgement(command, projectedCommentIds.has(command.payload.comment_id) && renderer.takeToContext(command.payload.comment_id), "COMMENT_NOT_FOUND");
       }
     },
     destroy() {
@@ -205,6 +212,7 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
       document.removeEventListener("selectionchange", onSelectionChange);
       lifecycle.teardown();
       renderer.setComments([]);
+      projectedCommentIds.clear();
       renderer.destroy();
     },
   };

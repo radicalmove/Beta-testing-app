@@ -403,7 +403,12 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
       for (const [commentIndex, comment] of comments.entries()) {
         const item = ownerDocument.createElement("button"); item.type = "button"; item.className = "comment-index-link"; item.dataset.commentItem = comment.id; item.dataset.commentGroup = comment.status === "resolved" ? "resolved" : "open"; item.dataset.commentPage = comment.page_url; const initialPage = comment.page_title.replace(/\s+/g, " ").trim().slice(0, 32); const initialBody = comment.body.replace(/\s+/g, " ").trim().slice(0, 56); item.textContent = `#${commentIndex + 1} · ${initialPage} · “${initialBody}${comment.body.length > 56 ? "…" : ""}”`; item.setAttribute("aria-label", `Comment ${commentIndex + 1}. ${comment.page_title}. ${comment.body}. ${comment.author.display_name}. Status ${comment.status}.`);
         item.addEventListener("click", async () => {
-          if (comment.page_url !== context.page_url) { if (options.navigateToComment) await options.navigateToComment(comment.id, comment.page_url); else ownerDocument.defaultView?.location.assign(comment.page_url); return; }
+          panelContent.querySelector("[data-comment-navigation-status]")?.remove();
+          if (comment.page_url !== context.page_url) {
+            try { if (options.navigateToComment) await options.navigateToComment(comment.id, comment.page_url); else ownerDocument.defaultView?.location.assign(comment.page_url); }
+            catch (error) { const status = ownerDocument.createElement("p"); status.dataset.commentNavigationStatus = "true"; status.setAttribute("role", "status"); status.textContent = error instanceof Error && error.message ? error.message : "Unable to open this comment in context."; filterRow.after(status); }
+            return;
+          }
           renderer.takeToContext(comment.id);
         });
         panelContent.append(item);

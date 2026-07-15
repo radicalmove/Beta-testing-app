@@ -503,6 +503,18 @@ test("course scope and status filters share one compact row", () => {
   assert.match(tealOverlayOverrides, /\.comment-filters button:hover\{background:#28c4c2;color:#082f2f;border-color:#082f2f\}/);
 });
 
+test("course-list navigation reports the precise SCORM recovery instruction without closing the list", async () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected", { navigateToComment: async () => { throw new Error("Open the original SCORM activity first"); } });
+  const comment = { id: "00000000-0000-4000-8000-000000000099", body: "Legacy feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: "https://rise.example/activity#moodle-review-page=Lesson", page_title: "Embedded activity · Lesson", parent_activity_url: null, embedded_locator: null, anchor_type: "visual_pin" as const, selected_quote: null, prefix: null, suffix: null, css_selector: "#target", dom_selector: null, relative_x: .5, relative_y: .5, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } };
+  overlay.setCommentList([comment]);
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  shadow.querySelector<HTMLButtonElement>('[data-action="panel"]')!.click();
+  shadow.querySelector<HTMLButtonElement>("[data-comment-item]")!.click(); await tick();
+  assert.equal(shadow.querySelector('[data-action="panel"]')?.getAttribute("aria-expanded"), "true");
+  assert.match(shadow.querySelector<HTMLElement>("[data-comment-navigation-status]")?.textContent ?? "", /Open the original SCORM activity first/);
+});
+
 test("delegated mode sends one adaptive interaction request and exposes permission recovery", async () => {
   const window = new Window({ url: "https://learn.example/mod/scorm/player.php" });
   window.document.body.innerHTML = "<h1>SCORM</h1>";

@@ -1,5 +1,6 @@
 import { ApiClient, authenticate, getActiveToken, lookupReviewCourse, redeemReviewerInvitation, renewReviewerDevice, resumeReviewerMembership, type SessionToken } from "./api";
-import { authorizeAuthenticateSender, authorizeResolveSender, handleCreateCommentBridge, handleCreateEmbeddedCommentBridge, handleDeleteCommentBridge, handleListCourseCommentsBridge, handleListPageCommentsBridge, handleResolveCourseBridge, normalizeErrorMessage, validateAuthenticateMessage, validateCancelScreenshotMessage, validateUploadScreenshotMessage, validateViewerResponse, type CreateCommentPayload, type ResolveCoursePayload } from "./background-bridge.ts";
+import { authorizeAuthenticateSender, authorizeResolveSender, handleCreateCommentBridge, handleCreateEmbeddedCommentBridge, handleDeleteCommentBridge, handleListCourseCommentsBridge, handleListPageCommentsBridge, handleResolveCourseBridge, normalizeErrorMessage, validateAuthenticateMessage, validateCancelScreenshotMessage, validatePageCommentsResponse, validateUploadScreenshotMessage, validateViewerResponse, type CreateCommentPayload, type ResolveCoursePayload } from "./background-bridge.ts";
+import { EmbeddedCommentNavigation } from "./embedded-comment-navigation.ts";
 import { EmbeddedAnchorCapabilities, issueEmbeddedAnchorFromWorker } from "./embedded-anchor-capabilities.ts";
 import { validateScreenshotDataUrl } from "./screenshot-validation.ts";
 import { grantOptionalFrameAccess, handleOptionalPermissionRevocation, optionalPatternForOrigin, reconcileOptionalContentScript } from "./optional-content-scripts";
@@ -21,6 +22,7 @@ const reviewContexts = new ReviewContextCache();
 const latestWorkerEvent = new Map<number, ScormEvent>();
 const pendingWorkerReady = new Map<number, WorkerReadyNotification>();
 const seenWorkerEventIds = new Map<number, Set<string>>();
+const workerProjections = new Map<number, { pageUrl: string; commentIds: Set<string> }>();
 function rememberWorkerEvent(tabId: number, requestId: string): void {
   const seen = seenWorkerEventIds.get(tabId) ?? new Set<string>();
   if (seen.has(requestId)) throw new Error("Duplicate SCORM event request id");
@@ -43,10 +45,26 @@ function publishWorkerReady(tabId: number): boolean {
   if (!workerReadyMatchesState(ready, state)) return false;
   pendingWorkerReady.delete(tabId);
   chrome.tabs.sendMessage(tabId, { type: "REVIEW_WORKER_READY", frame_id: ready.frameId, worker_instance_id: ready.workerInstanceId, generation: ready.generation, replaced: ready.replaced }, { frameId: 0 }, () => void chrome.runtime.lastError);
+  resumeEmbeddedNavigation(tabId);
   return true;
 }
 const screenshotCapabilities = new ScreenshotCapabilities(chrome.storage.session);
 const embeddedAnchorCapabilities = new EmbeddedAnchorCapabilities(chrome.storage.session);
+const navigationCommand = async (tabId: number, type: "SCORM_APPLY_LOCATOR" | "SCORM_TAKE_TO_CONTEXT", payload: Record<string, string>): Promise<void> => {
+  const owner = frameCoordination.currentOwner(tabId); const state = latestWorkerEvent.get(tabId); const context = reviewContexts.exportTab(tabId);
+  if (!owner || !state || !context || state.worker_instance_id !== owner.workerInstanceId || state.generation !== owner.generation) throw new Error("SCORM worker is not ready");
+  const command = validateScormMessage({ protocol: 1, type, request_id: crypto.randomUUID(), worker_instance_id: owner.workerInstanceId, generation: owner.generation, course_id: context.id, page_url: state.page_url, payload }) as ScormCommand;
+  const acknowledgement = await frameCoordination.sendCommand(tabId, command);
+  if (!acknowledgement.ok) throw new Error(acknowledgement.error_code === "COMMENT_NOT_FOUND" ? "Comment projection is not ready" : "SCORM navigation failed");
+};
+const embeddedNavigation = new EmbeddedCommentNavigation(chrome.storage.session, {
+  current: (tabId) => { const context = reviewContexts.exportTab(tabId); const owner = frameCoordination.currentOwner(tabId); const state = latestWorkerEvent.get(tabId); return { topUrl: context?.parent_activity_url ?? "", workerInstanceId: owner?.workerInstanceId, generation: owner?.generation, pageUrl: state?.page_url }; },
+  navigateParent: async (tabId, url) => { await chrome.tabs.update(tabId, { url }); },
+  applyLocator: (tabId, locator) => navigationCommand(tabId, "SCORM_APPLY_LOCATOR", { embedded_locator: locator }),
+  projectionContains: (tabId, commentId, pageUrl) => { const projection = workerProjections.get(tabId); return projection?.pageUrl === pageUrl && projection.commentIds.has(commentId); },
+  takeToContext: (tabId, commentId) => navigationCommand(tabId, "SCORM_TAKE_TO_CONTEXT", { comment_id: commentId }),
+});
+const resumeEmbeddedNavigation = (tabId: number) => void embeddedNavigation.advance(tabId).catch(() => undefined);
 const pendingAccess = new PendingAccessStore(chrome.storage.local);
 const pendingApprovals = new PendingApprovalManager(
   pendingAccess,
@@ -183,9 +201,9 @@ async function deleteComment(commentId: string, _courseId: string): Promise<unkn
   return {};
 }
 
-chrome.tabs?.onRemoved?.addListener((tabId: number) => { latestWorkerEvent.delete(tabId); pendingWorkerReady.delete(tabId); seenWorkerEventIds.delete(tabId); reviewContexts.removeTab(tabId); frameCoordination.removeTab(tabId); void chrome.storage.session.remove(`reviewContext:${tabId}`); });
+chrome.tabs?.onRemoved?.addListener((tabId: number) => { latestWorkerEvent.delete(tabId); pendingWorkerReady.delete(tabId); seenWorkerEventIds.delete(tabId); workerProjections.delete(tabId); reviewContexts.removeTab(tabId); frameCoordination.removeTab(tabId); void chrome.storage.session.remove(`reviewContext:${tabId}`); });
 chrome.tabs?.onRemoved?.addListener((tabId: number) => chrome.storage.session.remove(`commentNavigation:${tabId}`));
-chrome.webNavigation?.onCommitted?.addListener((details: { tabId: number; frameId: number }) => { if (details.frameId === 0) { latestWorkerEvent.delete(details.tabId); pendingWorkerReady.delete(details.tabId); seenWorkerEventIds.delete(details.tabId); reviewContexts.removeTab(details.tabId); frameCoordination.removeTab(details.tabId); void chrome.storage.session.remove(`reviewContext:${details.tabId}`); } });
+chrome.webNavigation?.onCommitted?.addListener((details: { tabId: number; frameId: number }) => { if (details.frameId === 0) { latestWorkerEvent.delete(details.tabId); pendingWorkerReady.delete(details.tabId); seenWorkerEventIds.delete(details.tabId); workerProjections.delete(details.tabId); reviewContexts.removeTab(details.tabId); frameCoordination.removeTab(details.tabId); void chrome.storage.session.remove(`reviewContext:${details.tabId}`); } });
 
 chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & { tab?: { id?: number; windowId?: number } }, sendResponse: (value: unknown) => void) => {
   void screenshotCapabilities.cleanup().catch(() => undefined);
@@ -289,6 +307,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
           if (typeof sender.tab?.id === "number") {
             frameCoordination.bindCourse(sender.tab.id, resolved.id);
             await chrome.storage.session.set({ [`reviewContext:${sender.tab.id}`]: storedContext });
+            resumeEmbeddedNavigation(sender.tab.id);
           }
         }
         return resolved;
@@ -303,7 +322,12 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       const tabId = sender.tab.id; const owner = frameCoordination.currentOwner(tabId); const courseId = reviewContexts.courseId(sender); const state = latestWorkerEvent.get(tabId);
       if (!owner || !courseId || !state || state.worker_instance_id !== owner.workerInstanceId || state.generation !== owner.generation) throw new Error("SCORM worker is not ready");
       const command = validateScormMessage({ protocol: 1, type: record.command_type, request_id: record.request_id, worker_instance_id: owner.workerInstanceId, generation: owner.generation, course_id: courseId, page_url: state.page_url, payload: record.payload }) as ScormCommand;
-      return frameCoordination.sendCommand(tabId, command);
+      const acknowledgement = await frameCoordination.sendCommand(tabId, command);
+      if (acknowledgement.ok && command.type === "SCORM_SET_COMMENTS") {
+        workerProjections.set(tabId, { pageUrl: command.page_url, commentIds: new Set(command.payload.comments.map((comment) => comment.id)) });
+        resumeEmbeddedNavigation(tabId);
+      }
+      return acknowledgement;
     })();
   } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "SCORM_ANCHOR_CAPTURED") {
     operation = (async () => {
@@ -325,6 +349,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       if (!owner || owner.frameId !== sender.frameId || owner.workerInstanceId !== event.worker_instance_id || owner.generation !== event.generation || courseId !== event.course_id) throw new Error("Stale SCORM event");
       latestWorkerEvent.set(sender.tab.id, event);
       chrome.tabs.sendMessage(sender.tab.id, { type: "SCORM_WORKER_EVENT", event }, { frameId: 0 }, () => void chrome.runtime.lastError);
+      if (event.type === "SCORM_PAGE_IDENTITY_CHANGED") resumeEmbeddedNavigation(sender.tab.id);
       return {};
     })();
   } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "CREATE_EMBEDDED_COMMENT") {
@@ -374,7 +399,36 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       courseId: () => reviewContexts.courseId(sender), list: listCourseComments,
     });
   } else if (message && typeof message === "object" && ["PREPARE_COMMENT_NAVIGATION", "CONSUME_COMMENT_NAVIGATION"].includes((message as { type?: string }).type ?? "")) {
-    operation = (async () => { if (typeof sender.tab?.id !== "number" || !(await authorizeResolveSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) }))) throw new Error("Unauthorized comment navigation"); const key = `commentNavigation:${sender.tab.id}`; const courseId = reviewContexts.courseId(sender); if (!courseId) throw new Error("Comment navigation course unavailable"); if ((message as { type: string }).type === "PREPARE_COMMENT_NAVIGATION") { const record = message as Record<string, unknown>; if (Object.keys(record).sort().join() !== "comment_id,page_url,type" || typeof record.comment_id !== "string" || !/^[0-9a-f-]{36}$/i.test(record.comment_id) || typeof record.page_url !== "string") throw new Error("Invalid comment navigation"); const url = new URL(record.page_url); const senderUrl = new URL(sender.url!); if (url.protocol !== "https:" || url.origin !== senderUrl.origin) throw new Error("Invalid comment destination"); await chrome.storage.session.set({ [key]: { comment_id: record.comment_id, course_id: courseId, page_url: url.href, created_at: Date.now() } }); return {}; } const stored = (await chrome.storage.session.get(key))[key]; if (!stored || stored.course_id !== courseId || stored.page_url !== sender.url || Date.now() - stored.created_at > 300000) { if (stored) await chrome.storage.session.remove(key); return {}; } await chrome.storage.session.remove(key); return { comment_id: stored.comment_id }; })();
+    operation = (async () => {
+      if (sender.id !== chrome.runtime.id || sender.frameId !== 0 || typeof sender.tab?.id !== "number"
+        || !await authorizeAuthenticateSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, hasPermission: async () => false })) throw new Error("Unauthorized comment navigation");
+      const tabId = sender.tab.id; const key = `commentNavigation:${tabId}`; const courseId = reviewContexts.courseId(sender);
+      if (!courseId) throw new Error("Comment navigation course unavailable");
+      if ((message as { type: string }).type === "CONSUME_COMMENT_NAVIGATION") {
+        const stored = (await chrome.storage.session.get(key))[key] as { comment_id?: unknown; course_id?: unknown; page_url?: unknown; created_at?: unknown } | undefined;
+        if (!stored || stored.course_id !== courseId || stored.page_url !== sender.url || typeof stored.created_at !== "number" || Date.now() - stored.created_at > 300_000) return {};
+        await chrome.storage.session.remove(key); return { comment_id: stored.comment_id };
+      }
+      const record = message as Record<string, unknown>;
+      if (Object.keys(record).sort().join() !== "comment_id,page_url,type" || typeof record.comment_id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(record.comment_id) || typeof record.page_url !== "string" || record.page_url.length > 4096) throw new Error("Invalid comment navigation");
+      let requestedPage: URL; try { requestedPage = new URL(record.page_url); } catch { throw new Error("Invalid comment navigation"); }
+      if (!["http:", "https:"].includes(requestedPage.protocol) || requestedPage.username || requestedPage.password || requestedPage.href !== record.page_url) throw new Error("Invalid comment navigation");
+      const comments = validatePageCommentsResponse(await listCourseComments(courseId));
+      const comment = comments.find((candidate) => candidate.id === record.comment_id && candidate.page_url === record.page_url);
+      if (!comment) throw new Error("Comment navigation target unavailable");
+      const senderOrigin = new URL(sender.url!).origin;
+      if (comment.parent_activity_url !== null) {
+        if (new URL(comment.parent_activity_url).origin !== senderOrigin) throw new Error("Invalid embedded parent activity");
+        await embeddedNavigation.prepare(tabId, { id: comment.id, courseId, pageUrl: comment.page_url, parentActivityUrl: comment.parent_activity_url, embeddedLocator: comment.embedded_locator });
+        return await embeddedNavigation.advance(tabId);
+      }
+      if (new URL(comment.page_url).origin === senderOrigin) {
+        await chrome.storage.session.set({ [key]: { comment_id: comment.id, course_id: courseId, page_url: comment.page_url, created_at: Date.now() } });
+        return { destination_url: comment.page_url };
+      }
+      await embeddedNavigation.prepare(tabId, { id: comment.id, courseId, pageUrl: comment.page_url, parentActivityUrl: null, embeddedLocator: null });
+      return await embeddedNavigation.advance(tabId);
+    })();
   } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "GET_CURRENT_VIEWER") {
     operation = (async () => {
       if (Object.keys(message as object).length !== 1) throw new Error("Invalid GET_CURRENT_VIEWER message");
