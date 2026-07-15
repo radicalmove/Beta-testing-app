@@ -173,21 +173,21 @@ Commit: `feat(review): run SCORM interactions without a second toolbar`
 - Modify: `extension/src/review-context.ts`
 - Modify: `extension/tests/review-context.test.ts`
 
-- [ ] **Step 1: Write failing security tests**
+- [x] **Step 1: Write failing security tests**
 
 Assert only the elected worker can issue an anchor; unguessable capabilities bind tab, course, frame, worker instance, generation, page identity/title, canonical anchor digest, trusted parent Moodle activity, embedded locator, and expiry; direct top-frame creation of a cross-origin Rise page still fails; and `CREATE_EMBEDDED_COMMENT` accepts only this extension's frame-0 sender on a configured Moodle origin. Recheck current election/context on claim. Test tampering, replay, expiry, service-worker restart, concurrent claims, API failure/restoration/retry, and screenshot requests.
 
-- [ ] **Step 2: Verify red**
+- [x] **Step 2: Verify red**
 
 Run: `cd extension && node --test tests/embedded-anchor-capabilities.test.ts tests/background-bridge.test.ts tests/background.test.ts`
 
 Expected: FAIL because no embedded capability exists and cross-origin create is rejected unconditionally.
 
-- [ ] **Step 3: Implement bounded in-memory/session capability storage**
+- [x] **Step 3: Implement bounded in-memory/session capability storage**
 
 Follow the existing screenshot-capability pattern but persist tokens in `chrome.storage.session`. Generate an unguessable token, hash the canonical anchor/page/title/parent/locator payload, store no comment body, expire after five minutes, and serialize claims so only one concurrent caller succeeds. Source the parent activity from the trusted stored Moodle review context and enforce its course origin here. A failed API call restores an unexpired claimed capability; successful creation consumes it permanently. Add `CREATE_EMBEDDED_COMMENT` as a separate exact bridge path and retain existing `CREATE_COMMENT` origin checks and screenshot flow unchanged.
 
-- [ ] **Step 4: Verify green and commit**
+- [x] **Step 4: Verify green and commit**
 
 Run: `cd extension && node --test tests/embedded-anchor-capabilities.test.ts tests/background-bridge.test.ts tests/background.test.ts && npm run typecheck`
 
