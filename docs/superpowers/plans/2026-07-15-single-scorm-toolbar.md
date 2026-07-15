@@ -297,21 +297,21 @@ Commit: `feat(review): orchestrate one toolbar across Moodle and SCORM`
 - Modify: `extension/tests/scorm-worker.test.ts`
 - Modify: `extension/tests/overlay.test.ts`
 
-- [ ] **Step 1: Write failing navigation tests**
+- [x] **Step 1: Write failing navigation tests**
 
 Test that embedded navigation preparation/consumption is accepted only from this extension's frame-0 controller on a configured Moodle origin. Test a recoverable navigation record bound to tab, course, comment ID, exact embedded page identity, validated parent activity, locator, and expiry. Cover current-worker scrolling/opening; parent navigation; worker replacement caused by navigation; locator application; waiting for the expected worker page identity and projection; final take-to-context acknowledgement; timeout/retry until expiry; exact comment/page matching; and legacy comments navigating only when the current worker already matches their exact identity. Otherwise require “open the original SCORM activity first” without guessing.
 
-- [ ] **Step 2: Verify red**
+- [x] **Step 2: Verify red**
 
 Run: `cd extension && node --test tests/background.test.ts tests/scorm-worker.test.ts tests/overlay.test.ts`
 
 Expected: FAIL because `PREPARE_COMMENT_NAVIGATION` only supports same-origin top-page URLs.
 
-- [ ] **Step 3: Add validated embedded navigation preparation/consumption**
+- [x] **Step 3: Add validated embedded navigation preparation/consumption**
 
 Authorize the state-machine entry point separately from general optional-frame senders: require this extension ID, `sender.frameId === 0`, a configured Moodle sender origin, and the current tab/course binding. Implement `prepared -> parent-loading -> worker-loading -> locator-applying -> identity-waiting -> projection-waiting -> context-opening -> complete`. Navigate only to the validated Moodle parent activity; tolerate worker instance replacement; apply the locator; wait for the newly elected worker to announce the expected identity and receive its exact projection; then send `SCORM_TAKE_TO_CONTEXT`. Consume only after its final acknowledgement. On timeout retain/retry while unexpired.
 
-- [ ] **Step 4: Verify green and commit**
+- [x] **Step 4: Verify green and commit**
 
 Run: `cd extension && node --test tests/background.test.ts tests/scorm-worker.test.ts tests/overlay.test.ts && npm run typecheck`
 
