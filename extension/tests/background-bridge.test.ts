@@ -36,7 +36,11 @@ test("embedded create requires this extension frame zero on Moodle and uses clai
   await assert.rejects(() => handleCreateEmbeddedCommentBridge(message, { id: "ours", frameId: 1, url: claim.parentActivityUrl, tab: { id: 7 } }, dependencies), /frame zero/);
   await assert.rejects(() => handleCreateEmbeddedCommentBridge(message, { id: "other", frameId: 0, url: claim.parentActivityUrl, tab: { id: 7 } }, dependencies), /extension sender/);
   await handleCreateEmbeddedCommentBridge(message, { id: "ours", frameId: 0, url: claim.parentActivityUrl, tab: { id: 7 } }, dependencies);
-  assert.deepEqual(created, { payload: { course_id: claim.courseId, page_url: claim.pageUrl, page_title: claim.pageTitle, body: "Please revise", category: "general", ...claim.anchor }, screenshot: true });
+  assert.deepEqual(created, { payload: {
+    course_id: claim.courseId, page_url: claim.pageUrl, page_title: claim.pageTitle,
+    parent_activity_url: claim.parentActivityUrl, embedded_locator: claim.embeddedLocator,
+    body: "Please revise", category: "general", ...claim.anchor,
+  }, screenshot: true });
 });
 
 test("stale election consumes the claim permanently instead of restoring it", async () => {
@@ -151,6 +155,7 @@ test("create comment bridge accepts only normalized context and anchor fields", 
   assert.deepEqual(validateCreateCommentMessage({ type: "CREATE_COMMENT", payload, screenshot_requested: true }), { payload, screenshotRequested: true });
   assert.throws(() => validateCreateCommentMessage({ type: "CREATE_COMMENT", payload: { ...payload, token: "secret" } }), /Invalid CREATE_COMMENT/);
   assert.throws(() => validateCreateCommentMessage({ type: "CREATE_COMMENT", payload: { ...payload, page_url: "javascript:bad" } }), /Invalid CREATE_COMMENT/);
+  assert.throws(() => validateCreateCommentMessage({ type: "CREATE_COMMENT", payload: { ...payload, parent_activity_url: "https://learn.example/mod/scorm/player.php", embedded_locator: "#/lesson" } }), /Invalid CREATE_COMMENT/);
 });
 
 test("cancel screenshot messages have an exact UUID envelope", () => {

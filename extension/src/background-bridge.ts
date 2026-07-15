@@ -1,5 +1,6 @@
 export type ResolveCoursePayload = { course_url: string; title: string; moodle_course_id?: number };
 export type CreateCommentPayload = { course_id: string; page_url: string; page_title: string; body: string; category: string; anchor_type: "text_highlight" | "visual_pin"; selected_quote?: string; prefix?: string; suffix?: string; css_selector?: string; dom_selector?: string; relative_x?: number; relative_y?: number };
+export type EmbeddedCreateCommentPayload = CreateCommentPayload & { parent_activity_url: string; embedded_locator: string };
 import type { EmbeddedAnchorClaim } from "./embedded-anchor-capabilities.ts";
 export type UploadScreenshotPayload = { comment_id: string; data_url: string };
 export type CancelScreenshotPayload = { comment_id: string };
@@ -182,7 +183,7 @@ type EmbeddedCreateDependencies = {
   authorizeMoodle(sender: EmbeddedCreateSender): Promise<boolean>;
   claim(token: string, expected: { tabId: number; courseId: string }): Promise<EmbeddedAnchorClaim | undefined>;
   current(claim: EmbeddedAnchorClaim): boolean;
-  create(payload: CreateCommentPayload, screenshotRequested: boolean): Promise<unknown>;
+  create(payload: EmbeddedCreateCommentPayload, screenshotRequested: boolean): Promise<unknown>;
   restore(token: string, claim: EmbeddedAnchorClaim): Promise<void>;
   expectedCourseId(sender: EmbeddedCreateSender): string | undefined;
 };
@@ -200,8 +201,9 @@ export async function handleCreateEmbeddedCommentBridge(message: unknown, sender
   try { senderUrl = new URL(sender.url ?? ""); } catch { throw new Error("Embedded comment parent context mismatch"); }
   if (senderUrl.origin !== new URL(claim.parentActivityUrl).origin) throw new Error("Embedded comment parent context mismatch");
   if (!dependencies.current(claim)) throw new Error("Embedded comment worker changed");
-  const payload: CreateCommentPayload = {
+  const payload: EmbeddedCreateCommentPayload = {
     course_id: claim.courseId, page_url: claim.pageUrl, page_title: claim.pageTitle,
+    parent_activity_url: claim.parentActivityUrl, embedded_locator: claim.embeddedLocator,
     body: composition.body, category: composition.category, ...claim.anchor,
   };
   try {
