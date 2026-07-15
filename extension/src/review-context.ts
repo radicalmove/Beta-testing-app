@@ -125,3 +125,12 @@ export function matchesCurrentNavigationDocument(sender: ReviewSender, navigatio
   return typeof sender.frameId === "number" && typeof sender.url === "string" && typeof sender.documentId === "string" && sender.documentId.length > 0
     && navigation.some((frame) => frame.frameId === sender.frameId && frame.url === sender.url && frame.documentId === sender.documentId);
 }
+
+export function authoritativeNavigationFor(
+  sender: ReviewSender,
+  navigation: Array<{ frameId: number; parentFrameId: number; url: string; documentId?: string }>,
+): Array<{ frameId: number; parentFrameId: number; url: string; documentId: string }> | undefined {
+  if (!matchesCurrentNavigationDocument(sender, navigation)) return undefined;
+  return navigation.filter((frame): frame is { frameId: number; parentFrameId: number; url: string; documentId: string } =>
+    typeof frame.documentId === "string" && frame.documentId.length > 0);
+}

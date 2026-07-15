@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { matchesCurrentNavigationDocument, ReviewContextCache, validateContextMessage } from "../src/review-context.ts";
+import { authoritativeNavigationFor, matchesCurrentNavigationDocument, ReviewContextCache, validateContextMessage } from "../src/review-context.ts";
 
 const top = { id: "extension", frameId: 0, tab: { id: 4 }, url: "https://learn.example/mod/scorm/player.php?a=9&cmid=22" };
 const frame = { id: "extension", frameId: 3, tab: { id: 4 }, url: "https://rise.example/activity#/lesson/2", documentId: "document-current" };
@@ -67,6 +67,16 @@ test("frame registration binds the trusted sender to the authoritative current d
   assert.equal(matchesCurrentNavigationDocument({ ...frame, documentId: "document-stale" }, navigation), false);
   assert.equal(matchesCurrentNavigationDocument({ ...frame, documentId: undefined }, navigation), false);
   assert.equal(matchesCurrentNavigationDocument(frame, [{ ...navigation[0]!, documentId: undefined }]), false);
+});
+
+test("authoritative navigation ignores unrelated frames without document ids", () => {
+  const navigation = [
+    { frameId: 0, parentFrameId: -1, url: top.url, documentId: "document-0" },
+    { frameId: 3, parentFrameId: 0, url: frame.url, documentId: "document-current" },
+    { frameId: 8, parentFrameId: 3, url: "https://media.example/embed" },
+  ];
+  assert.deepEqual(authoritativeNavigationFor(frame, navigation), navigation.slice(0, 2));
+  assert.equal(authoritativeNavigationFor({ ...frame, documentId: "document-stale" }, navigation), undefined);
 });
 
 test("ready state is tab-scoped and cleared by tab removal", () => {
