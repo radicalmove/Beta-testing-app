@@ -141,21 +141,21 @@ Commit: `refactor(review): separate comment list from document renderer`
 - Modify: `extension/src/content.ts`
 - Modify: `extension/tests/content.test.ts`
 
-- [ ] **Step 1: Write failing worker tests**
+- [x] **Step 1: Write failing worker tests**
 
 Assert embedded startup never calls `mountReviewOverlay` or creates the overlay host; caches a valid text selection on `selectionchange`; consumes it after a start-selection command; starts/cancels marker mode; changes the cursor; returns stable anchors and exact existing embedded `page_url`/title identity; clears selection and renderer state on hash/title changes; and applies a matching comment projection.
 
-- [ ] **Step 2: Verify red**
+- [x] **Step 2: Verify red**
 
 Run: `cd extension && node --test tests/scorm-worker.test.ts tests/content.test.ts`
 
 Expected: FAIL because `startActiveEmbeddedReview` currently mounts the complete overlay.
 
-- [ ] **Step 3: Implement the worker and top-only mount rule**
+- [x] **Step 3: Implement the worker and top-only mount rule**
 
 Use `captureTextAnchor`, `capturePinAnchor`, `createLifecycleController`, and `CommentRenderer`. Embedded frames register and handle commands but never mount the toolbar. Remove SCORM route suppression and parent/child presentation election from the top overlay; the top toolbar remains visible once.
 
-- [ ] **Step 4: Verify green and commit**
+- [x] **Step 4: Verify green and commit**
 
 Run: `cd extension && node --test tests/scorm-worker.test.ts tests/content.test.ts && npm run typecheck`
 
