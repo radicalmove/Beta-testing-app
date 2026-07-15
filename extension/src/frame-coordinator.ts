@@ -44,6 +44,7 @@ export type Election = {
 };
 
 export type CoordinatorSnapshot = { activeFrameIds: number[]; generation: number };
+export type ActiveWorkerOwner = { frameId: number; workerInstanceId: string; generation: number };
 
 export class FrameCoordinator {
   private readonly tabs = new Map<number, TabState>();
@@ -204,6 +205,11 @@ export class FrameCoordinator {
   snapshot(tabId: number): CoordinatorSnapshot {
     const tab = this.requireTab(tabId);
     return { activeFrameIds: tab.active ? [tab.active.frameId] : [], generation: tab.generation };
+  }
+
+  activeOwner(tabId: number): ActiveWorkerOwner | undefined {
+    const active = this.requireTab(tabId).active;
+    return active ? { ...active } : undefined;
   }
 
   private winner(tab: TabState, now: number): number | undefined {

@@ -1,5 +1,6 @@
 import { ApiClient, authenticate, getActiveToken, lookupReviewCourse, redeemReviewerInvitation, renewReviewerDevice, resumeReviewerMembership, type SessionToken } from "./api";
-import { authorizeAuthenticateSender, authorizeResolveSender, handleCreateCommentBridge, handleDeleteCommentBridge, handleListCourseCommentsBridge, handleListPageCommentsBridge, handleResolveCourseBridge, normalizeErrorMessage, validateAuthenticateMessage, validateCancelScreenshotMessage, validateUploadScreenshotMessage, validateViewerResponse, type CreateCommentPayload, type ResolveCoursePayload } from "./background-bridge.ts";
+import { authorizeAuthenticateSender, authorizeResolveSender, handleCreateCommentBridge, handleCreateEmbeddedCommentBridge, handleDeleteCommentBridge, handleListCourseCommentsBridge, handleListPageCommentsBridge, handleResolveCourseBridge, normalizeErrorMessage, validateAuthenticateMessage, validateCancelScreenshotMessage, validateUploadScreenshotMessage, validateViewerResponse, type CreateCommentPayload, type ResolveCoursePayload } from "./background-bridge.ts";
+import { EmbeddedAnchorCapabilities, issueEmbeddedAnchorFromWorker } from "./embedded-anchor-capabilities.ts";
 import { validateScreenshotDataUrl } from "./screenshot-validation.ts";
 import { reconcileOptionalContentScript } from "./optional-content-scripts";
 import { matchesCurrentNavigationDocument, ReviewContextCache, validateContextMessage, type ReviewSender, type StoredReviewContext } from "./review-context.ts";
@@ -34,6 +35,7 @@ const frameCoordination = new FrameCoordinatorRuntime({
   },
 });
 const screenshotCapabilities = new ScreenshotCapabilities(chrome.storage.session);
+const embeddedAnchorCapabilities = new EmbeddedAnchorCapabilities(chrome.storage.session);
 const pendingAccess = new PendingAccessStore(chrome.storage.local);
 const pendingApprovals = new PendingApprovalManager(
   pendingAccess,
@@ -47,6 +49,7 @@ const pendingApprovals = new PendingApprovalManager(
 let renewalPromise: Promise<string | undefined> | undefined;
 void chrome.storage.local.setAccessLevel?.({ accessLevel: "TRUSTED_CONTEXTS" }).catch(() => undefined);
 void screenshotCapabilities.cleanup().catch((error: Error) => console.error("Unable to clean screenshot capabilities", error));
+void embeddedAnchorCapabilities.cleanup().catch((error: Error) => console.error("Unable to clean embedded anchor capabilities", error));
 
 function refreshOptionalContentScript(): void {
   optionalRegistration = optionalRegistration.then(async () => {
@@ -167,6 +170,7 @@ chrome.webNavigation?.onCommitted?.addListener((details: { tabId: number; frameI
 
 chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & { tab?: { id?: number; windowId?: number } }, sendResponse: (value: unknown) => void) => {
   void screenshotCapabilities.cleanup().catch(() => undefined);
+  void embeddedAnchorCapabilities.cleanup().catch(() => undefined);
   let operation: Promise<unknown> | undefined;
   if (message && typeof message === "object" && (message as { type?: unknown }).type === "LOOKUP_REVIEW_COURSE") {
     operation = (async () => {
@@ -256,6 +260,39 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
           }
         }
         return resolved;
+      },
+    });
+  } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "SCORM_ANCHOR_CAPTURED") {
+    operation = (async () => {
+      if (typeof sender.tab?.id !== "number" || !await authorizeResolveSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) })) throw new Error("Unauthorized SCORM anchor sender");
+      const capability = await issueEmbeddedAnchorFromWorker(message, sender, {
+        extensionId: chrome.runtime.id,
+        context: reviewContexts.exportTab(sender.tab.id),
+        currentOwner: frameCoordination.currentOwner(sender.tab.id),
+        capabilities: embeddedAnchorCapabilities,
+      });
+      return { capability };
+    })();
+  } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "CREATE_EMBEDDED_COMMENT") {
+    operation = handleCreateEmbeddedCommentBridge(message, sender, {
+      extensionId: chrome.runtime.id,
+      authorizeMoodle: (candidate) => authorizeAuthenticateSender(candidate, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, hasPermission: async () => false }),
+      expectedCourseId: () => reviewContexts.courseId(sender),
+      claim: (token, expected) => embeddedAnchorCapabilities.claim(token, expected),
+      current: (claim) => {
+        const owner = frameCoordination.currentOwner(claim.tabId);
+        const context = reviewContexts.exportTab(claim.tabId);
+        return owner?.frameId === claim.frameId && owner.workerInstanceId === claim.workerInstanceId && owner.generation === claim.generation
+          && context?.id === claim.courseId && context.parent_activity_url === claim.parentActivityUrl && context.course_url === claim.courseUrl;
+      },
+      restore: (token, claim) => embeddedAnchorCapabilities.restore(token, claim),
+      create: async (payload, screenshotRequested) => {
+        const result = await createComment(payload) as { id?: unknown };
+        if (screenshotRequested && typeof result.id === "string" && typeof sender.tab?.id === "number") {
+          try { await screenshotCapabilities.grant(result.id, sender.tab.id, payload.course_id); }
+          catch { return { ...result, screenshot_available: false }; }
+        }
+        return result;
       },
     });
   } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "CREATE_COMMENT") {

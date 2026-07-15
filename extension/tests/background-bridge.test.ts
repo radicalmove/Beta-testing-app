@@ -1,13 +1,58 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { authorizeAuthenticateSender, authorizeResolveSender, handleCreateCommentBridge, handleDeleteCommentBridge, handleListPageCommentsBridge, handleResolveCourseBridge, normalizeErrorMessage, validateAuthenticateMessage, validateCancelScreenshotMessage, validateCreateCommentMessage, validateDeleteCommentMessage, validateListPageCommentsMessage, validatePageCommentsResponse, validateResolveCourseMessage, validateUploadScreenshotMessage, validateViewerResponse } from "../src/background-bridge.ts";
+import { authorizeAuthenticateSender, authorizeResolveSender, handleCreateCommentBridge, handleCreateEmbeddedCommentBridge, handleDeleteCommentBridge, handleListPageCommentsBridge, handleResolveCourseBridge, normalizeErrorMessage, validateAuthenticateMessage, validateCancelScreenshotMessage, validateCreateCommentMessage, validateCreateEmbeddedCommentMessage, validateDeleteCommentMessage, validateListPageCommentsMessage, validatePageCommentsResponse, validateResolveCourseMessage, validateUploadScreenshotMessage, validateViewerResponse } from "../src/background-bridge.ts";
+import type { EmbeddedAnchorClaim } from "../src/embedded-anchor-capabilities.ts";
+
+const capabilityUuid = (n: number) => `123e4567-e89b-42d3-a456-${String(n).padStart(12, "0")}`;
 
 test("authenticate accepts only an exact empty envelope", () => {
   assert.deepEqual(validateAuthenticateMessage({ type: "AUTHENTICATE" }), {});
   for (const message of [{ type: "AUTHENTICATE", extra: true }, { type: "AUTHENTICATE", payload: {} }, { type: "AUTHENTICATE", token: "secret" }, null]) {
     assert.throws(() => validateAuthenticateMessage(message), /Invalid AUTHENTICATE/);
   }
+});
+
+test("embedded create message accepts only an opaque capability plus composition fields", () => {
+  const message = { type: "CREATE_EMBEDDED_COMMENT", capability: "a".repeat(64), body: "Please revise", category: "general", screenshot_requested: true };
+  assert.deepEqual(validateCreateEmbeddedCommentMessage(message), { capability: "a".repeat(64), body: "Please revise", category: "general", screenshotRequested: true });
+  assert.throws(() => validateCreateEmbeddedCommentMessage({ ...message, page_url: "https://rise.example/forged" }), /Invalid CREATE_EMBEDDED_COMMENT/);
+  assert.throws(() => validateCreateEmbeddedCommentMessage({ ...message, capability: "short" }), /Invalid CREATE_EMBEDDED_COMMENT/);
+});
+
+test("embedded create requires this extension frame zero on Moodle and uses claimed anchor data", async () => {
+  const claim: EmbeddedAnchorClaim = {
+    tabId: 7, courseId: capabilityUuid(90), frameId: 12, workerInstanceId: capabilityUuid(91), generation: 3,
+    pageUrl: "https://rise.example/lesson/index.html#/one", pageTitle: "One",
+    parentActivityUrl: "https://my.uconline.ac.nz/mod/scorm/player.php?a=9", courseUrl: "https://my.uconline.ac.nz/course/view.php?id=896", embeddedLocator: "#/one",
+    anchor: { anchor_type: "visual_pin", css_selector: "#card", relative_x: 0.2, relative_y: 0.8 }, createdAt: 1, expiresAt: 999,
+  };
+  const message = { type: "CREATE_EMBEDDED_COMMENT", capability: "a".repeat(64), body: "Please revise", category: "general", screenshot_requested: true };
+  let created: unknown;
+  const dependencies = {
+    extensionId: "ours", authorizeMoodle: async () => true, expectedCourseId: () => claim.courseId, claim: async () => claim, current: () => true,
+    create: async (payload: unknown, screenshot: boolean) => { created = { payload, screenshot }; return { id: capabilityUuid(8) }; }, restore: async () => undefined,
+  };
+  await assert.rejects(() => handleCreateEmbeddedCommentBridge(message, { id: "ours", frameId: 1, url: claim.parentActivityUrl, tab: { id: 7 } }, dependencies), /frame zero/);
+  await assert.rejects(() => handleCreateEmbeddedCommentBridge(message, { id: "other", frameId: 0, url: claim.parentActivityUrl, tab: { id: 7 } }, dependencies), /extension sender/);
+  await handleCreateEmbeddedCommentBridge(message, { id: "ours", frameId: 0, url: claim.parentActivityUrl, tab: { id: 7 } }, dependencies);
+  assert.deepEqual(created, { payload: { course_id: claim.courseId, page_url: claim.pageUrl, page_title: claim.pageTitle, body: "Please revise", category: "general", ...claim.anchor }, screenshot: true });
+});
+
+test("embedded create rechecks election and restores claims after election or API failure", async () => {
+  const claim: EmbeddedAnchorClaim = {
+    tabId: 7, courseId: capabilityUuid(90), frameId: 12, workerInstanceId: capabilityUuid(91), generation: 3,
+    pageUrl: "https://rise.example/index.html#/one", pageTitle: "One", parentActivityUrl: "https://my.uconline.ac.nz/mod/scorm/player.php?a=9",
+    courseUrl: "https://my.uconline.ac.nz/course/view.php?id=896", embeddedLocator: "#/one",
+    anchor: { anchor_type: "text_highlight", selected_quote: "words", prefix: "", suffix: "" }, createdAt: 1, expiresAt: 999,
+  };
+  const message = { type: "CREATE_EMBEDDED_COMMENT", capability: "a".repeat(64), body: "Fix", category: "general" };
+  let restores = 0;
+  const base = { extensionId: "ours", authorizeMoodle: async () => true, expectedCourseId: () => claim.courseId, claim: async () => claim, restore: async () => { restores += 1; }, create: async () => { throw new Error("API down"); } };
+  await assert.rejects(() => handleCreateEmbeddedCommentBridge(message, { id: "ours", frameId: 0, url: claim.parentActivityUrl, tab: { id: 7 } }, { ...base, current: () => false }), /worker changed/);
+  assert.equal(restores, 1);
+  await assert.rejects(() => handleCreateEmbeddedCommentBridge(message, { id: "ours", frameId: 0, url: claim.parentActivityUrl, tab: { id: 7 } }, { ...base, current: () => true }), /API down/);
+  assert.equal(restores, 2);
 });
 
 test("authenticate sender must be this extension's trusted configured top frame", async () => {
@@ -137,6 +182,13 @@ test("valid create is denied before API access when cached course identity does 
   const payload = { course_id: "123e4567-e89b-12d3-a456-426614174000", page_url: "https://learn.example/mod/page/view.php?id=9", page_title: "Week 2", body: "No", category: "general", anchor_type: "text_highlight", selected_quote: "phrase", prefix: "", suffix: "" };
   let creates = 0;
   await assert.rejects(() => handleCreateCommentBridge({ type: "CREATE_COMMENT", payload }, { id: "ours", url: payload.page_url }, { authorize: async () => true, contextMatches: () => false, create: async () => { creates += 1; } }), /context mismatch/);
+  assert.equal(creates, 0);
+});
+
+test("ordinary top-frame create still rejects a cross-origin Rise page", async () => {
+  const payload = { course_id: capabilityUuid(90), page_url: "https://rise.example/index.html#/one", page_title: "One", body: "No", category: "general", anchor_type: "visual_pin" as const, css_selector: "#card", relative_x: 0.2, relative_y: 0.5 };
+  let creates = 0;
+  await assert.rejects(() => handleCreateCommentBridge({ type: "CREATE_COMMENT", payload }, { id: "ours", url: "https://my.uconline.ac.nz/mod/scorm/player.php" }, { authorize: async () => true, contextMatches: () => true, create: async () => { creates += 1; } }), /origin must match/);
   assert.equal(creates, 0);
 });
 

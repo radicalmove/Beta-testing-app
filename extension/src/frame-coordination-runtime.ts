@@ -1,4 +1,4 @@
-import { FrameCoordinator, type CoordinatorSnapshot, type FrameCapabilities, type NavigationFrame } from "./frame-coordinator.ts";
+import { FrameCoordinator, type ActiveWorkerOwner, type CoordinatorSnapshot, type FrameCapabilities, type NavigationFrame } from "./frame-coordinator.ts";
 export type { NavigationFrame } from "./frame-coordinator.ts";
 
 type DeliveryResult = { ok?: boolean; dormant?: boolean; worker_instance_id?: string; generation?: number } | undefined;
@@ -44,6 +44,10 @@ export class FrameCoordinatorRuntime {
   snapshot(tabId: number): CoordinatorSnapshot {
     try { return this.coordinator.snapshot(tabId); }
     catch { return { activeFrameIds: [], generation: 0 }; }
+  }
+
+  currentOwner(tabId: number): ActiveWorkerOwner | undefined {
+    try { return this.coordinator.activeOwner(tabId); } catch { return undefined; }
   }
 
   removeTab(tabId: number): void { this.coordinator.removeTab(tabId); this.lastReady.delete(tabId); }

@@ -29,6 +29,14 @@ test("registration requires a top frame and overwrites on the next top resolve",
   assert.equal(cache.obtain(frame)?.course_title, "Two");
 });
 
+test("trusted review context requires exact HTTPS course and parent URLs on one Moodle origin", () => {
+  const cache = new ReviewContextCache();
+  assert.equal(cache.register(top, { ...context, parent_activity_url: "https://evil.example/mod/scorm/player.php?a=9" }), false);
+  assert.equal(cache.register(top, { ...context, course_url: "http://learn.example/course/view.php?id=7" }), false);
+  assert.equal(cache.register(top, { ...context, parent_activity_url: "https://learn.example/mod/scorm/player.php?a=9#fragment" }), true);
+  assert.equal(cache.restoreTab(4, "extension", { ...context, course_url: "https://evil.example/course/view.php?id=7" }), false);
+});
+
 test("context control messages have strict empty schemas", () => {
   for (const type of ["GET_REVIEW_CONTEXT", "REVIEW_FRAME_READY", "GET_REVIEW_FRAME_STATUS"] as const) assert.deepEqual(validateContextMessage({ type }), { type });
   for (const value of [{ type: "GET_REVIEW_CONTEXT", token: "x" }, { type: "REVIEW_FRAME_READY", frameId: 4 }, null]) assert.throws(() => validateContextMessage(value));

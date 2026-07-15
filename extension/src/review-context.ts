@@ -45,7 +45,8 @@ export class ReviewContextCache {
 
   register(sender: ReviewSender, context: StoredReviewContext): boolean {
     const tabId = sender.tab?.id;
-    if (sender.frameId !== 0 || typeof tabId !== "number" || typeof sender.id !== "string") return false;
+    if (sender.frameId !== 0 || typeof tabId !== "number" || typeof sender.id !== "string" || !isStoredReviewContext(context)) return false;
+    try { if (new URL(sender.url ?? "").origin !== new URL(context.course_url).origin) return false; } catch { return false; }
     this.entries.set(tabId, { ...context, extensionId: sender.id, lastActivityAt: this.now(), readyFrames: new Map() });
     return true;
   }
@@ -113,7 +114,11 @@ export class ReviewContextCache {
 function isStoredReviewContext(context: StoredReviewContext): boolean {
   if (!context || typeof context !== "object") return false;
   if (![context.id, context.title, context.course_url, context.parent_activity_url].every((value) => typeof value === "string" && value.length > 0)) return false;
-  try { return new URL(context.course_url).protocol === "https:" && new URL(context.parent_activity_url).protocol === "https:"; } catch { return false; }
+  try {
+    const course = new URL(context.course_url); const parent = new URL(context.parent_activity_url);
+    return course.protocol === "https:" && parent.protocol === "https:" && !course.username && !course.password && !parent.username && !parent.password
+      && course.href === context.course_url && parent.href === context.parent_activity_url && course.origin === parent.origin;
+  } catch { return false; }
 }
 
 export function matchesCurrentNavigationDocument(sender: ReviewSender, navigation: Array<{ frameId: number; url: string; documentId?: string }>): boolean {

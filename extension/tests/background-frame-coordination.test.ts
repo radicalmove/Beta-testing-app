@@ -26,6 +26,7 @@ test("uses authoritative navigation parentage and activates the deepest frame", 
   await runtime.registerFrame(1, 7, "document-7", 1, workerA, content, frames, 0);
   assert.deepEqual(sent, [{ frameId: 7, message: { type: "ACTIVATE_REVIEW_FRAME", worker_instance_id: workerA, generation: 1 } }]);
   assert.deepEqual(runtime.snapshot(1).activeFrameIds, [7]);
+  assert.deepEqual(runtime.currentOwner(1), { frameId: 7, workerInstanceId: workerA, generation: 1 });
 });
 
 test("deactivates and confirms dormancy before activating a replacement", async () => {

@@ -1,5 +1,6 @@
 export type ResolveCoursePayload = { course_url: string; title: string; moodle_course_id?: number };
 export type CreateCommentPayload = { course_id: string; page_url: string; page_title: string; body: string; category: string; anchor_type: "text_highlight" | "visual_pin"; selected_quote?: string; prefix?: string; suffix?: string; css_selector?: string; dom_selector?: string; relative_x?: number; relative_y?: number };
+import type { EmbeddedAnchorClaim } from "./embedded-anchor-capabilities.ts";
 export type UploadScreenshotPayload = { comment_id: string; data_url: string };
 export type CancelScreenshotPayload = { comment_id: string };
 export type ViewerIdentity = { course_id: string; user: { id: string; display_name: string | null; email: string; role: string } };
@@ -143,6 +144,57 @@ export function validateCreateCommentMessage(message: unknown): { payload: Creat
     if (!selector || selector.length > 4000 || !Number.isFinite(relativeX) || !Number.isFinite(relativeY) || relativeX < 0 || relativeX > 1 || relativeY < 0 || relativeY > 1) return invalid();
   } else return invalid();
   return { payload: payload as CreateCommentPayload, ...(record.screenshot_requested === true ? { screenshotRequested: true as const } : {}) };
+}
+
+const COMMENT_CATEGORIES = ["language_grammar", "learning_design_content_flow", "accessibility", "technical_link_media_interaction", "assessment", "general"];
+
+export function validateCreateEmbeddedCommentMessage(message: unknown): { capability: string; body: string; category: string; screenshotRequested?: true } {
+  const invalid = (): never => { throw new Error("Invalid CREATE_EMBEDDED_COMMENT message"); };
+  if (!message || typeof message !== "object" || Array.isArray(message)) return invalid();
+  const record = message as Record<string, unknown>;
+  const allowed = ["type", "capability", "body", "category", "screenshot_requested"];
+  if (record.type !== "CREATE_EMBEDDED_COMMENT" || Object.keys(record).some((key) => !allowed.includes(key))
+    || !["type", "capability", "body", "category"].every((key) => own(record, key))
+    || (own(record, "screenshot_requested") && typeof record.screenshot_requested !== "boolean")
+    || typeof record.capability !== "string" || !/^[A-Za-z0-9_-]{43,128}$/.test(record.capability)
+    || typeof record.body !== "string" || !record.body.trim() || record.body.trim().length > 10_000
+    || typeof record.category !== "string" || !COMMENT_CATEGORIES.includes(record.category.trim())) return invalid();
+  return { capability: record.capability, body: record.body.trim(), category: record.category.trim(), ...(record.screenshot_requested === true ? { screenshotRequested: true as const } : {}) };
+}
+
+type EmbeddedCreateSender = { id?: string; frameId?: number; url?: string; tab?: { id?: number } };
+type EmbeddedCreateDependencies = {
+  extensionId: string;
+  authorizeMoodle(sender: EmbeddedCreateSender): Promise<boolean>;
+  claim(token: string, expected: { tabId: number; courseId: string }): Promise<EmbeddedAnchorClaim | undefined>;
+  current(claim: EmbeddedAnchorClaim): boolean;
+  create(payload: CreateCommentPayload, screenshotRequested: boolean): Promise<unknown>;
+  restore(token: string, claim: EmbeddedAnchorClaim): Promise<void>;
+  expectedCourseId(sender: EmbeddedCreateSender): string | undefined;
+};
+
+export async function handleCreateEmbeddedCommentBridge(message: unknown, sender: EmbeddedCreateSender, dependencies: EmbeddedCreateDependencies): Promise<unknown> {
+  const composition = validateCreateEmbeddedCommentMessage(message);
+  if (sender.id !== dependencies.extensionId) throw new Error("CREATE_EMBEDDED_COMMENT requires this extension sender");
+  if (sender.frameId !== 0 || typeof sender.tab?.id !== "number") throw new Error("CREATE_EMBEDDED_COMMENT requires frame zero");
+  if (!await dependencies.authorizeMoodle(sender)) throw new Error("Unauthorized CREATE_EMBEDDED_COMMENT Moodle sender");
+  const expectedCourseId = dependencies.expectedCourseId(sender);
+  if (!expectedCourseId) throw new Error("CREATE_EMBEDDED_COMMENT course context unavailable");
+  const claim = await dependencies.claim(composition.capability, { tabId: sender.tab.id, courseId: expectedCourseId });
+  if (!claim) throw new Error("Embedded comment capability is invalid or expired");
+  try {
+    let senderUrl: URL;
+    try { senderUrl = new URL(sender.url ?? ""); } catch { throw new Error("Embedded comment parent context mismatch"); }
+    if (senderUrl.origin !== new URL(claim.parentActivityUrl).origin || !dependencies.current(claim)) throw new Error("Embedded comment worker changed");
+    const payload: CreateCommentPayload = {
+      course_id: claim.courseId, page_url: claim.pageUrl, page_title: claim.pageTitle,
+      body: composition.body, category: composition.category, ...claim.anchor,
+    };
+    return await dependencies.create(payload, composition.screenshotRequested === true);
+  } catch (error) {
+    await dependencies.restore(composition.capability, claim);
+    throw error;
+  }
 }
 
 export function validateUploadScreenshotMessage(message: unknown): UploadScreenshotPayload {
