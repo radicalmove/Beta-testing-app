@@ -667,6 +667,37 @@ test("comment list filters persist across refreshes and missing selected pages r
   assert.equal(shadow.querySelector<HTMLSelectElement>("select[data-comment-page]")!.value, "");
 });
 
+test("course, selected-page, status, and empty filters compose without renumbering rows", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const base = { id: "00000000-0000-4000-8000-000000000500", body: "First open", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Week 2", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight" as const, selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } };
+  const otherUrl = "https://learn.example/mod/page/view.php?id=5";
+  overlay.setCommentList([base, { ...base, id: "00000000-0000-4000-8000-000000000501", body: "Other resolved", status: "resolved", page_url: otherUrl, page_title: "Week 5" }, { ...base, id: "00000000-0000-4000-8000-000000000502", body: "Other open", page_url: otherUrl, page_title: "Week 5" }]);
+  const visible = () => Array.from(shadow.querySelectorAll<HTMLButtonElement>("[data-comment-item]"), (item) => item.hidden ? "" : item.textContent!).filter(Boolean);
+  assert.deepEqual(visible().map((text) => text.match(/^#\d+/)?.[0]), ["#1", "#3"]);
+  const select = shadow.querySelector<HTMLSelectElement>("select[data-comment-page]")!; select.value = otherUrl; select.dispatchEvent(new window.Event("change", { bubbles: true }) as unknown as Event);
+  assert.deepEqual(visible().map((text) => text.match(/^#\d+/)?.[0]), ["#3"]); assert.doesNotMatch(visible()[0]!, /Week 5/);
+  shadow.querySelector<HTMLButtonElement>('[data-comment-filter="resolved"]')!.click();
+  assert.deepEqual(visible().map((text) => text.match(/^#\d+/)?.[0]), ["#2"]); assert.doesNotMatch(visible()[0]!, /Week 5/);
+  shadow.querySelector<HTMLButtonElement>('[data-comment-scope="page"]')!.click();
+  assert.deepEqual(visible(), []);
+  const empty = shadow.querySelector<HTMLElement>("[data-comment-empty]")!;
+  assert.equal(empty.textContent, "No comments match these filters."); assert.equal(empty.hidden, false);
+  shadow.querySelector<HTMLButtonElement>('[data-comment-filter="open"]')!.click();
+  assert.deepEqual(visible().map((text) => text.match(/^#\d+/)?.[0]), ["#1"]); assert.equal(empty.hidden, true);
+});
+
+test("current-page overlay filtering matches the exact page_url including its hash", () => {
+  const scormContext = { ...context, page_url: "https://rise.example/activity#moodle-review-page=Lesson-2", pageTitle: "Embedded activity · Lesson 2" };
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, scormContext, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const base = { id: "00000000-0000-4000-8000-000000000510", body: "SCORM feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: scormContext.page_url, page_title: scormContext.pageTitle, parent_activity_url: context.page_url, embedded_locator: "Lesson 2", anchor_type: "visual_pin" as const, selected_quote: null, prefix: null, suffix: null, css_selector: "#target", dom_selector: null, relative_x: .5, relative_y: .5, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } };
+  overlay.setCommentList([base, { ...base, id: "00000000-0000-4000-8000-000000000511", page_url: "https://rise.example/activity#moodle-review-page=Lesson-1", page_title: "Embedded activity · Lesson 1" }]);
+  shadow.querySelector<HTMLButtonElement>('[data-comment-scope="page"]')!.click();
+  const visible = Array.from(shadow.querySelectorAll<HTMLButtonElement>("[data-comment-item]")).filter((item) => !item.hidden);
+  assert.equal(visible.length, 1); assert.match(visible[0]!.textContent!, /^#1 /); assert.doesNotMatch(visible[0]!.textContent!, /Embedded activity/);
+});
+
 test("course-list navigation reports the precise SCORM recovery instruction without closing the list", async () => {
   const window = new Window(); const document = window.document as unknown as Document;
   const overlay = mountReviewOverlay(document, context, "connected", { navigateToComment: async () => { throw new Error("Open the original SCORM activity first"); } });
