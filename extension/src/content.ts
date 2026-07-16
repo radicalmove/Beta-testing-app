@@ -443,6 +443,7 @@ export function startEmbeddedReview(targetWindow: Window & typeof globalThis, ta
       sendResponse({ ok: false, worker_instance_id: workerInstanceId, generation: command.generation }); return;
     }
     if (command.type === "ACTIVATE_REVIEW_FRAME" && Number.isInteger(command.generation)) {
+      targetDocument.documentElement.setAttribute("data-moodle-review-activation", `received:${command.generation}`);
       const accepted = activate(command.generation as number);
       sendResponse({ ok: accepted, worker_instance_id: workerInstanceId, generation: command.generation }); return;
     }
@@ -466,7 +467,9 @@ export function startEmbeddedReview(targetWindow: Window & typeof globalThis, ta
       return;
     }
     attempts = 0;
-    sendRuntimeMessage(runtime, { type: "REGISTER_REVIEW_FRAME", worker_instance_id: workerInstanceId, worker_instance_epoch: workerInstanceEpoch, capabilities: measureFrameCapabilities(targetDocument, targetWindow) }, (response) => {
+    const capabilities = measureFrameCapabilities(targetDocument, targetWindow);
+    targetDocument.documentElement.setAttribute("data-moodle-review-capabilities", JSON.stringify(capabilities));
+    sendRuntimeMessage(runtime, { type: "REGISTER_REVIEW_FRAME", worker_instance_id: workerInstanceId, worker_instance_epoch: workerInstanceEpoch, capabilities }, (response) => {
       targetDocument.documentElement.setAttribute("data-moodle-review-registration", response?.ok ? "registered" : `failed:${String(response?.error ?? "unknown").slice(0, 120)}`);
     });
     // Unit-test and legacy runtimes have no command channel. Production Chrome
@@ -515,8 +518,10 @@ function startActiveEmbeddedReview(targetWindow: Window & typeof globalThis, tar
     setCommandHandler((message) => worker?.handleCommand(message));
     for (const event of worker.initialEvents()) await send(event);
     await send({ type: "REVIEW_FRAME_READY" });
+    targetDocument.documentElement.setAttribute("data-moodle-review-activation", `ready:${generation}`);
     try { targetWindow.parent.postMessage({ type: "MOODLE_REVIEW_FRAME_READY" }, "*"); } catch { /* trigger only */ }
   }).catch((error: unknown) => {
+    targetDocument.documentElement.setAttribute("data-moodle-review-activation", `failed:${String(error instanceof Error ? error.message : error).slice(0, 120)}`);
     attempts += 1;
     if (!stopped && attempts < 25 && error instanceof Error && isTransientReviewContextError(error.message)) retryTimer = scheduleRetry(obtain, retryDelay);
   });

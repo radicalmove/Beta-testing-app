@@ -170,6 +170,7 @@ test("embedded review stays dormant until the coordinator activates its toolbar-
   const cleanup = startEmbeddedReview(window as any, window.document as any, runtime as any);
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(window.document.documentElement.getAttribute("data-moodle-review-registration"), "registered");
+  assert.match(window.document.documentElement.getAttribute("data-moodle-review-capabilities") ?? "", /"contentBearing":true/);
   assert.equal(window.document.querySelector("#moodle-course-review-overlay"), null);
   listener!({ type: "ACTIVATE_REVIEW_FRAME", worker_instance_id: "223e4567-e89b-42d3-a456-426614174000", generation: 1 }, {}, () => undefined);
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -178,6 +179,7 @@ test("embedded review stays dormant until the coordinator activates its toolbar-
   listener!({ type: "ACTIVATE_REVIEW_FRAME", worker_instance_id: workerInstanceId, generation: 1 }, {}, (response) => { activationResponse = response; });
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.deepEqual(activationResponse, { ok: true, worker_instance_id: workerInstanceId, generation: 1 });
+  assert.equal(window.document.documentElement.getAttribute("data-moodle-review-activation"), "ready:1");
   assert.equal(window.document.querySelector("#moodle-course-review-overlay"), null, "an elected Rise frame must never own a toolbar");
   let reconstructionResponse: unknown;
   listener!({ type: "ACTIVATE_REVIEW_FRAME", worker_instance_id: workerInstanceId, generation: 0 }, {}, (response) => { reconstructionResponse = response; });
