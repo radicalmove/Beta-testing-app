@@ -64,6 +64,7 @@ test("frame coordination messages have strict typed schemas", () => {
 test("frame registration binds the trusted sender to the authoritative current document", () => {
   const navigation = [{ frameId: 3, parentFrameId: 0, url: frame.url, documentId: "document-current" }];
   assert.equal(matchesCurrentNavigationDocument(frame, navigation), true);
+  assert.equal(matchesCurrentNavigationDocument(frame, [{ ...navigation[0]!, url: "https://rise.example/activity" }]), true);
   assert.equal(matchesCurrentNavigationDocument({ ...frame, documentId: "document-stale" }, navigation), false);
   assert.equal(matchesCurrentNavigationDocument({ ...frame, documentId: undefined }, navigation), false);
   assert.equal(matchesCurrentNavigationDocument(frame, [{ ...navigation[0]!, documentId: undefined }]), false);

@@ -123,7 +123,7 @@ function isStoredReviewContext(context: StoredReviewContext): boolean {
 
 export function matchesCurrentNavigationDocument(sender: ReviewSender, navigation: Array<{ frameId: number; url: string; documentId?: string }>): boolean {
   return typeof sender.frameId === "number" && typeof sender.url === "string" && typeof sender.documentId === "string" && sender.documentId.length > 0
-    && navigation.some((frame) => frame.frameId === sender.frameId && frame.url === sender.url && frame.documentId === sender.documentId);
+    && navigation.some((frame) => frame.frameId === sender.frameId && frame.documentId === sender.documentId);
 }
 
 export function authoritativeNavigationFor(
