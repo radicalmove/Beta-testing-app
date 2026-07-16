@@ -519,6 +519,109 @@ test("large course comment lists are viewport bounded and scroll in a dedicated 
   assert.match(commentListLayoutStyles, /\.comment-results\{[^}]*min-height:0[^}]*overflow-y:auto[^}]*font-size:14px/);
 });
 
+test("course comment rows expose capability-gated resolve, reopen, and delete actions without navigating", async () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const statusCalls: string[][] = []; const deleteCalls: string[] = []; const navigationCalls: string[] = [];
+  const base = { id: "00000000-0000-4000-8000-000000000400", body: "Actionable feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Week 2", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight" as const, selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: true, can_share_with_sme: false, can_delete: true } };
+  let records = [base, { ...base, id: "00000000-0000-4000-8000-000000000401", status: "resolved", body: "Already resolved", capabilities: { ...base.capabilities, can_delete: false } }];
+  let overlay: ReturnType<typeof mountReviewOverlay>;
+  overlay = mountReviewOverlay(document, context, "connected", {
+    navigateToComment: async (id) => { navigationCalls.push(id); },
+    changeStatus: async (id, status) => { statusCalls.push([id, status]); records = records.map((comment) => comment.id === id ? { ...comment, status } : comment); overlay.setCommentList(records); },
+    deleteThread: async (id) => { deleteCalls.push(id); records = records.filter((comment) => comment.id !== id); overlay.setCommentList(records); },
+  });
+  overlay.setCommentList(records);
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const firstRow = shadow.querySelectorAll<HTMLElement>("[role='listitem']")[0]!;
+  assert.ok(firstRow.querySelector("button[data-comment-item]"));
+  const resolve = firstRow.querySelector<HTMLButtonElement>('[data-comment-action="status"]')!;
+  const remove = firstRow.querySelector<HTMLButtonElement>('[data-comment-action="delete"]')!;
+  assert.match(resolve.getAttribute("aria-label") ?? "", /Resolve comment 1/); assert.equal(resolve.title, resolve.getAttribute("aria-label"));
+  assert.match(remove.getAttribute("aria-label") ?? "", /Delete comment 1/); assert.equal(remove.title, remove.getAttribute("aria-label"));
+  resolve.click(); await tick();
+  assert.deepEqual(statusCalls, [[base.id, "resolved"]]); assert.deepEqual(navigationCalls, []);
+  assert.equal(shadow.querySelector<HTMLButtonElement>('[data-comment-filter="open"]')!.getAttribute("aria-pressed"), "true"); assert.equal(shadow.querySelectorAll("[role='listitem']").length, 2);
+  shadow.querySelector<HTMLButtonElement>('[data-comment-filter="resolved"]')!.click();
+  const reopened = shadow.querySelector<HTMLElement>(`[data-comment-row="${base.id}"]`)!.querySelector<HTMLButtonElement>('[data-comment-action="status"]')!;
+  assert.match(reopened.getAttribute("aria-label") ?? "", /Reopen comment 1/);
+  reopened.click(); await tick();
+  assert.deepEqual(statusCalls, [[base.id, "resolved"], [base.id, "open"]]); assert.deepEqual(navigationCalls, []);
+
+  assert.equal(shadow.querySelector<HTMLButtonElement>('[data-comment-filter="resolved"]')!.getAttribute("aria-pressed"), "true"); shadow.querySelector<HTMLButtonElement>('[data-comment-filter="open"]')!.click();
+  document.defaultView!.confirm = () => false;
+  shadow.querySelector<HTMLElement>(`[data-comment-row="${base.id}"]`)!.querySelector<HTMLButtonElement>('[data-comment-action="delete"]')!.click(); await tick(); assert.deepEqual(deleteCalls, []);
+  let confirmation = ""; document.defaultView!.confirm = (message?: string) => { confirmation = message ?? ""; return true; };
+  shadow.querySelector<HTMLElement>(`[data-comment-row="${base.id}"]`)!.querySelector<HTMLButtonElement>('[data-comment-action="delete"]')!.click(); await tick();
+  assert.equal(confirmation, "Delete this entire thread, including all replies and screenshots?"); assert.deepEqual(deleteCalls, [base.id]); assert.deepEqual(navigationCalls, []);
+  assert.equal(shadow.querySelectorAll("[role='listitem']").length, 1); assert.match(shadow.querySelector<HTMLButtonElement>("[data-comment-item]")!.textContent!, /^#1 /);
+});
+
+test("course row actions are omitted without both capability and callback", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected", { changeStatus: async () => undefined }); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const base = { id: "00000000-0000-4000-8000-000000000410", body: "Restricted", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Week 2", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight" as const, selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: true } };
+  overlay.setCommentList([base]);
+  const row = shadow.querySelector<HTMLElement>("[role='listitem']")!;
+  assert.ok(row.querySelector("button[data-comment-item]")); assert.equal(row.querySelector("[data-comment-action]"), null);
+});
+
+test("a rejected course row mutation keeps the row, re-enables only its action, and reports a row status", async () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  let rejectMutation: ((error: Error) => void) | undefined;
+  const overlay = mountReviewOverlay(document, context, "connected", { changeStatus: () => new Promise((_, reject) => { rejectMutation = reject; }) }); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const comment = { id: "00000000-0000-4000-8000-000000000420", body: "Will fail", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Week 2", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight" as const, selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: true, can_share_with_sme: false, can_delete: false } };
+  overlay.setCommentList([comment]);
+  const row = shadow.querySelector<HTMLElement>("[role='listitem']")!; const navigation = row.querySelector<HTMLButtonElement>("[data-comment-item]")!; const resolve = row.querySelector<HTMLButtonElement>('[data-comment-action="status"]')!;
+  resolve.click(); assert.equal(resolve.disabled, true); assert.equal(navigation.disabled, false);
+  rejectMutation!(new Error("Connection lost")); await tick();
+  assert.ok(row.isConnected); assert.equal(resolve.disabled, false); assert.equal(row.querySelector<HTMLElement>('[role="status"]')?.textContent, "Connection lost");
+});
+
+test("a mutation rejected after a list refresh reports on the current row and re-enables its action", async () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  let rejectMutation: ((error: Error) => void) | undefined;
+  const overlay = mountReviewOverlay(document, context, "connected", { changeStatus: () => new Promise((_, reject) => { rejectMutation = reject; }) }); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const comment = { id: "00000000-0000-4000-8000-000000000421", body: "Refresh while pending", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Week 2", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight" as const, selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: true, can_share_with_sme: false, can_delete: false } };
+  overlay.setCommentList([comment]); shadow.querySelector<HTMLButtonElement>('[data-comment-action="status"]')!.click();
+  overlay.setCommentList([comment]);
+  const currentAction = shadow.querySelector<HTMLButtonElement>('[data-comment-action="status"]')!; assert.equal(currentAction.disabled, true);
+  rejectMutation!(new Error("Refresh failed")); await tick();
+  const currentRow = shadow.querySelector<HTMLElement>("[role='listitem']")!;
+  assert.ok(currentRow.isConnected); assert.equal(currentAction.disabled, false); assert.equal(currentRow.querySelector<HTMLElement>('[role="status"]')?.textContent, "Refresh failed");
+});
+
+test("a confirmed delete rejection preserves the current row and reports its error", async () => {
+  const window = new Window(); const document = window.document as unknown as Document; document.defaultView!.confirm = () => true;
+  const overlay = mountReviewOverlay(document, context, "connected", { deleteThread: async () => { throw new Error("Delete unavailable"); } }); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const comment = { id: "00000000-0000-4000-8000-000000000422", body: "Keep after failure", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Week 2", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight" as const, selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: true } };
+  overlay.setCommentList([comment]); shadow.querySelector<HTMLButtonElement>('[data-comment-action="delete"]')!.click(); await tick();
+  const row = shadow.querySelector<HTMLElement>("[role='listitem']")!; const remove = row.querySelector<HTMLButtonElement>('[data-comment-action="delete"]')!;
+  assert.ok(row.isConnected); assert.equal(remove.disabled, false); assert.equal(row.querySelector<HTMLElement>('[role="status"]')?.textContent, "Delete unavailable");
+});
+
+test("concurrent status and delete failures retain independent row messages and action state", async () => {
+  const window = new Window(); const document = window.document as unknown as Document; document.defaultView!.confirm = () => true;
+  let rejectStatus: ((error: Error) => void) | undefined; let rejectDelete: ((error: Error) => void) | undefined;
+  const overlay = mountReviewOverlay(document, context, "connected", { changeStatus: () => new Promise((_, reject) => { rejectStatus = reject; }), deleteThread: () => new Promise((_, reject) => { rejectDelete = reject; }) }); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const comment = { id: "00000000-0000-4000-8000-000000000423", body: "Concurrent actions", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Week 2", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight" as const, selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: true, can_share_with_sme: false, can_delete: true } };
+  overlay.setCommentList([comment]); const status = shadow.querySelector<HTMLButtonElement>('[data-comment-action="status"]')!; const remove = shadow.querySelector<HTMLButtonElement>('[data-comment-action="delete"]')!;
+  status.click(); remove.click(); assert.equal(status.disabled, true); assert.equal(remove.disabled, true);
+  rejectStatus!(new Error("Status unavailable")); await tick();
+  assert.equal(status.disabled, false); assert.equal(remove.disabled, true); assert.equal(shadow.querySelector<HTMLElement>('[data-comment-mutation-status="status"]')?.textContent, "Status unavailable");
+  rejectDelete!(new Error("Delete unavailable")); await tick();
+  assert.equal(remove.disabled, false); assert.equal(shadow.querySelector<HTMLElement>('[data-comment-mutation-status="status"]')?.textContent, "Status unavailable"); assert.equal(shadow.querySelector<HTMLElement>('[data-comment-mutation-status="delete"]')?.textContent, "Delete unavailable");
+});
+
+test("course row action labels retain loaded-course numbers through filtering", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected", { changeStatus: async () => undefined }); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const base = { id: "00000000-0000-4000-8000-000000000430", body: "First", category: "general", status: "resolved", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: "https://learn.example/mod/page/view.php?id=1", page_title: "Week 1", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight" as const, selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: true, can_share_with_sme: false, can_delete: false } };
+  overlay.setCommentList([base, { ...base, id: "00000000-0000-4000-8000-000000000431", body: "Second", page_url: context.page_url }]);
+  shadow.querySelector<HTMLButtonElement>('[data-comment-filter="resolved"]')!.click(); shadow.querySelector<HTMLButtonElement>('[data-comment-scope="page"]')!.click();
+  const visibleAction = Array.from(shadow.querySelectorAll<HTMLButtonElement>('[data-comment-action="status"]')).find((button) => !button.closest<HTMLElement>("[role='listitem']")!.hidden)!;
+  assert.match(visibleAction.getAttribute("aria-label") ?? "", /comment 2/);
+});
+
 test("blank page titles use one Untitled page label in selectors, rows, and accessible names", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;

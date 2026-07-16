@@ -374,6 +374,51 @@ test("top navigation immediately removes stored markers before delayed responses
   cleanup();
 });
 
+for (const mutation of [
+  { action: "status", message: "UPDATE_COMMENT_STATUS" },
+  { action: "delete", message: "DELETE_COMMENT_THREAD" },
+] as const) test(`a saved ${mutation.action} change preserves comments and reports a later refresh failure`, async () => {
+  const window = new Window({ url: "https://moodle.example.invalid/mod/page/view.php?id=1" });
+  window.document.body.innerHTML = "<h1>Page one</h1><p>An important phrase here</p>"; (window.document as unknown as Document).defaultView!.confirm = () => true;
+  let listCount = 0; const messages: any[] = [];
+  const comment = { id: "00000000-0000-4000-8000-000000000011", body: "Stored feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: window.location.href, page_title: "Page one", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight", selected_quote: "important phrase", prefix: "An ", suffix: " here", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: true, can_share_with_sme: false, can_delete: true } };
+  const runtime = { sendMessage: (message: any, callback: (response: any) => void) => {
+    messages.push(message);
+    if (message.type === "RESOLVE_COURSE") callback({ ok: true, data: { id: "123e4567-e89b-12d3-a456-426614174000" } });
+    else if (message.type === "LIST_COURSE_COMMENTS") { listCount += 1; callback(listCount === 1 ? { ok: true, data: [comment] } : { ok: false, error: "List unavailable" }); }
+    else callback({ ok: true, data: {} });
+  } };
+  const cleanup = startCourseReview(window as unknown as globalThis.Window & typeof globalThis, window.document as unknown as Document, runtime);
+  await new Promise((resolve) => setTimeout(resolve, 0)); const shadow = window.document.querySelector("#moodle-course-review-overlay")!.shadowRoot! as unknown as ShadowRoot;
+  assert.ok(window.document.querySelector("[data-moodle-review-stored-highlight]"));
+  shadow.querySelector<HTMLElement>('[data-action="panel"]')!.click(); shadow.querySelector<HTMLButtonElement>(`[data-comment-action="${mutation.action}"]`)!.click(); await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(messages.some((message) => message.type === mutation.message), true);
+  assert.ok(window.document.querySelector("[data-moodle-review-stored-highlight]"));
+  const row = shadow.querySelector<HTMLElement>("[role='listitem']")!; assert.equal(row.querySelector<HTMLElement>('[role="status"]')?.textContent, "Change saved, but comments could not be refreshed. Reload the page.");
+  assert.equal(row.querySelector<HTMLButtonElement>(`[data-comment-action="${mutation.action}"]`)!.disabled, false);
+  cleanup();
+});
+
+test("a stale failed mutation refresh yields to a newer successful comment projection", async () => {
+  const window = new Window({ url: "https://moodle.example.invalid/mod/page/view.php?id=1" }); window.document.body.innerHTML = "<h1>Page one</h1><p>An important phrase here</p>";
+  let runtimeListener: ((message: any, sender?: any, sendResponse?: any) => boolean | void) | undefined; let mutationSaved = false; let rejectListA: ((response: any) => void) | undefined;
+  const base = { id: "00000000-0000-4000-8000-000000000021", body: "Original", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: window.location.href, page_title: "Page one", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight", selected_quote: "important phrase", prefix: "An ", suffix: " here", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: true, can_share_with_sme: false, can_delete: false } };
+  const newer = { ...base, body: "Newer projection" };
+  const runtime = { onMessage: { addListener: (listener: (message: any, sender?: any, sendResponse?: any) => boolean | void) => { runtimeListener = listener; }, removeListener: () => undefined }, sendMessage: (message: any, callback: (response: any) => void) => {
+    if (message.type === "RESOLVE_COURSE") callback({ ok: true, data: { id: "123e4567-e89b-12d3-a456-426614174000" } });
+    else if (message.type === "UPDATE_COMMENT_STATUS") { mutationSaved = true; callback({ ok: true, data: {} }); }
+    else if (message.type === "LIST_COURSE_COMMENTS") { if (mutationSaved && !rejectListA) rejectListA = callback; else callback({ ok: true, data: mutationSaved ? [newer] : [base] }); }
+    else callback({ ok: true, data: {} });
+  } };
+  const cleanup = startCourseReview(window as unknown as globalThis.Window & typeof globalThis, window.document as unknown as Document, runtime); await new Promise((resolve) => setTimeout(resolve, 0));
+  const shadow = window.document.querySelector("#moodle-course-review-overlay")!.shadowRoot! as unknown as ShadowRoot; shadow.querySelector<HTMLElement>('[data-action="panel"]')!.click(); shadow.querySelector<HTMLButtonElement>('[data-comment-action="status"]')!.click(); await new Promise((resolve) => setTimeout(resolve, 0)); assert.ok(rejectListA);
+  runtimeListener!({ type: "SCORM_WORKER_EVENT", event: { type: "SCORM_COMMENTS_CHANGED" } }); await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.match(shadow.querySelector<HTMLButtonElement>("[data-comment-item]")!.textContent!, /Newer projection/);
+  rejectListA!({ ok: false, error: "Obsolete list failure" }); await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.match(shadow.querySelector<HTMLButtonElement>("[data-comment-item]")!.textContent!, /Newer projection/); assert.equal(shadow.querySelector('[role="status"]'), null); assert.equal(shadow.querySelector<HTMLButtonElement>('[data-comment-action="status"]')!.disabled, false);
+  cleanup();
+});
+
 test("sign in sends one authenticate per activation and refreshes course and comments without reload", async () => {
   const window = new Window({ url: "https://moodle.example.invalid/course/view.php?id=1" });
   window.document.body.innerHTML = "<h1>Law</h1>";
