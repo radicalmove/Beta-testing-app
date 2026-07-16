@@ -460,12 +460,15 @@ export function startEmbeddedReview(targetWindow: Window & typeof globalThis, ta
   const register = () => sendRuntimeMessage(runtime, { type: "GET_REVIEW_CONTEXT" }, (context) => {
     if (stopped) return;
     if (!context?.ok) {
+      targetDocument.documentElement.setAttribute("data-moodle-review-registration", `context:${String(context?.error ?? "unavailable").slice(0, 120)}`);
       attempts += 1;
       if (attempts < 25 && isTransientReviewContextError(context?.error)) retryTimer = scheduleRetry(register, retryDelay);
       return;
     }
     attempts = 0;
-    sendRuntimeMessage(runtime, { type: "REGISTER_REVIEW_FRAME", worker_instance_id: workerInstanceId, worker_instance_epoch: workerInstanceEpoch, capabilities: measureFrameCapabilities(targetDocument, targetWindow) }, () => undefined);
+    sendRuntimeMessage(runtime, { type: "REGISTER_REVIEW_FRAME", worker_instance_id: workerInstanceId, worker_instance_epoch: workerInstanceEpoch, capabilities: measureFrameCapabilities(targetDocument, targetWindow) }, (response) => {
+      targetDocument.documentElement.setAttribute("data-moodle-review-registration", response?.ok ? "registered" : `failed:${String(response?.error ?? "unknown").slice(0, 120)}`);
+    });
     // Unit-test and legacy runtimes have no command channel. Production Chrome
     // always supplies runtime.onMessage and therefore remains coordinator-owned.
     if (!runtime.onMessage) activate(0);

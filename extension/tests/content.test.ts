@@ -169,6 +169,7 @@ test("embedded review stays dormant until the coordinator activates its toolbar-
   };
   const cleanup = startEmbeddedReview(window as any, window.document as any, runtime as any);
   await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(window.document.documentElement.getAttribute("data-moodle-review-registration"), "registered");
   assert.equal(window.document.querySelector("#moodle-course-review-overlay"), null);
   listener!({ type: "ACTIVATE_REVIEW_FRAME", worker_instance_id: "223e4567-e89b-42d3-a456-426614174000", generation: 1 }, {}, () => undefined);
   await new Promise((resolve) => setTimeout(resolve, 0));
