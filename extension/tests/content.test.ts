@@ -419,6 +419,37 @@ test("a stale failed mutation refresh yields to a newer successful comment proje
   cleanup();
 });
 
+test("an ordinary comment refresh preserves the selected course page until authoritative comments arrive", async () => {
+  const window = new Window({ url: "https://moodle.example.invalid/mod/page/view.php?id=1" });
+  window.document.body.innerHTML = "<h1>Page one</h1>";
+  let runtimeListener: ((message: any, sender?: any, sendResponse?: any) => boolean | void) | undefined;
+  const pendingLists: Array<(response: any) => void> = [];
+  const firstPage = { id: "00000000-0000-4000-8000-000000000031", body: "First page", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: window.location.href, page_title: "Page one", parent_activity_url: null, embedded_locator: null, anchor_type: "page_pin", selected_quote: null, prefix: null, suffix: null, css_selector: "body", dom_selector: null, relative_x: 0.5, relative_y: 0.5, replies: [], status_history: [] };
+  const secondPage = { ...firstPage, id: "00000000-0000-4000-8000-000000000032", body: "Second page", page_url: "https://moodle.example.invalid/mod/page/view.php?id=2", page_title: "Page two" };
+  const runtime = { onMessage: { addListener: (listener: typeof runtimeListener) => { runtimeListener = listener; }, removeListener: () => undefined }, sendMessage: (message: any, callback: (response: any) => void) => {
+    if (message.type === "RESOLVE_COURSE") callback({ ok: true, data: { id: "123e4567-e89b-12d3-a456-426614174000" } });
+    else if (message.type === "LIST_COURSE_COMMENTS") pendingLists.push(callback);
+    else callback({ ok: true, data: {} });
+  } };
+  const cleanup = startCourseReview(window as unknown as globalThis.Window & typeof globalThis, window.document as unknown as Document, runtime);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  pendingLists.shift()!({ ok: true, data: [firstPage, secondPage] });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const shadow = window.document.querySelector("#moodle-course-review-overlay")!.shadowRoot! as unknown as ShadowRoot;
+  shadow.querySelector<HTMLElement>('[data-action="panel"]')!.click();
+  const pageSelect = shadow.querySelector<HTMLSelectElement>('[data-comment-page]')!;
+  pageSelect.value = secondPage.page_url;
+  pageSelect.dispatchEvent(new window.Event("change") as unknown as Event);
+  runtimeListener!({ type: "SCORM_WORKER_EVENT", event: { type: "SCORM_COMMENTS_CHANGED" } });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(shadow.querySelector<HTMLSelectElement>('[data-comment-page]')?.value, secondPage.page_url);
+  assert.match(shadow.querySelector<HTMLElement>(".comment-results")!.textContent!, /Second page/);
+  pendingLists.shift()!({ ok: true, data: [firstPage, secondPage] });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(shadow.querySelector<HTMLSelectElement>('[data-comment-page]')!.value, secondPage.page_url);
+  cleanup();
+});
+
 test("sign in sends one authenticate per activation and refreshes course and comments without reload", async () => {
   const window = new Window({ url: "https://moodle.example.invalid/course/view.php?id=1" });
   window.document.body.innerHTML = "<h1>Law</h1>";
