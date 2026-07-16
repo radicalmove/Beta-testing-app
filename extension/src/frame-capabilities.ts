@@ -1,6 +1,6 @@
 import type { ChildOwnerReport, FrameCapabilities } from "./frame-coordinator.ts";
 
-const OVERLAY_SELECTOR = "#moodle-course-review-overlay,[data-moodle-review-extension],[data-review-marker],[data-review-highlight]";
+const OVERLAY_SELECTOR = "#moodle-course-review-overlay,[data-review-marker],[data-review-highlight]";
 const INTERACTIVE_SELECTOR = "a[href],button,input,select,textarea,[role='button'],[tabindex]";
 const EXCLUDED_TEXT_SELECTOR = `${OVERLAY_SELECTOR},script,style,noscript,iframe,frame`;
 

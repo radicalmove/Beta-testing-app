@@ -16,6 +16,14 @@ test("detects a content-bearing document", () => {
   });
 });
 
+test("document ownership marker does not hide the course from capability detection", () => {
+  const window = new Window({ url: "https://rise.example/lesson" });
+  sized(window);
+  window.document.documentElement.setAttribute("data-moodle-review-extension", "active");
+  window.document.body.innerHTML = "<main><h1>Lesson</h1><p>This is meaningful Rise course content for review.</p><button>Continue</button></main>";
+  assert.equal(measureFrameCapabilities(window.document as unknown as Document, window as unknown as globalThis.Window).contentBearing, true);
+});
+
 test("classifies an iframe-only document as a wrapper", () => {
   const window = new Window({ url: "https://moodle.example/wrapper" });
   sized(window);
