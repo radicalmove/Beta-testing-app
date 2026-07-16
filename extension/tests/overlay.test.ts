@@ -515,8 +515,9 @@ test("large course comment lists are viewport bounded and scroll in a dedicated 
   const navigation = listItem.querySelector<HTMLButtonElement>(":scope > button[data-comment-item]")!;
   assert.ok(navigation); assert.equal(navigation.getAttribute("role"), null); assert.match(navigation.getAttribute("aria-label") ?? "", /Comment 1/);
   assert.match(commentListLayoutStyles, /\.shell\{[^}]*max-height:calc\(100vh - 32px\)[^}]*display:flex[^}]*flex-direction:column/);
-  assert.match(commentListLayoutStyles, /\.panel\{[^}]*min-height:0/);
-  assert.match(commentListLayoutStyles, /\.comment-results\{[^}]*min-height:0[^}]*overflow-y:auto[^}]*font-size:14px/);
+  assert.match(commentListLayoutStyles, /\.panel\{[^}]*min-height:0[^}]*flex:1 1 auto/);
+  assert.match(commentListLayoutStyles, /\[data-panel-content\]\{[^}]*min-height:0[^}]*display:flex[^}]*flex-direction:column/);
+  assert.match(commentListLayoutStyles, /\.comment-results\{[^}]*min-height:0[^}]*flex:1 1 auto[^}]*overflow-y:auto[^}]*font-size:14px/);
 });
 
 test("course comment rows expose capability-gated resolve, reopen, and delete actions without navigating", async () => {
