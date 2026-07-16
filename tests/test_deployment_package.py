@@ -124,7 +124,7 @@ class DeploymentPackageTests(unittest.TestCase):
         self.assertIn("disposable", operations.lower())
         for token in ("CRJU150", "896", "9972", "9976", "118172", "146308", "Reviewer", "LD", "SME"):
             self.assertIn(token, pilot)
-        for token in ("0.4.24", "pilot-builds/moodle-review-extension", "chrome://extensions", "edge://extensions", "exactly one teal review toolbar", "Clear all", "revoke the permission"):
+        for token in ("0.4.25", "pilot-builds/moodle-review-extension", "chrome://extensions", "edge://extensions", "exactly one teal review toolbar", "Clear all", "revoke the permission"):
             self.assertIn(token, pilot)
         for route in (
             "https://my.uconline.ac.nz/course/view.php?id=896",
@@ -148,7 +148,7 @@ class DeploymentPackageTests(unittest.TestCase):
         script = (ROOT / "deploy/scripts/release-pilot-extension.sh").read_text()
         ordered = (
             "npm test", "npm run typecheck", "python3 -m pytest -q",
-            "build-pilot-extension.sh", "python3 -m unittest tests/test_deployment_package.py",
+            "python3 -m unittest tests/test_deployment_package.py", "build-pilot-extension.sh",
             "release_artifacts.py", "cmp", "SHA256SUMS",
         )
         positions = [script.index(token) for token in ordered]

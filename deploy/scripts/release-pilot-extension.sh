@@ -27,6 +27,7 @@ VERSIONED_ZIP="$DELIVERY_ROOT/moodle-review-extension-v$RELEASE_VERSION-chrome-e
 
 (cd "$ROOT/extension" && npm test && npm run typecheck)
 (cd "$ROOT/server" && python3 -m pytest -q)
+(cd "$ROOT" && python3 -m unittest tests/test_deployment_package.py)
 
 rm -rf "$ROOT/extension/dist"
 PRIVATE_KEY_PATH="$PRIVATE_KEY_PATH" REVIEW_SERVICE_ORIGIN="$REVIEW_SERVICE_ORIGIN" OPTIONAL_FRAME_PATTERNS="$CONFIGURED_OPTIONAL_FRAME_PATTERNS" BUILD_COMMIT="$BUILD_COMMIT" \
@@ -39,7 +40,6 @@ for artifact in manifest.json content.js background.js; do
   }
 done
 
-(cd "$ROOT" && python3 -m unittest tests/test_deployment_package.py)
 (cd "$ROOT" && python3 - <<'PY'
 import json
 from pathlib import Path
