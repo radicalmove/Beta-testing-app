@@ -12,6 +12,8 @@ export const overlayStyles = `:host{--review-red:#d73b3d;--review-navy:#000;--re
 
 export const tealOverlayOverrides = `:host{--review-teal:#28c4c2;--review-teal-dark:#0b6261;--review-pale:#effafa;--review-line:#8ad9d8;color:#102f38;font:16px/1.5 Poppins,Arial,sans-serif}[hidden]{display:none!important}.shell{width:min(600px,calc(100vw - 32px));max-width:600px;border:5px solid var(--review-teal);border-radius:10px}.toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;background:var(--review-teal);color:#082f2f;padding:12px}.identity{min-width:0}.course{font-size:16px}.page{font-size:14px}.status{font-size:14px}.toolbar-actions{display:grid;grid-template-columns:minmax(0,1fr) auto 44px;gap:8px;align-items:center}.toolbar-actions button,button{min-height:44px}.toolbar-actions [data-action="add-comment"]{background:#082f2f;border-color:#082f2f;color:#fff}.toolbar-actions [data-action="panel"],.toolbar-actions [data-action="help"]{background:#fff;color:var(--review-teal-dark);border-color:#fff}.toolbar-actions [data-action="panel"]:hover,.toolbar-actions [data-action="panel"]:focus-visible,.toolbar-actions [data-action="help"]:hover,.toolbar-actions [data-action="help"]:focus-visible{background:var(--review-teal-dark);border-color:var(--review-teal-dark);color:#fff}.panel,[data-unresolved],[data-frame-fallback]{background:var(--review-pale);padding:16px}.panel-title{margin:0 0 12px;font-size:18px}.comment-filter-row{display:flex;gap:8px;flex-wrap:nowrap;margin-bottom:10px}.comment-filters{display:flex;gap:8px;margin:0}.comment-filters button{background:#fff;color:var(--review-teal-dark);border:2px solid var(--review-teal);white-space:nowrap}.comment-filters button[aria-pressed="true"]{background:#082f2f;color:#fff;border-color:#082f2f}.comment-filters button:hover{background:#28c4c2;color:#082f2f;border-color:#082f2f}.comment-index-link{display:block!important;width:100%;min-height:auto!important;margin:4px 0!important;padding:5px 2px!important;border:0!important;background:transparent!important;color:var(--review-teal-dark)!important;text-align:left;text-decoration:underline;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.comment-index-link[hidden]{display:none!important}.resolve-toggle{float:right;margin-top:12px;border:2px solid #16833b;background:#fff;color:#11652e}.resolve-toggle.resolved{background:#16833b;color:#fff}.dialog{border:4px solid var(--review-teal)}.dialog h2{color:var(--review-teal-dark);font-size:20px}.primary{background:var(--review-teal-dark);border-color:var(--review-teal-dark)}input,select{box-sizing:border-box;width:100%;min-height:44px;border:1px solid #527f7f;border-radius:5px;padding:7px;font:inherit}.mode-tabs{display:flex;gap:8px}.mode-tabs [aria-pressed="true"]{background:var(--review-teal-dark);border-color:var(--review-teal-dark);color:#fff}.reconnect-code{display:block;padding:12px;background:var(--review-pale);border:2px dashed var(--review-teal-dark);font:700 16px/1.4 ui-monospace,monospace;letter-spacing:.04em}@media(max-width:600px){.toolbar{grid-template-columns:1fr}.toolbar-actions{grid-template-columns:minmax(0,1fr) auto 44px}.shell{right:8px;bottom:8px;width:calc(100vw - 16px)}}@media(max-width:420px){.comment-filter-row{flex-wrap:wrap}}@media(max-width:360px){.toolbar{padding:8px}.toolbar-actions{grid-template-columns:minmax(0,1fr) auto 44px;gap:6px}.comments-wide{display:none}.comments-short{display:inline}}`;
 
+export const commentListLayoutStyles = `.shell{max-height:calc(100vh - 32px);display:flex;flex-direction:column}.panel{min-height:0;overflow:hidden;display:flex;flex-direction:column}.comment-results{min-height:0;overflow-y:auto;font-size:14px}.comment-page-field{display:grid;gap:4px;min-width:0;flex:1}.comment-page-field select{min-width:0}`;
+
 export type ConnectionStatus = "connecting" | "connected" | "pending" | "signed-out" | "offline";
 const statusLabels: Record<ConnectionStatus, string> = { connecting: "Connecting", connected: "Connected", pending: "Waiting for approval — you can leave this page open or return later.", "signed-out": "Signed out", offline: "Service unavailable—retry" };
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
@@ -55,6 +57,7 @@ export function mountReviewOverlay(document: Document, context: CourseContext, s
   const shadow = host.attachShadow({ mode: "open" });
   const style = document.createElement("style");
   style.textContent = overlayStyles + tealOverlayOverrides + `.viewer{display:block;font-size:13px;font-weight:650;color:#082f2f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.viewer[hidden]{display:none}.comments-short{display:none}@media(max-width:360px){.comments-wide{display:none}.comments-short{display:inline}}.comment-choice{padding:16px;background:var(--review-pale);border-top:1px solid var(--review-line)}.comment-choice h2{margin:0 0 10px;font-size:18px}.comment-choice button{display:grid;width:100%;margin-top:8px;text-align:left}.comment-choice button span{font-size:14px;font-weight:400}.help-dialog ol{display:grid;gap:12px;padding-left:22px}.help-dialog li span{display:block;font-size:14px}.help-version{font-size:14px;color:#52666c}`;
+  style.textContent += commentListLayoutStyles;
   shadow.append(style);
   return createController(host, shadow, context, status, options, buildDiagnostics);
 }
@@ -84,6 +87,9 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   let embeddedSelection = false;
   let loadingMarkerQueued = false;
   let loadedComments = new Map<string, PageComment>();
+  let commentListFilter: "open" | "resolved" = "open";
+  let commentListScope: "course" | "page" = "course";
+  let commentListPage = "";
   let renderer: CommentRenderer;
   const clearAreaSelection = () => {
     ownerDocument.removeEventListener("pointerdown", pinListener!, true);
@@ -391,17 +397,28 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
       const panel = shadow.querySelector<HTMLElement>(".panel")!;
       const panelContent = panel.querySelector<HTMLElement>("[data-panel-content]")!;
       panelContent.replaceChildren();
-      let activeFilter: "open" | "resolved" = "open";
-      let activeScope: "course" | "page" = "course";
+      const pages = new Map<string, string>();
+      const pageLabels = new Map<string, string>();
+      for (const comment of comments) { const pageLabel = comment.page_title.replace(/\s+/g, " ").trim() || "Untitled page"; pageLabels.set(comment.id, pageLabel); if (!pages.has(comment.page_url)) pages.set(comment.page_url, pageLabel); }
+      if (commentListPage && !pages.has(commentListPage)) commentListPage = "";
       const filters = ownerDocument.createElement("div"); filters.className = "comment-filters"; filters.setAttribute("role", "group"); filters.setAttribute("aria-label", "Comment status filter");
       const scopes = ownerDocument.createElement("div"); scopes.className = "comment-filters"; scopes.setAttribute("role", "group"); scopes.setAttribute("aria-label", "Comment page scope");
       const filterRow = ownerDocument.createElement("div"); filterRow.className = "comment-filter-row";
-      const applyFilter = () => { let visibleIndex = 0; panelContent.querySelectorAll<HTMLElement>("[data-comment-item]").forEach((node) => { node.hidden = node.dataset.commentGroup !== activeFilter || (activeScope === "page" && node.dataset.commentPage !== context.page_url); if (!node.hidden) { visibleIndex += 1; const comment = loadedComments.get(node.dataset.commentItem!); if (comment) { const shortPage = comment.page_title.replace(/\s+/g, " ").trim().slice(0, 32); const shortBody = comment.body.replace(/\s+/g, " ").trim().slice(0, 56); node.textContent = `#${visibleIndex} · ${shortPage} · “${shortBody}${comment.body.length > 56 ? "…" : ""}”`; } } }); filters.querySelectorAll<HTMLElement>("button").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.commentFilter === activeFilter))); scopes.querySelectorAll<HTMLElement>("button").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.commentScope === activeScope))); };
-      for (const value of ["open", "resolved"] as const) { const filter = ownerDocument.createElement("button"); filter.type = "button"; filter.dataset.commentFilter = value; filter.textContent = value === "open" ? "Open" : "Resolved"; filter.addEventListener("click", () => { activeFilter = value; applyFilter(); }); filters.append(filter); }
-      for (const value of ["course", "page"] as const) { const scope = ownerDocument.createElement("button"); scope.type = "button"; scope.dataset.commentScope = value; scope.textContent = value === "course" ? "Whole course" : "Current page"; scope.addEventListener("click", () => { activeScope = value; applyFilter(); }); scopes.append(scope); }
-      filterRow.append(scopes, filters); panelContent.append(filterRow);
+      const pageField = ownerDocument.createElement("label"); pageField.className = "comment-page-field"; pageField.append("Page");
+      const pageSelect = ownerDocument.createElement("select"); pageSelect.dataset.commentPage = "true"; pageSelect.setAttribute("aria-label", "Page");
+      const allPages = ownerDocument.createElement("option"); allPages.value = ""; allPages.textContent = "All pages"; pageSelect.append(allPages);
+      for (const [pageUrl, pageTitle] of pages) { const option = ownerDocument.createElement("option"); option.value = pageUrl; option.textContent = pageTitle; pageSelect.append(option); }
+      pageSelect.value = commentListPage; pageField.append(pageSelect);
+      const results = ownerDocument.createElement("div"); results.className = "comment-results"; results.setAttribute("role", "list");
+      const empty = ownerDocument.createElement("p"); empty.dataset.commentEmpty = "true"; empty.textContent = "No comments match these filters.";
+      const applyFilter = () => { let visibleCount = 0; results.querySelectorAll<HTMLElement>("[data-comment-item]").forEach((node) => { const pageUrl = node.dataset.commentPageUrl; node.hidden = node.dataset.commentGroup !== commentListFilter || (commentListScope === "page" ? pageUrl !== context.page_url : Boolean(commentListPage) && pageUrl !== commentListPage); node.parentElement!.hidden = node.hidden; if (!node.hidden) { visibleCount += 1; const comment = loadedComments.get(node.dataset.commentItem!); if (comment) { const shortPage = pageLabels.get(comment.id)!.slice(0, 32); const shortBody = comment.body.replace(/\s+/g, " ").trim().slice(0, 56); const includePage = commentListScope === "course" && !commentListPage; node.textContent = `#${node.dataset.commentIndex} · ${includePage ? `${shortPage} · ` : ""}“${shortBody}${comment.body.length > 56 ? "…" : ""}”`; } } }); empty.hidden = visibleCount > 0; filters.querySelectorAll<HTMLElement>("button").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.commentFilter === commentListFilter))); scopes.querySelectorAll<HTMLElement>("button").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.commentScope === commentListScope))); pageSelect.hidden = commentListScope === "page"; pageField.hidden = commentListScope === "page"; };
+      for (const value of ["open", "resolved"] as const) { const filter = ownerDocument.createElement("button"); filter.type = "button"; filter.dataset.commentFilter = value; filter.textContent = value === "open" ? "Open" : "Resolved"; filter.addEventListener("click", () => { commentListFilter = value; applyFilter(); }); filters.append(filter); }
+      for (const value of ["course", "page"] as const) { const scope = ownerDocument.createElement("button"); scope.type = "button"; scope.dataset.commentScope = value; scope.textContent = value === "course" ? "Whole course" : "Current page"; scope.addEventListener("click", () => { commentListScope = value; applyFilter(); }); scopes.append(scope); }
+      pageSelect.addEventListener("change", () => { commentListPage = pageSelect.value; applyFilter(); });
+      filterRow.append(scopes, filters, pageField); panelContent.append(filterRow, results, empty);
       for (const [commentIndex, comment] of comments.entries()) {
-        const item = ownerDocument.createElement("button"); item.type = "button"; item.className = "comment-index-link"; item.dataset.commentItem = comment.id; item.dataset.commentGroup = comment.status === "resolved" ? "resolved" : "open"; item.dataset.commentPage = comment.page_url; const initialPage = comment.page_title.replace(/\s+/g, " ").trim().slice(0, 32); const initialBody = comment.body.replace(/\s+/g, " ").trim().slice(0, 56); item.textContent = `#${commentIndex + 1} · ${initialPage} · “${initialBody}${comment.body.length > 56 ? "…" : ""}”`; item.setAttribute("aria-label", `Comment ${commentIndex + 1}. ${comment.page_title}. ${comment.body}. ${comment.author.display_name}. Status ${comment.status}.`);
+        const listItem = ownerDocument.createElement("div"); listItem.setAttribute("role", "listitem");
+        const item = ownerDocument.createElement("button"); item.type = "button"; item.className = "comment-index-link"; item.dataset.commentItem = comment.id; item.dataset.commentIndex = String(commentIndex + 1); item.dataset.commentGroup = comment.status === "resolved" ? "resolved" : "open"; item.dataset.commentPageUrl = comment.page_url; const pageLabel = pageLabels.get(comment.id)!; const initialPage = pageLabel.slice(0, 32); const initialBody = comment.body.replace(/\s+/g, " ").trim().slice(0, 56); item.textContent = `#${commentIndex + 1} · ${initialPage} · “${initialBody}${comment.body.length > 56 ? "…" : ""}”`; item.setAttribute("aria-label", `Comment ${commentIndex + 1}. ${pageLabel}. ${comment.body}. ${comment.author.display_name}. Status ${comment.status}.`);
         item.addEventListener("click", async () => {
           panelContent.querySelector("[data-comment-navigation-status]")?.remove();
           if (comment.page_url !== context.page_url) {
@@ -411,9 +428,10 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
           }
           renderer.takeToContext(comment.id);
         });
-        panelContent.append(item);
+        listItem.append(item); results.append(listItem);
       }
-      if (!comments.length) panelContent.replaceChildren("No comments in this course yet."); else applyFilter();
+      if (!comments.length) { empty.textContent = "No comments in this course yet."; empty.hidden = false; }
+      applyFilter();
     },
     setRendererComments(comments) { renderer.setComments(comments); },
     setPageComments(comments) { this.setCommentList(comments); this.setRendererComments(comments); },

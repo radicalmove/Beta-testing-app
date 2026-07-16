@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Window } from "happy-dom";
 
-import { createOverlayMarkup, mountReviewOverlay, OVERLAY_HOST_ID, overlayStyles, tealOverlayOverrides } from "../src/overlay/root.ts";
+import { commentListLayoutStyles, createOverlayMarkup, mountReviewOverlay, OVERLAY_HOST_ID, overlayStyles, tealOverlayOverrides } from "../src/overlay/root.ts";
 
 const context = { course_url: "https://learn.example/course/view.php?id=1", page_url: "https://learn.example/mod/page/view.php?id=2", title: "Law", pageTitle: "Week 2", moodle_course_id: 1, identityConfidence: "confirmed" as const };
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -464,14 +464,14 @@ test("resolving shows a large checked confirmation for three seconds", async () 
   overlay.destroy();
 });
 
-test("comment index switches between whole course and current page and renumbers visible links", () => {
+test("comment index switches between whole course and current page without renumbering loaded-course positions", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   const base = { id: "00000000-0000-4000-8000-000000000031", body: "Here", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Week 2", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight" as const, selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: true } };
   overlay.setPageComments([{ ...base, id: "00000000-0000-4000-8000-000000000032", page_url: "https://learn.example/mod/page/view.php?id=1", page_title: "Week 1", body: "Earlier" }, base]);
   const links = Array.from(shadow.querySelectorAll<HTMLElement>("[data-comment-item]")); assert.equal(links.every((link) => !link.hidden), true);
   shadow.querySelector<HTMLElement>('[data-comment-scope="page"]')!.click();
-  assert.equal(links[0]!.hidden, true); assert.equal(links[1]!.hidden, false); assert.match(links[1]!.textContent!, /^#1 /);
+  assert.equal(links[0]!.hidden, true); assert.equal(links[1]!.hidden, false); assert.match(links[1]!.textContent!, /^#2 /);
   shadow.querySelector<HTMLElement>('[data-comment-scope="course"]')!.click(); assert.equal(links.every((link) => !link.hidden), true); assert.match(links[0]!.textContent!, /^#1 /); assert.match(links[1]!.textContent!, /^#2 /);
 });
 
@@ -501,6 +501,67 @@ test("course scope and status filters share one compact row", () => {
   assert.match(tealOverlayOverrides, /\.comment-filter-row\{display:flex/);
   assert.match(tealOverlayOverrides, /\.comment-filters button\[aria-pressed="true"\]\{background:#082f2f;color:#fff;border-color:#082f2f\}/);
   assert.match(tealOverlayOverrides, /\.comment-filters button:hover\{background:#28c4c2;color:#082f2f;border-color:#082f2f\}/);
+});
+
+test("large course comment lists are viewport bounded and scroll in a dedicated results region", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const base = { id: "00000000-0000-4000-8000-000000000100", body: "Feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Repeated title", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight" as const, selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } };
+  overlay.setCommentList(Array.from({ length: 32 }, (_, index) => ({ ...base, id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`, page_url: `https://learn.example/mod/page/view.php?id=${index % 3}`, page_title: index % 2 ? "Repeated title" : `Page ${index}` })));
+  const results = shadow.querySelector<HTMLElement>(".comment-results")!;
+  assert.equal(results.getAttribute("role"), "list");
+  assert.equal(results.querySelectorAll("[data-comment-item]").length, 32);
+  const listItem = results.querySelector<HTMLElement>(":scope > [role='listitem']")!;
+  const navigation = listItem.querySelector<HTMLButtonElement>(":scope > button[data-comment-item]")!;
+  assert.ok(navigation); assert.equal(navigation.getAttribute("role"), null); assert.match(navigation.getAttribute("aria-label") ?? "", /Comment 1/);
+  assert.match(commentListLayoutStyles, /\.shell\{[^}]*max-height:calc\(100vh - 32px\)[^}]*display:flex[^}]*flex-direction:column/);
+  assert.match(commentListLayoutStyles, /\.panel\{[^}]*min-height:0/);
+  assert.match(commentListLayoutStyles, /\.comment-results\{[^}]*min-height:0[^}]*overflow-y:auto[^}]*font-size:14px/);
+});
+
+test("blank page titles use one Untitled page label in selectors, rows, and accessible names", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  overlay.setCommentList([{ id: "00000000-0000-4000-8000-000000000190", body: "Blank title feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: "https://learn.example/mod/page/view.php?id=190", page_title: "  \n  ", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight", selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } }]);
+  const select = shadow.querySelector<HTMLSelectElement>("select[data-comment-page]")!;
+  assert.equal(select.options[1]!.textContent, "Untitled page");
+  const navigation = shadow.querySelector<HTMLButtonElement>("button[data-comment-item]")!;
+  assert.match(navigation.textContent!, /Untitled page/);
+  assert.match(navigation.getAttribute("aria-label") ?? "", /Untitled page/);
+  assert.doesNotMatch(navigation.getAttribute("aria-label") ?? "", /\n/);
+});
+
+test("page selector uses URLs, preserves duplicate titles, filters rows, and hides in current-page scope", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const base = { id: "00000000-0000-4000-8000-000000000200", body: "Feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Same title", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight" as const, selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } };
+  const otherUrl = "https://learn.example/mod/page/view.php?id=3";
+  overlay.setCommentList([base, { ...base, id: "00000000-0000-4000-8000-000000000201", page_url: otherUrl, body: "Other page" }]);
+  const select = shadow.querySelector<HTMLSelectElement>("select[data-comment-page]")!;
+  assert.equal(select.getAttribute("aria-label"), "Page");
+  assert.equal(select.value, "");
+  assert.deepEqual(Array.from(select.options, (option) => [option.value, option.textContent]), [["", "All pages"], [context.page_url, "Same title"], [otherUrl, "Same title"]]);
+  select.value = otherUrl; select.dispatchEvent(new window.Event("change", { bubbles: true }) as unknown as Event);
+  const visible = Array.from(shadow.querySelectorAll<HTMLElement>("[data-comment-item]")).filter((item) => !item.hidden);
+  assert.equal(visible.length, 1); assert.equal(visible[0]!.textContent!.includes("Same title"), false); assert.match(visible[0]!.textContent!, /Other page/);
+  shadow.querySelector<HTMLButtonElement>('[data-comment-scope="page"]')!.click();
+  assert.equal(select.hidden, true);
+});
+
+test("comment list filters persist across refreshes and missing selected pages reset to all pages", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const base = { id: "00000000-0000-4000-8000-000000000300", body: "Resolved", category: "general", status: "resolved", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Current", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight" as const, selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } };
+  const otherUrl = "https://learn.example/mod/page/view.php?id=4";
+  const comments = [base, { ...base, id: "00000000-0000-4000-8000-000000000301", page_url: otherUrl, page_title: "Other" }];
+  overlay.setCommentList(comments);
+  shadow.querySelector<HTMLButtonElement>('[data-comment-filter="resolved"]')!.click();
+  const select = shadow.querySelector<HTMLSelectElement>("select[data-comment-page]")!; select.value = otherUrl; select.dispatchEvent(new window.Event("change", { bubbles: true }) as unknown as Event);
+  overlay.setCommentList(comments);
+  assert.equal(shadow.querySelector<HTMLButtonElement>('[data-comment-filter="resolved"]')!.getAttribute("aria-pressed"), "true");
+  assert.equal(shadow.querySelector<HTMLSelectElement>("select[data-comment-page]")!.value, otherUrl);
+  overlay.setCommentList([base]);
+  assert.equal(shadow.querySelector<HTMLSelectElement>("select[data-comment-page]")!.value, "");
 });
 
 test("course-list navigation reports the precise SCORM recovery instruction without closing the list", async () => {
