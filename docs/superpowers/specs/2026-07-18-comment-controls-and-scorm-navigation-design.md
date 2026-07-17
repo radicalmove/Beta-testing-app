@@ -42,6 +42,8 @@ The implementation must preserve Poppins and the existing UC Online overlay shel
 - Jump to uses its existing blue family, is outlined while closed, and becomes solid only while its page menu is open.
 - The separate `Page` label, native `All pages` presentation, and visible chevron are removed. The control label is `Jump to`.
 
+Jump to is an accessible disclosure button with `aria-expanded` and `aria-controls`, followed by a single-select listbox. The button label always remains `Jump to`; the selected page is indicated inside the list. Enter, Space, or Arrow Down opens the list and focuses the current selection or first option. Arrow keys move through options, Enter or Space selects, Escape closes without changing the selection, and Tab closes while continuing normal focus order. Clicking outside closes the list and focus returns to the button when the menu is dismissed with Escape. Switching to Current page clears the page selection and closes the list. If refreshed course data no longer contains the selected page, selection returns to All pages.
+
 ### Comment-list layout
 
 - The current course-section heading uses a slightly smaller size and a single-line ellipsis where required.
@@ -58,7 +60,9 @@ The implementation must preserve Poppins and the existing UC Online overlay shel
 - Unresolved comments use a 34 px square checkbox: white interior, black 2 px outline, minimal corner radius, and no nested decorative box.
 - Resolving requires confirmation: `Resolve this comment? It will move to the Resolved list.`
 - After confirmation and a successful server response, the checkbox displays a loose, pen-drawn green tick for approximately three seconds before the row leaves the Open result set.
-- In the Resolved result set, the same checkbox permanently displays the pen-drawn green tick.
+- To support that feedback, `changeStatus` performs and confirms the server mutation without refreshing the list. The overlay owns a transient row state, waits approximately three seconds, and then invokes a separate comments-refresh callback. Ordinary list updates during the interval must preserve the transient row until its timer completes.
+- In the Resolved result set, the same checkbox displays the pen-drawn green tick and remains an actionable `Reopen comment` control when the capability includes `open` as an allowed status.
+- Reopening requires confirmation: `Reopen this comment? It will move to the Open list.` A successful reopen uses the same three-second feedback pattern in reverse before refreshing. Pending and failure behaviour matches Resolve; cancellation makes no change.
 - Resolve and Delete actions retain their current capability checks: controls appear only when the server says the current user may perform that action.
 
 ## Interaction and accessibility
@@ -101,9 +105,13 @@ The overlay remains open when the destination is already on the current page. Cr
 ### Boundary rules
 
 - Raw `pluginfile.php` SCORM content URLs must never be assigned to the top-level Moodle window.
+- Raw-package classification occurs before the normal same-origin page branch. A URL is treated as raw SCORM content when its path is under Moodle `pluginfile.php` and contains a `mod_scorm`/`scormcontent` package path. If an older comment has such a page URL but lacks the required `parent_activity_url` and `embedded_locator` pair, navigation stops with `This SCORM comment cannot be opened because its Moodle activity location is missing.` No top-level assignment or tab navigation occurs.
 - Embedded navigation is accepted only from frame zero of a configured Moodle origin and for the currently bound course.
 - `parent_activity_url` and `embedded_locator` remain a required pair.
+- An embedded parent URL must be canonical HTTPS without credentials, share the configured Moodle origin, and have the exact pathname `/mod/scorm/player.php`. Query parameters are preserved because Moodle deployments may use them for activity/session identity. A fragment is permitted but does not replace or alter `embedded_locator`; it is treated only as part of the player URL. Any other same-origin pathname is rejected as an invalid embedded parent.
 - Existing single-toolbar frame election remains unchanged.
+
+Pending navigation survives extension worker restart or page reload only until context opening completes. The persisted states before player load, before locator application, and before context opening resume on reload. Once the target thread has opened, the pending record is consumed and removed; later reloads do not reopen it automatically.
 
 ## Implementation boundaries
 
@@ -123,10 +131,13 @@ No server schema change is expected because embedded navigation metadata already
 - Overlay tests for all active, inactive, hover-independent, expanded, and accessible states.
 - Equal-size/no-wrap tests for the five filter controls.
 - List grouping and bounded scrolling tests.
-- Resolve confirmation tests for cancel, success, pending duplicate prevention, temporary tick, resolved-list persistence, and failure recovery.
+- Resolve/reopen confirmation tests for cancel, success, pending duplicate prevention, temporary tick, resolved-list persistence, failure recovery, and a fake-timer assertion that refreshes cannot remove the transient row before three seconds.
 - Delete glyph/accessibility and row-spacing assertions.
 - Navigation tests proving embedded comments choose `parent_activity_url` and never return the raw package URL as `destination_url`.
+- Navigation tests proving legacy raw-package comments with incomplete metadata neither return `destination_url` nor trigger parent/tab navigation.
+- Parent URL validation tests for the exact SCORM player pathname, origin, credentials, query preservation, fragment treatment, and rejection of arbitrary same-origin paths.
 - State-machine tests for parent navigation, worker readiness, locator application, context opening, timeout, stale course, and one-time consumption.
+- Restart/reload state tests before player load, before locator application, before context opening, and after one-time consumption.
 - Existing extension, server, and deployment suites remain green.
 
 ### Manual Chrome and Edge pilot checks
