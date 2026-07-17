@@ -61,8 +61,8 @@ Jump to is an accessible disclosure button with `aria-expanded` and `aria-contro
 - Resolving requires confirmation: `Resolve this comment? It will move to the Resolved list.`
 - After confirmation and a successful server response, the checkbox displays a loose, pen-drawn green tick for approximately three seconds before the row leaves the Open result set.
 - To support that feedback, `changeStatus` performs and confirms the server mutation without refreshing the list. The overlay owns a transient row state, waits approximately three seconds, and then invokes a separate comments-refresh callback. Ordinary list updates during the interval must preserve the transient row until its timer completes.
-- In the Resolved result set, the same checkbox displays the pen-drawn green tick and remains an actionable `Reopen comment` control when the capability includes `open` as an allowed status.
-- Reopening requires confirmation: `Reopen this comment? It will move to the Open list.` A successful reopen uses the same three-second feedback pattern in reverse before refreshing. Pending and failure behaviour matches Resolve; cancellation makes no change.
+- In the Resolved result set, the same checkbox displays the pen-drawn green tick and remains an actionable `Reopen comment` control when `capabilities.can_change_status` is true.
+- Reopening requires confirmation: `Reopen this comment? It will move to the Open list.` After a successful response, the tick is removed, the unchecked row remains in the Resolved result set for approximately three seconds, and a polite status announcement says `Comment reopened. Moving to Open.` The overlay then refreshes and the row moves to Open. Pending and failure behaviour matches Resolve; cancellation makes no change.
 - Resolve and Delete actions retain their current capability checks: controls appear only when the server says the current user may perform that action.
 
 ## Interaction and accessibility
@@ -147,7 +147,8 @@ No server schema change is expected because embedded navigation metadata already
 - Resolve and delete comments from both Current page and Whole course views.
 - Navigate to Moodle-page comments and multiple Rise lessons within the same SCORM package.
 - Confirm no direct `pluginfile.php` launch and no duplicate overlay/toolbox.
-- Reload the SCORM player and confirm the correct comment is retained and reopened.
+- Reload the SCORM player while navigation is still pending and confirm the pending state resumes and opens the correct comment.
+- Reload after the target thread has opened and the pending record has been consumed; confirm the comment is not reopened automatically.
 
 ## Release
 
