@@ -552,6 +552,20 @@ test("unselected comment controls keep their semantic hover colours", () => {
   assert.match(approvedControlStyles, /\.comment-page-field \.comment-jump:hover\{background:var\(--review-jump\);color:#fff\}/);
 });
 
+test("comments button keeps its collapsed colours while the panel is open", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const comments = shadow.querySelector<HTMLButtonElement>('[data-action="panel"]')!;
+  const colours = () => { const style = window.getComputedStyle(comments as any); return [style.backgroundColor, style.color]; };
+  const collapsedColours = colours();
+  assert.deepEqual(collapsedColours, ["#fff", "#0b6261"]);
+  comments.click();
+  assert.equal(comments.getAttribute("aria-expanded"), "true");
+  assert.deepEqual(colours(), collapsedColours);
+  assert.match(approvedControlStyles, /\[data-action="panel"\]\[aria-expanded="true"\]:hover\{background:var\(--review-teal-dark\);color:#fff\}/);
+  overlay.destroy();
+});
+
 test("whole-course list groups and canonically numbers comments in course order", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
