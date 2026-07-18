@@ -530,6 +530,22 @@ test("toolbar and semantic comment controls expose approved states", () => {
   overlay.destroy();
 });
 
+test("comment controls use their semantic colours for selected and unselected states", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  overlay.setCommentList([]);
+  const colours = (selector: string) => {
+    const style = window.getComputedStyle(shadow.querySelector<HTMLElement>(selector)! as any);
+    return [style.backgroundColor, style.color];
+  };
+  assert.deepEqual(colours('[data-comment-scope="course"]'), ["#a84f12", "#fff"]);
+  assert.deepEqual(colours('[data-comment-scope="page"]'), ["#fff", "#a84f12"]);
+  assert.deepEqual(colours('[data-comment-filter="open"]'), ["#176b43", "#fff"]);
+  assert.deepEqual(colours('[data-comment-filter="resolved"]'), ["#fff", "#176b43"]);
+  assert.deepEqual(colours("[data-comment-jump]"), ["#fff", "#356f9f"]);
+  overlay.destroy();
+});
+
 test("whole-course list groups and canonically numbers comments in course order", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
