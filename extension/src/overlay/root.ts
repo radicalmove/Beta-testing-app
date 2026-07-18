@@ -4,6 +4,7 @@ import { renderTextHighlight } from "../anchors/recover.ts";
 import { capturePinAnchor, renderPin, type PinAnchor } from "../anchors/pin.ts";
 import type { PageComment } from "../background-bridge.ts";
 import { createCommentRenderer, type CommentRenderer, type UnresolvedAnchor } from "../comment-renderer.ts";
+import { projectCourseComments } from "../course-comment-order.ts";
 
 export type { UnresolvedAnchor } from "../comment-renderer.ts";
 
@@ -14,6 +15,7 @@ export const tealOverlayOverrides = `:host{--review-teal:#28c4c2;--review-teal-d
 
 export const commentListLayoutStyles = `.shell{max-height:calc(100vh - 32px);display:flex;flex-direction:column}.panel{min-height:0;flex:1 1 auto;overflow:hidden;display:flex;flex-direction:column}[data-panel-content]{min-height:0;display:flex;flex-direction:column}.comment-results{min-height:0;flex:1 1 auto;overflow-y:auto;font-size:14px}.comment-page-field{display:grid;gap:4px;min-width:0;flex:1}.comment-page-field select{min-width:0}`;
 export const approvedControlStyles = `:host{--review-dark-teal:#043e42;--review-scope:#a84f12;--review-status:#176b43;--review-jump:#356f9f}.shell{border:3px solid var(--review-dark-teal)}.toolbar-actions button{border:2px solid var(--review-dark-teal);background:#fff;color:var(--review-dark-teal)}.toolbar-actions button[aria-pressed="true"],.toolbar-actions button[aria-expanded="true"]{background:var(--review-dark-teal);color:#fff}.toolbar-actions button:hover{background:var(--review-dark-teal);color:#fff}.toolbar-actions button[aria-pressed="true"]:hover,.toolbar-actions button[aria-expanded="true"]:hover{background:#fff;color:var(--review-dark-teal)}.toolbar-actions [data-action="help"]{font-size:22px}.comment-filter-row{align-items:flex-start}.comment-control{box-sizing:border-box;width:104px;height:38px;min-height:38px!important;padding:0 7px;white-space:nowrap;border:2px solid;border-radius:5px;background:#fff;font-size:13px}.comment-scope{color:var(--review-scope)}.comment-status{color:var(--review-status)}.comment-jump{color:var(--review-jump)}.comment-control[aria-pressed="true"],.comment-control[aria-expanded="true"]{background:currentColor}.comment-control[aria-pressed="true"] span,.comment-control[aria-expanded="true"] span{color:#fff}.comment-control:hover{color:#fff}.comment-scope:hover{background:var(--review-scope)}.comment-status:hover{background:var(--review-status)}.comment-jump:hover{background:var(--review-jump)}.comment-control[aria-pressed="true"]:hover,.comment-control[aria-expanded="true"]:hover{background:#fff}.comment-control[aria-pressed="true"]:hover span,.comment-control[aria-expanded="true"]:hover span{color:currentColor}.comment-page-field{position:relative;flex:none}.comment-page-list{position:absolute;right:0;top:42px;z-index:4;box-sizing:border-box;width:260px;max-height:260px;overflow-y:auto;padding:5px;background:#fff;border:2px solid var(--review-jump);border-radius:5px;box-shadow:0 5px 14px #0003}.comment-page-option{display:block;width:100%;min-height:36px!important;border:0;background:#fff;color:#244e71;text-align:left}.comment-page-option[aria-selected="true"]{background:#dceaf4;font-weight:750}.panel-title{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.comment-results{font-size:13px}.comment-group-heading{margin:11px 0 3px;color:#506b70;font-size:11px;text-transform:uppercase;letter-spacing:.05em}.comment-row{gap:8px;padding:3px 0;border-bottom:1px solid #c9e8e7}.comment-row-actions{gap:8px}.comment-row-action{box-sizing:border-box;width:34px;min-height:34px!important;height:34px;padding:2px;border-radius:2px}.comment-row-action svg{display:block;width:100%;height:100%}.comment-row-action.status-action{border:2px solid #111;background:#fff}.comment-row-action.delete-action{border:2px solid #d73b3d;background:#d73b3d}.comment-row-action.status-action:hover{background:#f4f4f4;border-color:#111}.comment-row-action.delete-action:hover{background:#b52d30;border-color:#b52d30}`;
+export const controlAlignmentStyles = `.toolbar-actions button{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap}.toolbar-actions [data-action="help"]{box-sizing:border-box;width:44px;height:44px;padding:0;font-size:24px}.comment-filter-row{align-items:center}.comment-control{display:inline-flex;align-items:center;justify-content:center}`;
 
 export type ConnectionStatus = "connecting" | "connected" | "pending" | "signed-out" | "offline";
 const statusLabels: Record<ConnectionStatus, string> = { connecting: "Connecting", connected: "Connected", pending: "Waiting for approval — you can leave this page open or return later.", "signed-out": "Signed out", offline: "Service unavailable—retry" };
@@ -58,7 +60,7 @@ export function mountReviewOverlay(document: Document, context: CourseContext, s
   const shadow = host.attachShadow({ mode: "open" });
   const style = document.createElement("style");
   style.textContent = overlayStyles + tealOverlayOverrides + `.viewer{display:block;font-size:13px;font-weight:650;color:#082f2f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.viewer[hidden]{display:none}.comments-short{display:none}@media(max-width:360px){.comments-wide{display:none}.comments-short{display:inline}}.comment-choice{padding:16px;background:var(--review-pale);border-top:1px solid var(--review-line)}.comment-choice h2{margin:0 0 10px;font-size:18px}.comment-choice button{display:grid;width:100%;margin-top:8px;text-align:left}.comment-choice button span{font-size:14px;font-weight:400}.help-dialog ol{display:grid;gap:12px;padding-left:22px}.help-dialog li span{display:block;font-size:14px}.help-version{font-size:14px;color:#52666c}`;
-  style.textContent += commentListLayoutStyles + approvedControlStyles;
+  style.textContent += commentListLayoutStyles + approvedControlStyles + controlAlignmentStyles;
   shadow.append(style);
   return createController(host, shadow, context, status, options, buildDiagnostics);
 }
@@ -417,9 +419,10 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
       const panel = shadow.querySelector<HTMLElement>(".panel")!;
       const panelContent = panel.querySelector<HTMLElement>("[data-panel-content]")!;
       panelContent.replaceChildren();
+      const projection = projectCourseComments(comments);
       const pages = new Map<string, string>();
       const pageLabels = new Map<string, string>();
-      for (const comment of comments) { const pageLabel = comment.page_title.replace(/\s+/g, " ").trim() || "Untitled page"; pageLabels.set(comment.id, pageLabel); if (!pages.has(comment.page_url)) pages.set(comment.page_url, pageLabel); }
+      for (const group of projection.groups) for (const { comment } of group.comments) { pageLabels.set(comment.id, group.title); if (!pages.has(group.pageUrl)) pages.set(group.pageUrl, group.title); }
       if (commentListPage && !pages.has(commentListPage)) commentListPage = "";
       const filters = ownerDocument.createElement("div"); filters.className = "comment-filters"; filters.setAttribute("role", "group"); filters.setAttribute("aria-label", "Comment status filter");
       const scopes = ownerDocument.createElement("div"); scopes.className = "comment-filters"; scopes.setAttribute("role", "group"); scopes.setAttribute("aria-label", "Comment page scope");
@@ -445,9 +448,10 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
       for (const value of ["open", "resolved"] as const) { const filter = ownerDocument.createElement("button"); filter.type = "button"; filter.dataset.commentFilter = value; filter.className = "comment-control comment-status"; filter.innerHTML = `<span>${value === "open" ? "Open" : "Resolved"}</span>`; filter.addEventListener("click", () => { commentListFilter = value; applyFilter(); }); filters.append(filter); }
       for (const value of ["course", "page"] as const) { const scope = ownerDocument.createElement("button"); scope.type = "button"; scope.dataset.commentScope = value; scope.className = "comment-control comment-scope"; scope.innerHTML = `<span>${value === "course" ? "Whole course" : "Current page"}</span>`; scope.addEventListener("click", () => { commentListScope = value; applyFilter(); }); scopes.append(scope); }
       filterRow.append(scopes, filters, pageField); panelContent.append(filterRow, results, empty);
-      let previousPageUrl = "";
-      for (const [commentIndex, comment] of comments.entries()) {
-        if (comment.page_url !== previousPageUrl) { const heading = ownerDocument.createElement("h3"); heading.dataset.commentGroupHeading = "true"; heading.className = "comment-group-heading"; heading.textContent = pageLabels.get(comment.id)!; results.append(heading); previousPageUrl = comment.page_url; }
+      for (const group of projection.groups) {
+        const heading = ownerDocument.createElement("h3"); heading.dataset.commentGroupHeading = "true"; heading.className = "comment-group-heading"; heading.textContent = group.title; results.append(heading);
+        for (const { comment, displayIndex } of group.comments) {
+        const commentIndex = displayIndex - 1;
         const listItem = ownerDocument.createElement("div"); listItem.setAttribute("role", "listitem"); listItem.className = "comment-row"; listItem.dataset.commentRow = comment.id;
         const item = ownerDocument.createElement("button"); item.type = "button"; item.className = "comment-index-link"; item.dataset.commentItem = comment.id; item.dataset.commentIndex = String(commentIndex + 1); item.dataset.commentGroup = comment.status === "resolved" ? "resolved" : "open"; item.dataset.commentPageUrl = comment.page_url; const pageLabel = pageLabels.get(comment.id)!; const initialPage = pageLabel.slice(0, 32); const initialBody = comment.body.replace(/\s+/g, " ").trim().slice(0, 56); item.textContent = `#${commentIndex + 1} · ${initialPage} · “${initialBody}${comment.body.length > 56 ? "…" : ""}”`; item.setAttribute("aria-label", `Comment ${commentIndex + 1}. ${pageLabel}. ${comment.body}. ${comment.author.display_name}. Status ${comment.status}.`);
         item.addEventListener("click", async () => {
@@ -498,9 +502,11 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
           action.disabled = rowMutations.get(mutationKey("delete"))?.pending === true; action.addEventListener("click", async () => { if (!await confirmAction(action, "Delete comment", "Delete this entire thread, including all replies and screenshots?", "Delete")) return; await runRowMutation("delete", async () => { const transient = transientStatuses.get(comment.id); if (transient) ownerDocument.defaultView?.clearTimeout(transient.timer); transientStatuses.delete(comment.id); await options.deleteThread!(comment.id); }, "Could not delete comment"); }); rowActions.append(action);
         }
         listItem.append(item); if (rowActions.childElementCount) listItem.append(rowActions); results.append(listItem); for (const action of ["status", "delete"]) if (rowMutations.has(mutationKey(action))) showMutationState(action);
+        }
       }
       if (!comments.length) { empty.textContent = "No comments in this course yet."; empty.hidden = false; }
       applyFilter();
+      results.scrollTop = 0;
     },
     setRendererComments(comments) { renderer.setComments(comments); },
     setPageComments(comments) { this.setCommentList(comments); this.setRendererComments(comments); },

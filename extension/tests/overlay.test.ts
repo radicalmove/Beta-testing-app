@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Window } from "happy-dom";
 
-import { approvedControlStyles, commentListLayoutStyles, createOverlayMarkup, mountReviewOverlay, OVERLAY_HOST_ID, overlayStyles, tealOverlayOverrides } from "../src/overlay/root.ts";
+import { approvedControlStyles, commentListLayoutStyles, controlAlignmentStyles, createOverlayMarkup, mountReviewOverlay, OVERLAY_HOST_ID, overlayStyles, tealOverlayOverrides } from "../src/overlay/root.ts";
 
 const context = { course_url: "https://learn.example/course/view.php?id=1", page_url: "https://learn.example/mod/page/view.php?id=2", title: "Law", pageTitle: "Week 2", moodle_course_id: 1, identityConfidence: "confirmed" as const };
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -521,6 +521,24 @@ test("toolbar and semantic comment controls expose approved states", () => {
   assert.deepEqual(controls.map((control) => control.textContent), ["Whole course", "Current page", "Open", "Resolved", "Jump to"]);
   assert.ok(shadow.querySelector('[data-comment-jump][aria-controls]'));
   assert.ok(shadow.querySelector('[role="listbox"]'));
+  assert.match(controlAlignmentStyles, /\[data-action="help"\]\{[^}]*width:44px[^}]*height:44px/);
+  assert.match(controlAlignmentStyles, /\.comment-control\{[^}]*display:inline-flex[^}]*align-items:center[^}]*justify-content:center/);
+  overlay.destroy();
+});
+
+test("whole-course list groups and canonically numbers comments in course order", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const base = { id: "00000000-0000-4000-8000-000000000100", body: "Feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Repeated title", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight" as const, selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } };
+  overlay.setCommentList([
+    { ...base, id: "00000000-0000-4000-8000-000000000110", page_url: "https://learn.example/10", page_title: "1.10 Later" },
+    { ...base, id: "00000000-0000-4000-8000-000000000101", page_url: "https://learn.example/info", page_title: "Course information" },
+    { ...base, id: "00000000-0000-4000-8000-000000000103", page_url: "https://learn.example/1-3", page_title: "1.3 Case law" },
+    { ...base, id: "00000000-0000-4000-8000-000000000102", page_url: "https://learn.example/1", page_title: "1 Introduction" },
+  ]);
+  assert.deepEqual(Array.from(shadow.querySelectorAll<HTMLElement>(".comment-group-heading")).map((node) => node.textContent), ["Course information", "1 Introduction", "1.3 Case law", "1.10 Later"]);
+  assert.deepEqual(Array.from(shadow.querySelectorAll<HTMLElement>("[data-comment-item]")).map((node) => node.dataset.commentIndex), ["1", "2", "3", "4"]);
+  const results = shadow.querySelector<HTMLElement>(".comment-results")!; results.scrollTop = 100; overlay.setCommentList([]); assert.equal(shadow.querySelector<HTMLElement>(".comment-results")!.scrollTop, 0);
   overlay.destroy();
 });
 
@@ -726,7 +744,7 @@ test("current-page overlay filtering matches the exact page_url including its ha
   overlay.setCommentList([base, { ...base, id: "00000000-0000-4000-8000-000000000511", page_url: "https://rise.example/activity#moodle-review-page=Lesson-1", page_title: "Embedded activity · Lesson 1" }]);
   shadow.querySelector<HTMLButtonElement>('[data-comment-scope="page"]')!.click();
   const visible = Array.from(shadow.querySelectorAll<HTMLButtonElement>("[data-comment-item]")).filter((item) => !item.hidden);
-  assert.equal(visible.length, 1); assert.match(visible[0]!.textContent!, /^#1 /); assert.doesNotMatch(visible[0]!.textContent!, /Embedded activity/);
+  assert.equal(visible.length, 1); assert.match(visible[0]!.textContent!, /^#2 /); assert.doesNotMatch(visible[0]!.textContent!, /Embedded activity/);
 });
 
 test("course-list navigation reports the precise SCORM recovery instruction without closing the list", async () => {
