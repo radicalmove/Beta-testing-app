@@ -546,6 +546,12 @@ test("comment controls use their semantic colours for selected and unselected st
   overlay.destroy();
 });
 
+test("unselected comment controls keep their semantic hover colours", () => {
+  assert.match(approvedControlStyles, /\.comment-filters \.comment-scope:hover\{background:var\(--review-scope\);color:#fff\}/);
+  assert.match(approvedControlStyles, /\.comment-filters \.comment-status:hover\{background:var\(--review-status\);color:#fff\}/);
+  assert.match(approvedControlStyles, /\.comment-page-field \.comment-jump:hover\{background:var\(--review-jump\);color:#fff\}/);
+});
+
 test("whole-course list groups and canonically numbers comments in course order", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
