@@ -562,7 +562,7 @@ test("comments button keeps its collapsed colours while the panel is open", () =
   comments.click();
   assert.equal(comments.getAttribute("aria-expanded"), "true");
   assert.deepEqual(colours(), collapsedColours);
-  assert.match(approvedControlStyles, /\[data-action="panel"\]\[aria-expanded="true"\]:hover\{background:var\(--review-teal-dark\);color:#fff\}/);
+  assert.match(approvedControlStyles, /\[data-action="panel"\]\[aria-expanded="true"\]:hover\{background:var\(--review-teal-dark\);color:#fff;border-color:var\(--review-teal-dark\)\}/);
   overlay.destroy();
 });
 
