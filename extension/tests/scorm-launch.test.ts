@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Window } from "happy-dom";
 
-import { resolveScormLaunchUrl } from "../src/scorm-launch.ts";
+import { packageRootFromScormUrl, resolveScormLaunchUrl, ScormLaunchCache } from "../src/scorm-launch.ts";
 
 const documentFor = (body: string) => {
   const window = new Window({ url: "https://my.uconline.ac.nz/mod/scorm/view.php?id=146308" });
@@ -34,4 +34,43 @@ test("requires valid positive identifiers, matching cmid, bounded organisation, 
   assert.throws(() => resolveScormLaunchUrl(documentFor(validForm.replace('value="15621"', 'value="0"')), "https://my.uconline.ac.nz", 146308), /launch fields/);
   assert.throws(() => resolveScormLaunchUrl(documentFor(validForm.replace("articulate_rise", "x".repeat(300))), "https://my.uconline.ac.nz", 146308), /launch fields/);
   assert.throws(() => resolveScormLaunchUrl(documentFor(validForm.replace("normal", "javascript")), "https://my.uconline.ac.nz", 146308), /launch fields/);
+});
+
+class MemoryStorage {
+  values: Record<string, unknown> = {};
+  async get(key: string) { return { [key]: this.values[key] }; }
+  async set(value: Record<string, unknown>) { Object.assign(this.values, value); }
+}
+
+const courseId = "00000000-0000-4000-8000-000000000001";
+const packageUrl = "https://my.uconline.ac.nz/pluginfile.php/165226/mod_scorm/content/27/scormcontent/index.html#/lesson";
+const playerUrl = "https://my.uconline.ac.nz/mod/scorm/player.php?mode=normal&scoid=15621&cm=146308&currentorg=articulate_rise";
+
+test("derives an exact canonical SCORM package root", () => {
+  assert.equal(packageRootFromScormUrl(packageUrl), "https://my.uconline.ac.nz/pluginfile.php/165226/mod_scorm/content/27/scormcontent/");
+  assert.throws(() => packageRootFromScormUrl("https://my.uconline.ac.nz/mod/page/view.php?id=1"), /package root/);
+});
+
+test("cache binds course, origin, cmid and exact package root and survives reconstruction", async () => {
+  const storage = new MemoryStorage();
+  const cache = new ScormLaunchCache(storage, () => 1_000);
+  await cache.put({ courseId, configuredOrigin: "https://my.uconline.ac.nz", cmid: 146308, packageRoot: packageRootFromScormUrl(packageUrl), playerUrl });
+  const restarted = new ScormLaunchCache(storage, () => 2_000);
+  assert.equal(await restarted.get({ courseId, configuredOrigin: "https://my.uconline.ac.nz", packageUrl, cmid: 146308 }), playerUrl);
+  assert.equal(await restarted.get({ courseId, configuredOrigin: "https://my.uconline.ac.nz", packageUrl: packageUrl.replace("/27/", "/28/"), cmid: 146308 }), undefined);
+});
+
+test("cache expires records, purges malformed data, and evicts oldest records above its bound", async () => {
+  const storage = new MemoryStorage(); let now = 0;
+  const cache = new ScormLaunchCache(storage, () => now, 100, 2);
+  for (const [cmid, suffix] of [[1, "one"], [2, "two"], [3, "three"]] as const) {
+    now += 1;
+    const root = `https://my.uconline.ac.nz/pluginfile.php/1/mod_scorm/content/${cmid}/scormcontent/`;
+    await cache.put({ courseId, configuredOrigin: "https://my.uconline.ac.nz", cmid, packageRoot: root, playerUrl: `https://my.uconline.ac.nz/mod/scorm/player.php?mode=normal&scoid=${cmid}&cm=${cmid}&currentorg=${suffix}` });
+  }
+  assert.equal(await cache.get({ courseId, configuredOrigin: "https://my.uconline.ac.nz", packageUrl: "https://my.uconline.ac.nz/pluginfile.php/1/mod_scorm/content/1/scormcontent/index.html", cmid: 1 }), undefined);
+  now = 500;
+  assert.equal(await cache.get({ courseId, configuredOrigin: "https://my.uconline.ac.nz", packageUrl: "https://my.uconline.ac.nz/pluginfile.php/1/mod_scorm/content/3/scormcontent/index.html", cmid: 3 }), undefined);
+  storage.values.moodleReviewScormLaunches = [{ bad: true }];
+  assert.equal(await cache.get({ courseId, configuredOrigin: "https://my.uconline.ac.nz", packageUrl, cmid: 146308 }), undefined);
 });
