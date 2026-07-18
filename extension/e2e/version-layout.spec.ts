@@ -37,5 +37,33 @@ test("version remains accessible without overlapping review controls at 320 CSS 
   expect(intersects(boxes[0], boxes[1])).toBe(false);
 
   await host.locator('[data-action="help"]').click();
-  await expect(host.getByText("Pilot 0.4.21 · build 0000000")).toBeVisible();
+  await expect(host.getByText("Pilot 0.4.32 · build 0000000")).toBeVisible();
+});
+
+test("course comment controls remain equal height on one row", async ({ page }) => {
+  await page.setViewportSize({ width: 760, height: 700 });
+  await page.route("https://moodle.example.invalid/**", (route) => route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Fixture</title><h1>Law</h1>" }));
+  await page.addInitScript(() => {
+    (globalThis as any).chrome = { runtime: { id: "fixture-extension", sendMessage(message: any, callback: (response: unknown) => void) {
+      if (message.type === "RESOLVE_COURSE") callback({ ok: true, data: { id: "123e4567-e89b-12d3-a456-426614174000" } });
+      else if (message.type === "GET_CURRENT_VIEWER") callback({ ok: true, data: { id: "123e4567-e89b-42d3-a456-426614174001", email: "ld@example.test", display_name: "Fixture LD", role: "ld_dcd" } });
+      else callback({ ok: true, data: [] });
+    } } };
+  });
+  await page.goto("https://moodle.example.invalid/course/view.php?id=1");
+  await page.addScriptTag({ path: contentScript });
+  const host = page.locator("#moodle-course-review-overlay");
+  await expect.poll(() => host.evaluate((node: any) => Boolean(node.shadowRoot))).toBe(true);
+  await host.locator('[data-action="panel"]').click();
+
+  const controls = await host.evaluate((node: any) => Array.from(node.shadowRoot.querySelectorAll(".comment-control"), (control: any) => {
+    const box = control.getBoundingClientRect();
+    const style = getComputedStyle(control);
+    return { width: box.width, height: box.height, top: box.top, whiteSpace: style.whiteSpace };
+  }));
+  expect(controls).toHaveLength(5);
+  expect(new Set(controls.map((control: any) => control.width)).size).toBe(1);
+  expect(new Set(controls.map((control: any) => control.height)).size).toBe(1);
+  expect(new Set(controls.map((control: any) => control.top)).size).toBe(1);
+  expect(controls.every((control: any) => control.whiteSpace === "nowrap")).toBe(true);
 });

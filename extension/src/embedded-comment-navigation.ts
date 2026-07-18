@@ -42,6 +42,8 @@ type Dependencies = {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const keyFor = (tabId: number) => `commentNavigation:${tabId}`;
+const rawScormPackageUrl = (url: URL) => url.pathname.includes("/pluginfile.php/") && /\/mod_scorm\//.test(url.pathname) && /\/scormcontent\//.test(url.pathname);
+const validScormParent = (value: string, senderOrigin: string) => { try { const url = new URL(value); return url.protocol === "https:" && !url.username && !url.password && url.origin === senderOrigin && url.pathname === "/mod/scorm/player.php" && url.href === value; } catch { return false; } };
 
 function validateTarget(value: EmbeddedNavigationTarget): void {
   if (!UUID.test(value.id) || !UUID.test(value.courseId)) throw new Error("Invalid embedded comment navigation identity");
@@ -234,8 +236,10 @@ export async function handleCommentNavigationMessage(message: unknown, sender: N
   const comment = comments.find((candidate) => candidate.id === record.comment_id && candidate.page_url === record.page_url);
   if (!comment) throw new Error("Comment navigation target unavailable");
   const senderOrigin = new URL(sender.url!).origin;
+  if ((comment.parent_activity_url === null) !== (comment.embedded_locator === null)) throw new Error("Invalid embedded comment navigation metadata");
+  if (rawScormPackageUrl(new URL(comment.page_url)) && comment.parent_activity_url === null) throw new Error("This SCORM comment cannot be opened because its Moodle activity location is missing.");
   if (comment.parent_activity_url !== null) {
-    if (new URL(comment.parent_activity_url).origin !== senderOrigin) throw new Error("Invalid embedded parent activity");
+    if (!validScormParent(comment.parent_activity_url, senderOrigin)) throw new Error("Invalid embedded parent activity");
     await dependencies.navigation.prepare(tabId, { id: comment.id, courseId, pageUrl: comment.page_url, parentActivityUrl: comment.parent_activity_url, embeddedLocator: comment.embedded_locator });
     return dependencies.navigation.advance(tabId);
   }

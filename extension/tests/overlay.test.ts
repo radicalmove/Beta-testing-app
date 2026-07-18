@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Window } from "happy-dom";
 
-import { commentListLayoutStyles, createOverlayMarkup, mountReviewOverlay, OVERLAY_HOST_ID, overlayStyles, tealOverlayOverrides } from "../src/overlay/root.ts";
+import { approvedControlStyles, commentListLayoutStyles, createOverlayMarkup, mountReviewOverlay, OVERLAY_HOST_ID, overlayStyles, tealOverlayOverrides } from "../src/overlay/root.ts";
 
 const context = { course_url: "https://learn.example/course/view.php?id=1", page_url: "https://learn.example/mod/page/view.php?id=2", title: "Law", pageTitle: "Week 2", moodle_course_id: 1, identityConfidence: "confirmed" as const };
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+const choosePage = (shadow: ShadowRoot, pageUrl: string) => shadow.querySelector<HTMLButtonElement>(`[data-comment-page-option="${pageUrl}"]`)!.click();
+const acceptConfirmation = async (shadow: ShadowRoot) => { shadow.querySelector<HTMLButtonElement>("[data-confirm-action]")!.click(); await tick(); };
 
 const contrastRatio = (foreground: string, background: string): number => {
   const luminance = (hex: string) => {
@@ -497,10 +499,29 @@ test("course scope and status filters share one compact row", () => {
   overlay.setPageComments([{ id: "00000000-0000-4000-8000-000000000041", body: "Feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Week 2", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight", selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } }]);
   const row = shadow.querySelector<HTMLElement>(".comment-filter-row")!;
   assert.ok(row);
-  assert.equal(row.querySelectorAll("button").length, 4);
+  assert.equal(row.querySelectorAll(".comment-control").length, 5);
   assert.match(tealOverlayOverrides, /\.comment-filter-row\{display:flex/);
-  assert.match(tealOverlayOverrides, /\.comment-filters button\[aria-pressed="true"\]\{background:#082f2f;color:#fff;border-color:#082f2f\}/);
-  assert.match(tealOverlayOverrides, /\.comment-filters button:hover\{background:#28c4c2;color:#082f2f;border-color:#082f2f\}/);
+  assert.match(approvedControlStyles, /--review-scope:#a84f12/);
+  assert.match(approvedControlStyles, /--review-status:#176b43/);
+});
+
+test("toolbar and semantic comment controls expose approved states", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const add = shadow.querySelector<HTMLButtonElement>('[data-action="add-comment"]')!;
+  const panel = shadow.querySelector<HTMLButtonElement>('[data-action="panel"]')!;
+  const help = shadow.querySelector<HTMLButtonElement>('[data-action="help"]')!;
+  assert.equal(add.getAttribute("aria-pressed"), "false");
+  assert.equal(panel.getAttribute("aria-expanded"), "false");
+  assert.equal(help.getAttribute("aria-expanded"), "false");
+  overlay.setCommentList([]); panel.click();
+  assert.equal(panel.getAttribute("aria-expanded"), "true");
+  const controls = Array.from(shadow.querySelectorAll<HTMLElement>(".comment-control"));
+  assert.equal(controls.length, 5);
+  assert.deepEqual(controls.map((control) => control.textContent), ["Whole course", "Current page", "Open", "Resolved", "Jump to"]);
+  assert.ok(shadow.querySelector('[data-comment-jump][aria-controls]'));
+  assert.ok(shadow.querySelector('[role="listbox"]'));
+  overlay.destroy();
 });
 
 test("large course comment lists are viewport bounded and scroll in a dedicated results region", () => {
@@ -528,7 +549,7 @@ test("course comment rows expose capability-gated resolve, reopen, and delete ac
   let overlay: ReturnType<typeof mountReviewOverlay>;
   overlay = mountReviewOverlay(document, context, "connected", {
     navigateToComment: async (id) => { navigationCalls.push(id); },
-    changeStatus: async (id, status) => { statusCalls.push([id, status]); records = records.map((comment) => comment.id === id ? { ...comment, status } : comment); overlay.setCommentList(records); },
+    changeStatus: async (id, status) => { statusCalls.push([id, status]); records = records.map((comment) => comment.id === id ? { ...comment, status } : comment); },
     deleteThread: async (id) => { deleteCalls.push(id); records = records.filter((comment) => comment.id !== id); overlay.setCommentList(records); },
   });
   overlay.setCommentList(records);
@@ -539,21 +560,19 @@ test("course comment rows expose capability-gated resolve, reopen, and delete ac
   const remove = firstRow.querySelector<HTMLButtonElement>('[data-comment-action="delete"]')!;
   assert.match(resolve.getAttribute("aria-label") ?? "", /Resolve comment 1/); assert.equal(resolve.title, resolve.getAttribute("aria-label"));
   assert.match(remove.getAttribute("aria-label") ?? "", /Delete comment 1/); assert.equal(remove.title, remove.getAttribute("aria-label"));
-  resolve.click(); await tick();
+  resolve.click(); await acceptConfirmation(shadow);
   assert.deepEqual(statusCalls, [[base.id, "resolved"]]); assert.deepEqual(navigationCalls, []);
-  assert.equal(shadow.querySelector<HTMLButtonElement>('[data-comment-filter="open"]')!.getAttribute("aria-pressed"), "true"); assert.equal(shadow.querySelectorAll("[role='listitem']").length, 2);
+  overlay.setCommentList(records); assert.equal(shadow.querySelector<HTMLButtonElement>('[data-comment-filter="open"]')!.getAttribute("aria-pressed"), "true"); assert.equal(shadow.querySelectorAll("[role='listitem']").length, 2);
   shadow.querySelector<HTMLButtonElement>('[data-comment-filter="resolved"]')!.click();
   const reopened = shadow.querySelector<HTMLElement>(`[data-comment-row="${base.id}"]`)!.querySelector<HTMLButtonElement>('[data-comment-action="status"]')!;
   assert.match(reopened.getAttribute("aria-label") ?? "", /Reopen comment 1/);
-  reopened.click(); await tick();
+  reopened.click(); await acceptConfirmation(shadow);
   assert.deepEqual(statusCalls, [[base.id, "resolved"], [base.id, "open"]]); assert.deepEqual(navigationCalls, []);
 
   assert.equal(shadow.querySelector<HTMLButtonElement>('[data-comment-filter="resolved"]')!.getAttribute("aria-pressed"), "true"); shadow.querySelector<HTMLButtonElement>('[data-comment-filter="open"]')!.click();
-  document.defaultView!.confirm = () => false;
-  shadow.querySelector<HTMLElement>(`[data-comment-row="${base.id}"]`)!.querySelector<HTMLButtonElement>('[data-comment-action="delete"]')!.click(); await tick(); assert.deepEqual(deleteCalls, []);
-  let confirmation = ""; document.defaultView!.confirm = (message?: string) => { confirmation = message ?? ""; return true; };
-  shadow.querySelector<HTMLElement>(`[data-comment-row="${base.id}"]`)!.querySelector<HTMLButtonElement>('[data-comment-action="delete"]')!.click(); await tick();
-  assert.equal(confirmation, "Delete this entire thread, including all replies and screenshots?"); assert.deepEqual(deleteCalls, [base.id]); assert.deepEqual(navigationCalls, []);
+  overlay.setCommentList(records); shadow.querySelector<HTMLElement>(`[data-comment-row="${base.id}"]`)!.querySelector<HTMLButtonElement>('[data-comment-action="delete"]')!.click(); shadow.querySelector<HTMLButtonElement>("[data-confirm-cancel]")!.click(); await tick(); assert.deepEqual(deleteCalls, []);
+  shadow.querySelector<HTMLElement>(`[data-comment-row="${base.id}"]`)!.querySelector<HTMLButtonElement>('[data-comment-action="delete"]')!.click(); assert.match(shadow.querySelector<HTMLElement>(".confirm-dialog")!.textContent!, /Delete this entire thread/); await acceptConfirmation(shadow);
+  assert.deepEqual(deleteCalls, [base.id]); assert.deepEqual(navigationCalls, []);
   assert.equal(shadow.querySelectorAll("[role='listitem']").length, 1); assert.match(shadow.querySelector<HTMLButtonElement>("[data-comment-item]")!.textContent!, /^#1 /);
 });
 
@@ -573,7 +592,7 @@ test("a rejected course row mutation keeps the row, re-enables only its action, 
   const comment = { id: "00000000-0000-4000-8000-000000000420", body: "Will fail", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Week 2", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight" as const, selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: true, can_share_with_sme: false, can_delete: false } };
   overlay.setCommentList([comment]);
   const row = shadow.querySelector<HTMLElement>("[role='listitem']")!; const navigation = row.querySelector<HTMLButtonElement>("[data-comment-item]")!; const resolve = row.querySelector<HTMLButtonElement>('[data-comment-action="status"]')!;
-  resolve.click(); assert.equal(resolve.disabled, true); assert.equal(navigation.disabled, false);
+  resolve.click(); await acceptConfirmation(shadow); assert.equal(resolve.disabled, true); assert.equal(navigation.disabled, false);
   rejectMutation!(new Error("Connection lost")); await tick();
   assert.ok(row.isConnected); assert.equal(resolve.disabled, false); assert.equal(row.querySelector<HTMLElement>('[role="status"]')?.textContent, "Connection lost");
 });
@@ -583,7 +602,7 @@ test("a mutation rejected after a list refresh reports on the current row and re
   let rejectMutation: ((error: Error) => void) | undefined;
   const overlay = mountReviewOverlay(document, context, "connected", { changeStatus: () => new Promise((_, reject) => { rejectMutation = reject; }) }); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   const comment = { id: "00000000-0000-4000-8000-000000000421", body: "Refresh while pending", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Week 2", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight" as const, selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: true, can_share_with_sme: false, can_delete: false } };
-  overlay.setCommentList([comment]); shadow.querySelector<HTMLButtonElement>('[data-comment-action="status"]')!.click();
+  overlay.setCommentList([comment]); shadow.querySelector<HTMLButtonElement>('[data-comment-action="status"]')!.click(); await acceptConfirmation(shadow);
   overlay.setCommentList([comment]);
   const currentAction = shadow.querySelector<HTMLButtonElement>('[data-comment-action="status"]')!; assert.equal(currentAction.disabled, true);
   rejectMutation!(new Error("Refresh failed")); await tick();
@@ -592,21 +611,21 @@ test("a mutation rejected after a list refresh reports on the current row and re
 });
 
 test("a confirmed delete rejection preserves the current row and reports its error", async () => {
-  const window = new Window(); const document = window.document as unknown as Document; document.defaultView!.confirm = () => true;
+  const window = new Window(); const document = window.document as unknown as Document;
   const overlay = mountReviewOverlay(document, context, "connected", { deleteThread: async () => { throw new Error("Delete unavailable"); } }); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   const comment = { id: "00000000-0000-4000-8000-000000000422", body: "Keep after failure", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Week 2", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight" as const, selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: true } };
-  overlay.setCommentList([comment]); shadow.querySelector<HTMLButtonElement>('[data-comment-action="delete"]')!.click(); await tick();
+  overlay.setCommentList([comment]); shadow.querySelector<HTMLButtonElement>('[data-comment-action="delete"]')!.click(); await acceptConfirmation(shadow);
   const row = shadow.querySelector<HTMLElement>("[role='listitem']")!; const remove = row.querySelector<HTMLButtonElement>('[data-comment-action="delete"]')!;
   assert.ok(row.isConnected); assert.equal(remove.disabled, false); assert.equal(row.querySelector<HTMLElement>('[role="status"]')?.textContent, "Delete unavailable");
 });
 
 test("concurrent status and delete failures retain independent row messages and action state", async () => {
-  const window = new Window(); const document = window.document as unknown as Document; document.defaultView!.confirm = () => true;
+  const window = new Window(); const document = window.document as unknown as Document;
   let rejectStatus: ((error: Error) => void) | undefined; let rejectDelete: ((error: Error) => void) | undefined;
   const overlay = mountReviewOverlay(document, context, "connected", { changeStatus: () => new Promise((_, reject) => { rejectStatus = reject; }), deleteThread: () => new Promise((_, reject) => { rejectDelete = reject; }) }); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   const comment = { id: "00000000-0000-4000-8000-000000000423", body: "Concurrent actions", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Week 2", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight" as const, selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: true, can_share_with_sme: false, can_delete: true } };
   overlay.setCommentList([comment]); const status = shadow.querySelector<HTMLButtonElement>('[data-comment-action="status"]')!; const remove = shadow.querySelector<HTMLButtonElement>('[data-comment-action="delete"]')!;
-  status.click(); remove.click(); assert.equal(status.disabled, true); assert.equal(remove.disabled, true);
+  status.click(); await acceptConfirmation(shadow); remove.click(); await acceptConfirmation(shadow); assert.equal(status.disabled, true); assert.equal(remove.disabled, true);
   rejectStatus!(new Error("Status unavailable")); await tick();
   assert.equal(status.disabled, false); assert.equal(remove.disabled, true); assert.equal(shadow.querySelector<HTMLElement>('[data-comment-mutation-status="status"]')?.textContent, "Status unavailable");
   rejectDelete!(new Error("Delete unavailable")); await tick();
@@ -627,10 +646,10 @@ test("blank page titles use one Untitled page label in selectors, rows, and acce
   const window = new Window(); const document = window.document as unknown as Document;
   const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   overlay.setCommentList([{ id: "00000000-0000-4000-8000-000000000190", body: "Blank title feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: "https://learn.example/mod/page/view.php?id=190", page_title: "  \n  ", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight", selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } }]);
-  const select = shadow.querySelector<HTMLSelectElement>("select[data-comment-page]")!;
-  assert.equal(select.options[1]!.textContent, "Untitled page");
+  const options = shadow.querySelectorAll<HTMLElement>("[data-comment-page-option]");
+  assert.equal(options[1]!.textContent, "Untitled page");
+  assert.equal(shadow.querySelector<HTMLElement>("[data-comment-group-heading]")!.textContent, "Untitled page");
   const navigation = shadow.querySelector<HTMLButtonElement>("button[data-comment-item]")!;
-  assert.match(navigation.textContent!, /Untitled page/);
   assert.match(navigation.getAttribute("aria-label") ?? "", /Untitled page/);
   assert.doesNotMatch(navigation.getAttribute("aria-label") ?? "", /\n/);
 });
@@ -641,15 +660,26 @@ test("page selector uses URLs, preserves duplicate titles, filters rows, and hid
   const base = { id: "00000000-0000-4000-8000-000000000200", body: "Feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Same title", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight" as const, selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } };
   const otherUrl = "https://learn.example/mod/page/view.php?id=3";
   overlay.setCommentList([base, { ...base, id: "00000000-0000-4000-8000-000000000201", page_url: otherUrl, body: "Other page" }]);
-  const select = shadow.querySelector<HTMLSelectElement>("select[data-comment-page]")!;
-  assert.equal(select.getAttribute("aria-label"), "Page");
-  assert.equal(select.value, "");
-  assert.deepEqual(Array.from(select.options, (option) => [option.value, option.textContent]), [["", "All pages"], [context.page_url, "Same title"], [otherUrl, "Same title"]]);
-  select.value = otherUrl; select.dispatchEvent(new window.Event("change", { bubbles: true }) as unknown as Event);
+  const listbox = shadow.querySelector<HTMLElement>('[role="listbox"]')!;
+  assert.equal(listbox.getAttribute("aria-label"), "Jump to course page");
+  assert.deepEqual(Array.from(listbox.querySelectorAll<HTMLElement>("[role=option]"), (option) => [option.dataset.commentPageOption, option.textContent]), [["", "All pages"], [context.page_url, "Same title"], [otherUrl, "Same title"]]);
+  choosePage(shadow, otherUrl);
   const visible = Array.from(shadow.querySelectorAll<HTMLElement>("[data-comment-item]")).filter((item) => !item.hidden);
   assert.equal(visible.length, 1); assert.equal(visible[0]!.textContent!.includes("Same title"), false); assert.match(visible[0]!.textContent!, /Other page/);
   shadow.querySelector<HTMLButtonElement>('[data-comment-scope="page"]')!.click();
-  assert.equal(select.hidden, true);
+  assert.equal(shadow.querySelector<HTMLElement>(".comment-page-field")!.hidden, true);
+});
+
+test("Jump to closes when the reviewer clicks elsewhere in the review panel", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  overlay.setCommentList([{ id: "00000000-0000-4000-8000-000000000202", body: "Feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Current page", parent_activity_url: null, embedded_locator: null, anchor_type: "visual_pin", selected_quote: null, prefix: null, suffix: null, css_selector: "body", dom_selector: null, relative_x: 0.5, relative_y: 0.5, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } }]);
+  const jump = shadow.querySelector<HTMLButtonElement>("[data-comment-jump]")!;
+  jump.click();
+  assert.equal(jump.getAttribute("aria-expanded"), "true");
+  shadow.querySelector<HTMLElement>(".panel-title")!.dispatchEvent(new window.MouseEvent("pointerdown", { bubbles: true, composed: true }) as unknown as Event);
+  assert.equal(jump.getAttribute("aria-expanded"), "false");
+  assert.equal(shadow.querySelector<HTMLElement>("[role=listbox]")!.hidden, true);
 });
 
 test("comment list filters persist across refreshes and missing selected pages reset to all pages", () => {
@@ -660,12 +690,12 @@ test("comment list filters persist across refreshes and missing selected pages r
   const comments = [base, { ...base, id: "00000000-0000-4000-8000-000000000301", page_url: otherUrl, page_title: "Other" }];
   overlay.setCommentList(comments);
   shadow.querySelector<HTMLButtonElement>('[data-comment-filter="resolved"]')!.click();
-  const select = shadow.querySelector<HTMLSelectElement>("select[data-comment-page]")!; select.value = otherUrl; select.dispatchEvent(new window.Event("change", { bubbles: true }) as unknown as Event);
+  choosePage(shadow, otherUrl);
   overlay.setCommentList(comments);
   assert.equal(shadow.querySelector<HTMLButtonElement>('[data-comment-filter="resolved"]')!.getAttribute("aria-pressed"), "true");
-  assert.equal(shadow.querySelector<HTMLSelectElement>("select[data-comment-page]")!.value, otherUrl);
+  assert.equal(shadow.querySelector<HTMLElement>(`[data-comment-page-option="${otherUrl}"]`)!.getAttribute("aria-selected"), "true");
   overlay.setCommentList([base]);
-  assert.equal(shadow.querySelector<HTMLSelectElement>("select[data-comment-page]")!.value, "");
+  assert.equal(shadow.querySelector<HTMLElement>('[data-comment-page-option=""]')!.getAttribute("aria-selected"), "true");
 });
 
 test("course, selected-page, status, and empty filters compose without renumbering rows", () => {
@@ -676,7 +706,7 @@ test("course, selected-page, status, and empty filters compose without renumberi
   overlay.setCommentList([base, { ...base, id: "00000000-0000-4000-8000-000000000501", body: "Other resolved", status: "resolved", page_url: otherUrl, page_title: "Week 5" }, { ...base, id: "00000000-0000-4000-8000-000000000502", body: "Other open", page_url: otherUrl, page_title: "Week 5" }]);
   const visible = () => Array.from(shadow.querySelectorAll<HTMLButtonElement>("[data-comment-item]"), (item) => item.hidden ? "" : item.textContent!).filter(Boolean);
   assert.deepEqual(visible().map((text) => text.match(/^#\d+/)?.[0]), ["#1", "#3"]);
-  const select = shadow.querySelector<HTMLSelectElement>("select[data-comment-page]")!; select.value = otherUrl; select.dispatchEvent(new window.Event("change", { bubbles: true }) as unknown as Event);
+  choosePage(shadow, otherUrl);
   assert.deepEqual(visible().map((text) => text.match(/^#\d+/)?.[0]), ["#3"]); assert.doesNotMatch(visible()[0]!, /Week 5/);
   shadow.querySelector<HTMLButtonElement>('[data-comment-filter="resolved"]')!.click();
   assert.deepEqual(visible().map((text) => text.match(/^#\d+/)?.[0]), ["#2"]); assert.doesNotMatch(visible()[0]!, /Week 5/);

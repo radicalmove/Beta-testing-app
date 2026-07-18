@@ -221,3 +221,28 @@ test("consume navigation requires an exact envelope and removes expired top-page
   assert.deepEqual(await handleCommentNavigationMessage({ type: "CONSUME_COMMENT_NAVIGATION" }, trusted, dependencies), {});
   assert.equal((await storage.get("commentNavigation:7"))["commentNavigation:7"], undefined);
 });
+
+test("raw SCORM and metadata pair errors never become top-level destinations", async () => {
+  const storage = new NavigationStorage(); let parentNavigations = 0;
+  const rawUrl = "https://my.uconline.ac.nz/pluginfile.php/165226/mod_scorm/content/27/scormcontent/index.html";
+  const base: PageComment = { id: id(21), body: "Feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: rawUrl, page_title: "Embedded", parent_activity_url: null, embedded_locator: null, anchor_type: "visual_pin", selected_quote: null, prefix: null, suffix: null, css_selector: "#card", dom_selector: null, relative_x: .2, relative_y: .7, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } };
+  let listed = base;
+  const navigation = new EmbeddedCommentNavigation(storage, { current: () => ({ topUrl: context.parent_activity_url }), navigateParent: async () => { parentNavigations += 1; }, applyLocator: async () => undefined, projectionContains: () => false, takeToContext: async () => undefined });
+  const dependencies = { extensionId: "extension", authorizeMoodle: async () => true, courseId: () => id(3), listCourseComments: async () => [listed], storage, navigation };
+  const trusted = { id: "extension", tab: { id: 7 }, frameId: 0, url: context.parent_activity_url };
+  const message = { type: "PREPARE_COMMENT_NAVIGATION", comment_id: base.id, page_url: rawUrl };
+  await assert.rejects(() => handleCommentNavigationMessage(message, trusted, dependencies), /Moodle activity location is missing/);
+  listed = { ...base, page_url: "https://my.uconline.ac.nz/mod/page/view.php?id=1", parent_activity_url: context.parent_activity_url };
+  await assert.rejects(() => handleCommentNavigationMessage({ ...message, page_url: listed.page_url }, trusted, dependencies), /metadata/);
+  listed = { ...base, page_url: "https://my.uconline.ac.nz/mod/page/view.php?id=1", embedded_locator: "#/lesson" };
+  await assert.rejects(() => handleCommentNavigationMessage({ ...message, page_url: listed.page_url }, trusted, dependencies), /metadata/);
+  assert.equal(parentNavigations, 0); assert.equal((await storage.get("commentNavigation:7"))["commentNavigation:7"], undefined);
+});
+
+test("embedded parent navigation requires the exact Moodle SCORM player path", async () => {
+  const storage = new NavigationStorage();
+  const base: PageComment = { id: id(21), body: "Feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: event.page_url, page_title: "Embedded", parent_activity_url: "https://my.uconline.ac.nz/mod/page/view.php?id=9", embedded_locator: "#/lesson", anchor_type: "visual_pin", selected_quote: null, prefix: null, suffix: null, css_selector: "#card", dom_selector: null, relative_x: .2, relative_y: .7, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } };
+  const navigation = new EmbeddedCommentNavigation(storage, { current: () => ({ topUrl: context.parent_activity_url }), navigateParent: async () => undefined, applyLocator: async () => undefined, projectionContains: () => false, takeToContext: async () => undefined });
+  const dependencies = { extensionId: "extension", authorizeMoodle: async () => true, courseId: () => id(3), listCourseComments: async () => [base], storage, navigation };
+  await assert.rejects(() => handleCommentNavigationMessage({ type: "PREPARE_COMMENT_NAVIGATION", comment_id: base.id, page_url: base.page_url }, { id: "extension", tab: { id: 7 }, frameId: 0, url: context.parent_activity_url }, dependencies), /Invalid embedded parent/);
+});

@@ -379,7 +379,7 @@ for (const mutation of [
   { action: "delete", message: "DELETE_COMMENT_THREAD" },
 ] as const) test(`a saved ${mutation.action} change preserves comments and reports a later refresh failure`, async () => {
   const window = new Window({ url: "https://moodle.example.invalid/mod/page/view.php?id=1" });
-  window.document.body.innerHTML = "<h1>Page one</h1><p>An important phrase here</p>"; (window.document as unknown as Document).defaultView!.confirm = () => true;
+  window.document.body.innerHTML = "<h1>Page one</h1><p>An important phrase here</p>"; let delayedRefresh: (() => void) | undefined; const nativeTimeout = window.setTimeout.bind(window); window.setTimeout = ((handler: TimerHandler, delay?: number, ...args: any[]) => { if (delay === 3000) { delayedRefresh = handler as () => void; return 99; } return nativeTimeout(handler as Function, delay, ...args); }) as typeof window.setTimeout;
   let listCount = 0; const messages: any[] = [];
   const comment = { id: "00000000-0000-4000-8000-000000000011", body: "Stored feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: window.location.href, page_title: "Page one", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight", selected_quote: "important phrase", prefix: "An ", suffix: " here", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: true, can_share_with_sme: false, can_delete: true } };
   const runtime = { sendMessage: (message: any, callback: (response: any) => void) => {
@@ -391,7 +391,7 @@ for (const mutation of [
   const cleanup = startCourseReview(window as unknown as globalThis.Window & typeof globalThis, window.document as unknown as Document, runtime);
   await new Promise((resolve) => setTimeout(resolve, 0)); const shadow = window.document.querySelector("#moodle-course-review-overlay")!.shadowRoot! as unknown as ShadowRoot;
   assert.ok(window.document.querySelector("[data-moodle-review-stored-highlight]"));
-  shadow.querySelector<HTMLElement>('[data-action="panel"]')!.click(); shadow.querySelector<HTMLButtonElement>(`[data-comment-action="${mutation.action}"]`)!.click(); await new Promise((resolve) => setTimeout(resolve, 0));
+  shadow.querySelector<HTMLElement>('[data-action="panel"]')!.click(); shadow.querySelector<HTMLButtonElement>(`[data-comment-action="${mutation.action}"]`)!.click(); shadow.querySelector<HTMLButtonElement>("[data-confirm-action]")!.click(); await new Promise((resolve) => setTimeout(resolve, 0)); if (mutation.action === "status") { delayedRefresh?.(); await new Promise((resolve) => setTimeout(resolve, 0)); }
   assert.equal(messages.some((message) => message.type === mutation.message), true);
   assert.ok(window.document.querySelector("[data-moodle-review-stored-highlight]"));
   const row = shadow.querySelector<HTMLElement>("[role='listitem']")!; assert.equal(row.querySelector<HTMLElement>('[role="status"]')?.textContent, "Change saved, but comments could not be refreshed. Reload the page.");
@@ -400,7 +400,7 @@ for (const mutation of [
 });
 
 test("a stale failed mutation refresh yields to a newer successful comment projection", async () => {
-  const window = new Window({ url: "https://moodle.example.invalid/mod/page/view.php?id=1" }); window.document.body.innerHTML = "<h1>Page one</h1><p>An important phrase here</p>";
+  const window = new Window({ url: "https://moodle.example.invalid/mod/page/view.php?id=1" }); window.document.body.innerHTML = "<h1>Page one</h1><p>An important phrase here</p>"; let delayedRefresh: (() => void) | undefined; const nativeTimeout = window.setTimeout.bind(window); window.setTimeout = ((handler: TimerHandler, delay?: number, ...args: any[]) => { if (delay === 3000) { delayedRefresh = handler as () => void; return 99; } return nativeTimeout(handler as Function, delay, ...args); }) as typeof window.setTimeout;
   let runtimeListener: ((message: any, sender?: any, sendResponse?: any) => boolean | void) | undefined; let mutationSaved = false; let rejectListA: ((response: any) => void) | undefined;
   const base = { id: "00000000-0000-4000-8000-000000000021", body: "Original", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: window.location.href, page_title: "Page one", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight", selected_quote: "important phrase", prefix: "An ", suffix: " here", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: true, can_share_with_sme: false, can_delete: false } };
   const newer = { ...base, body: "Newer projection" };
@@ -411,7 +411,7 @@ test("a stale failed mutation refresh yields to a newer successful comment proje
     else callback({ ok: true, data: {} });
   } };
   const cleanup = startCourseReview(window as unknown as globalThis.Window & typeof globalThis, window.document as unknown as Document, runtime); await new Promise((resolve) => setTimeout(resolve, 0));
-  const shadow = window.document.querySelector("#moodle-course-review-overlay")!.shadowRoot! as unknown as ShadowRoot; shadow.querySelector<HTMLElement>('[data-action="panel"]')!.click(); shadow.querySelector<HTMLButtonElement>('[data-comment-action="status"]')!.click(); await new Promise((resolve) => setTimeout(resolve, 0)); assert.ok(rejectListA);
+  const shadow = window.document.querySelector("#moodle-course-review-overlay")!.shadowRoot! as unknown as ShadowRoot; shadow.querySelector<HTMLElement>('[data-action="panel"]')!.click(); shadow.querySelector<HTMLButtonElement>('[data-comment-action="status"]')!.click(); shadow.querySelector<HTMLButtonElement>("[data-confirm-action]")!.click(); await new Promise((resolve) => setTimeout(resolve, 0)); delayedRefresh?.(); await new Promise((resolve) => setTimeout(resolve, 0)); assert.ok(rejectListA);
   runtimeListener!({ type: "SCORM_WORKER_EVENT", event: { type: "SCORM_COMMENTS_CHANGED" } }); await new Promise((resolve) => setTimeout(resolve, 0));
   assert.match(shadow.querySelector<HTMLButtonElement>("[data-comment-item]")!.textContent!, /Newer projection/);
   rejectListA!({ ok: false, error: "Obsolete list failure" }); await new Promise((resolve) => setTimeout(resolve, 0));
@@ -437,16 +437,14 @@ test("an ordinary comment refresh preserves the selected course page until autho
   await new Promise((resolve) => setTimeout(resolve, 0));
   const shadow = window.document.querySelector("#moodle-course-review-overlay")!.shadowRoot! as unknown as ShadowRoot;
   shadow.querySelector<HTMLElement>('[data-action="panel"]')!.click();
-  const pageSelect = shadow.querySelector<HTMLSelectElement>('[data-comment-page]')!;
-  pageSelect.value = secondPage.page_url;
-  pageSelect.dispatchEvent(new window.Event("change") as unknown as Event);
+  shadow.querySelector<HTMLButtonElement>(`[data-comment-page-option="${secondPage.page_url}"]`)!.click();
   runtimeListener!({ type: "SCORM_WORKER_EVENT", event: { type: "SCORM_COMMENTS_CHANGED" } });
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(shadow.querySelector<HTMLSelectElement>('[data-comment-page]')?.value, secondPage.page_url);
+  assert.equal(shadow.querySelector<HTMLElement>(`[data-comment-page-option="${secondPage.page_url}"]`)?.getAttribute("aria-selected"), "true");
   assert.match(shadow.querySelector<HTMLElement>(".comment-results")!.textContent!, /Second page/);
   pendingLists.shift()!({ ok: true, data: [firstPage, secondPage] });
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(shadow.querySelector<HTMLSelectElement>('[data-comment-page]')!.value, secondPage.page_url);
+  assert.equal(shadow.querySelector<HTMLElement>(`[data-comment-page-option="${secondPage.page_url}"]`)!.getAttribute("aria-selected"), "true");
   cleanup();
 });
 
