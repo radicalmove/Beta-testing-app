@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Moodle Course Review",
+  "version": "0.0.0",
+  "description": "Private course review tools for configured Moodle sites.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4Un68oQyXoqvVudBuIXKFaUgPz0LoJBuGzn+vLgy3eShy+LDcZQJLouFJF2cZiPq0ygrB9+84IiZAnMoKnYyEQv7+drzZZwwPRFsBYZ6KJXlC3/+YSQtcO7gexivwPVqMBWKnAEj1Qa4lWnjL1dccCeYkslAPr4comwguyfM3jxZMpokqVfElkTlaObxYKmOgs3K2ncpKTSQ3Ej+Xjmdi7np6f0SUXgWwElYcit4GOGDXmc05naCz1WPZ9iZsj6w1eWf7LuodmLh1lPkHDeajsrI+SIQ3m2krfGIu8kUzpV/cx0vk3/z+ozf2WbiD5A691Bs1lp/6OxMUu3L0HFX4QIDAQAB",
+  "permissions": ["identity", "storage", "scripting", "webNavigation"],
+  "host_permissions": ["https://moodle.example.invalid/*", "https://review.example.invalid/*"],
+  "optional_host_permissions": ["https://rise.example.invalid/*", "https://scorm.example.invalid/*"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [{
+    "matches": ["https://moodle.example.invalid/*"],
+    "js": ["content.js"],
+    "all_frames": true,
+    "match_about_blank": true,
+    "match_origin_as_fallback": true,
+    "run_at": "document_idle"
+  }],
+  "content_security_policy": { "extension_pages": "script-src 'self'; object-src 'none'" }
+}

@@ -1,0 +1,4 @@
+# INTENTIONALLY EMPTY: representative CRJU150 evidence records only the same-origin
+# https://my.uconline.ac.nz/mod/scorm/player.php route and rendered SCORM content.
+# The supplied screenshots and repository fixtures contain no verified cross-origin iframe src.
+# Add an exact HTTPS match pattern only after its iframe src is observed and reviewed.
