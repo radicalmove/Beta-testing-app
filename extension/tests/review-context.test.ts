@@ -120,3 +120,13 @@ test("trusted course binding survives a background worker restart", () => {
   assert.equal(afterRestart.restoreTab(4, "extension", stored!), true);
   assert.deepEqual(afterRestart.obtain(frame), { course_id: context.id, course_title: context.title, parent_activity_url: context.parent_activity_url });
 });
+
+test("trusted top frame can replace its parent activity with a complete same-origin launch URL", () => {
+  const cache = new ReviewContextCache(); cache.register(top, context);
+  const complete = "https://learn.example/mod/scorm/player.php?mode=normal&scoid=5&cm=22&currentorg=rise";
+  assert.equal(cache.updateParentActivity(top, context.id, complete), true);
+  assert.equal(cache.exportTab(4)?.parent_activity_url, complete);
+  assert.equal(cache.updateParentActivity({ ...top, frameId: 2 }, context.id, complete), false);
+  assert.equal(cache.updateParentActivity(top, "00000000-0000-4000-8000-000000000099", complete), false);
+  assert.equal(cache.updateParentActivity(top, context.id, "https://evil.example/mod/scorm/player.php?mode=normal&scoid=5&cm=22&currentorg=rise"), false);
+});

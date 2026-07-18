@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Window } from "happy-dom";
 
-import { packageRootFromScormUrl, resolveScormLaunchUrl, ScormLaunchCache } from "../src/scorm-launch.ts";
+import { packageRootFromScormUrl, resolveScormLaunchUrl, ScormLaunchCache, validateScormLaunchRegistration } from "../src/scorm-launch.ts";
 
 const documentFor = (body: string) => {
   const window = new Window({ url: "https://my.uconline.ac.nz/mod/scorm/view.php?id=146308" });
@@ -73,4 +73,10 @@ test("cache expires records, purges malformed data, and evicts oldest records ab
   assert.equal(await cache.get({ courseId, configuredOrigin: "https://my.uconline.ac.nz", packageUrl: "https://my.uconline.ac.nz/pluginfile.php/1/mod_scorm/content/3/scormcontent/index.html", cmid: 3 }), undefined);
   storage.values.moodleReviewScormLaunches = [{ bad: true }];
   assert.equal(await cache.get({ courseId, configuredOrigin: "https://my.uconline.ac.nz", packageUrl, cmid: 146308 }), undefined);
+});
+
+test("registration boundary accepts only an exact complete player record", () => {
+  assert.deepEqual(validateScormLaunchRegistration({ type: "REGISTER_SCORM_LAUNCH", course_id: courseId, cmid: 146308, player_url: playerUrl }), { type: "REGISTER_SCORM_LAUNCH", course_id: courseId, cmid: 146308, player_url: playerUrl });
+  assert.throws(() => validateScormLaunchRegistration({ type: "REGISTER_SCORM_LAUNCH", course_id: courseId, cmid: 146308, player_url: "https://my.uconline.ac.nz/mod/scorm/player.php" }), /registration/);
+  assert.throws(() => validateScormLaunchRegistration({ type: "REGISTER_SCORM_LAUNCH", course_id: courseId, cmid: 146308, player_url: playerUrl, extra: true }), /registration/);
 });

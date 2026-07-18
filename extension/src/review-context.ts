@@ -85,6 +85,18 @@ export class ReviewContextCache {
 
   courseId(sender: ReviewSender): string | undefined { return this.authorizedEntry(sender, false, true)?.id; }
 
+  updateParentActivity(sender: ReviewSender, courseId: string, parentActivityUrl: string): boolean {
+    const entry = this.authorizedEntry(sender, false);
+    if (!entry || entry.id !== courseId) return false;
+    try {
+      const senderOrigin = new URL(sender.url ?? "").origin;
+      const courseOrigin = new URL(entry.course_url).origin;
+      const parent = new URL(parentActivityUrl);
+      if (senderOrigin !== courseOrigin || parent.origin !== courseOrigin || parent.protocol !== "https:" || parent.username || parent.password || parent.href !== parentActivityUrl) return false;
+    } catch { return false; }
+    entry.parent_activity_url = parentActivityUrl; entry.lastActivityAt = this.now(); return true;
+  }
+
   exportTab(tabId: number): StoredReviewContext | undefined {
     const entry = this.entries.get(tabId);
     if (!entry || this.now() - entry.lastActivityAt > this.ttlMs) return undefined;

@@ -61,6 +61,17 @@ function validPlayerUrl(value: string, origin: string, cmid: number): boolean {
   } catch { return false; }
 }
 
+export type ScormLaunchRegistration = { type: "REGISTER_SCORM_LAUNCH"; course_id: string; cmid: number; player_url: string };
+export function validateScormLaunchRegistration(value: unknown): ScormLaunchRegistration {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid SCORM launch registration");
+  const record = value as Record<string, unknown>;
+  if (Object.keys(record).sort().join() !== "cmid,course_id,player_url,type" || record.type !== "REGISTER_SCORM_LAUNCH" || typeof record.course_id !== "string" || !UUID.test(record.course_id)
+    || typeof record.cmid !== "number" || !Number.isSafeInteger(record.cmid) || record.cmid <= 0 || typeof record.player_url !== "string") throw new Error("Invalid SCORM launch registration");
+  let origin: string; try { origin = new URL(record.player_url).origin; } catch { throw new Error("Invalid SCORM launch registration"); }
+  if (!validPlayerUrl(record.player_url, origin, record.cmid)) throw new Error("Invalid SCORM launch registration");
+  return record as ScormLaunchRegistration;
+}
+
 function validRecord(value: unknown, now: number): value is LaunchRecord {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const record = value as Partial<LaunchRecord>;

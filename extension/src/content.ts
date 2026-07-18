@@ -5,6 +5,7 @@ declare const __BUILD_COMMIT__: string;
 declare const chrome: any;
 
 import { canonicalCourseUrlFromDocument, courseTitleFromDocument, detectCourseContext, explicitActivityIdFromDocument, explicitCourseIdFromDocument, type CourseContext } from "./course-context.ts";
+import { resolveScormLaunchUrl } from "./scorm-launch.ts";
 import { mountReviewOverlay, type AuthenticationOutcome, type BuildDiagnostics, type ConnectionStatus, type ReviewOverlay } from "./overlay/root.ts";
 import type { PageComment } from "./background-bridge.ts";
 import { measureFrameCapabilities } from "./frame-capabilities.ts";
@@ -266,6 +267,18 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
   targetDocument.addEventListener("visibilitychange", onVisibility);
   const sendScormCommand = (commandType: string, payload: unknown = {}) => send({ type: "SCORM_TOP_COMMAND", command_type: commandType, request_id: targetWindow.crypto.randomUUID(), payload });
   const scormRoute = /\/mod\/scorm\/player\.php$/.test(targetWindow.location.pathname);
+  const registerScormLaunch = async (resolvedCourseId: string) => {
+    if (!scormRoute) return;
+    const rawCmid = explicitActivityIdFromDocument(targetDocument);
+    if (!rawCmid || !/^[1-9]\d*$/.test(rawCmid)) return;
+    const cmid = Number(rawCmid); if (!Number.isSafeInteger(cmid)) return;
+    const origin = targetWindow.location.origin;
+    const response = await targetWindow.fetch(`${origin}/mod/scorm/view.php?id=${cmid}`, { credentials: "include", redirect: "error" });
+    if (!response.ok || new URL(response.url).origin !== origin) throw new Error("SCORM launch page unavailable");
+    const launchDocument = new targetWindow.DOMParser().parseFromString(await response.text(), "text/html");
+    const playerUrl = resolveScormLaunchUrl(launchDocument, origin, cmid);
+    await send({ type: "REGISTER_SCORM_LAUNCH", course_id: resolvedCourseId, cmid, player_url: playerUrl });
+  };
   const optionalFramePatterns = typeof __OPTIONAL_FRAME_PATTERNS__ !== "undefined" ? __OPTIONAL_FRAME_PATTERNS__ : [];
   let permissionOrigin = inaccessibleFrameOrigins(targetDocument).find((origin) => optionalFramePatterns.some((pattern) => matchPattern(`${origin}/`, pattern)));
   const loadPageComments = async (pageUrl: string, preserveOnError = false) => { const sequence = ++commentSequence; try { const comments = await send<PageComment[]>({ type: "LIST_COURSE_COMMENTS" }); if (sequence === commentSequence && context.page_url === pageUrl) { latestComments = comments; overlay.setCommentList(comments); overlay.setRendererComments(scormRoute ? [] : comments); if (scormRoute && embeddedPageUrl) void sendScormCommand("SCORM_SET_COMMENTS", { comments: comments.filter((comment) => comment.page_url === embeddedPageUrl) }).catch(() => undefined); const pending: { comment_id?: string } = await send<{ comment_id?: string }>({ type: "CONSUME_COMMENT_NAVIGATION" }).catch(() => ({})); if (pending.comment_id) overlay.takeToContext(pending.comment_id); } } catch (error) { const current = sequence === commentSequence && context.page_url === pageUrl; if (preserveOnError && current) throw error; } };
@@ -334,6 +347,7 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
       const resolved = response?.data as { id?: unknown } | undefined;
       courseId = response?.ok && typeof resolved?.id === "string" ? resolved.id : undefined;
       if (courseId) courseIds.set(requestedCourseUrl, courseId);
+      if (courseId) void registerScormLaunch(courseId).catch(() => undefined);
       const status: ConnectionStatus = response?.ok ? "connected" : response?.status === "signed-out" ? "signed-out" : response?.status === "pending" ? "pending" : "offline";
       overlay.update(context, status);
       if (courseId && status === "connected") sendRuntimeMessage(runtime, { type: "GET_CURRENT_VIEWER" }, (viewerResponse) => {

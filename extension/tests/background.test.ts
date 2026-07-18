@@ -4,6 +4,7 @@ import test from "node:test";
 import { EmbeddedAnchorCapabilities, issueEmbeddedAnchorFromWorker, type EmbeddedAnchorStorage } from "../src/embedded-anchor-capabilities.ts";
 import type { PageComment } from "../src/background-bridge.ts";
 import { EmbeddedCommentNavigation, handleCommentNavigationMessage, type EmbeddedNavigationStorage } from "../src/embedded-comment-navigation.ts";
+import { packageRootFromScormUrl, ScormLaunchCache } from "../src/scorm-launch.ts";
 
 class Storage implements EmbeddedAnchorStorage {
   data: Record<string, unknown> = {};
@@ -227,16 +228,22 @@ test("raw SCORM and metadata pair errors never become top-level destinations", a
   const rawUrl = "https://my.uconline.ac.nz/pluginfile.php/165226/mod_scorm/content/27/scormcontent/index.html";
   const base: PageComment = { id: id(21), body: "Feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: rawUrl, page_title: "Embedded", parent_activity_url: null, embedded_locator: null, anchor_type: "visual_pin", selected_quote: null, prefix: null, suffix: null, css_selector: "#card", dom_selector: null, relative_x: .2, relative_y: .7, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } };
   let listed = base;
-  const navigation = new EmbeddedCommentNavigation(storage, { current: () => ({ topUrl: context.parent_activity_url }), navigateParent: async () => { parentNavigations += 1; }, applyLocator: async () => undefined, projectionContains: () => false, takeToContext: async () => undefined });
+  const navigation = new EmbeddedCommentNavigation(storage, { current: () => ({ courseId: id(3), topUrl: context.parent_activity_url }), navigateParent: async () => { parentNavigations += 1; }, applyLocator: async () => undefined, projectionContains: () => false, takeToContext: async () => undefined });
   const dependencies = { extensionId: "extension", authorizeMoodle: async () => true, courseId: () => id(3), listCourseComments: async () => [listed], storage, navigation };
   const trusted = { id: "extension", tab: { id: 7 }, frameId: 0, url: context.parent_activity_url };
   const message = { type: "PREPARE_COMMENT_NAVIGATION", comment_id: base.id, page_url: rawUrl };
   await assert.rejects(() => handleCommentNavigationMessage(message, trusted, dependencies), /Moodle activity location is missing/);
+  const completePlayer = "https://my.uconline.ac.nz/mod/scorm/player.php?mode=normal&scoid=15621&cm=146308&currentorg=rise";
+  listed = { ...base, parent_activity_url: "https://my.uconline.ac.nz/mod/scorm/player.php", embedded_locator: "#/lesson" };
+  const recovered = { ...dependencies, recoverScormParent: async () => completePlayer };
+  assert.equal((await handleCommentNavigationMessage(message, trusted, recovered) as { state: string }).state, "parent-loading");
+  assert.equal(parentNavigations, 1);
+  navigation.cancel(7);
   listed = { ...base, page_url: "https://my.uconline.ac.nz/mod/page/view.php?id=1", parent_activity_url: context.parent_activity_url };
   await assert.rejects(() => handleCommentNavigationMessage({ ...message, page_url: listed.page_url }, trusted, dependencies), /metadata/);
   listed = { ...base, page_url: "https://my.uconline.ac.nz/mod/page/view.php?id=1", embedded_locator: "#/lesson" };
   await assert.rejects(() => handleCommentNavigationMessage({ ...message, page_url: listed.page_url }, trusted, dependencies), /metadata/);
-  assert.equal(parentNavigations, 0); assert.equal((await storage.get("commentNavigation:7"))["commentNavigation:7"], undefined);
+  assert.equal(parentNavigations, 1);
 });
 
 test("embedded parent navigation requires the exact Moodle SCORM player path", async () => {
@@ -245,4 +252,21 @@ test("embedded parent navigation requires the exact Moodle SCORM player path", a
   const navigation = new EmbeddedCommentNavigation(storage, { current: () => ({ topUrl: context.parent_activity_url }), navigateParent: async () => undefined, applyLocator: async () => undefined, projectionContains: () => false, takeToContext: async () => undefined });
   const dependencies = { extensionId: "extension", authorizeMoodle: async () => true, courseId: () => id(3), listCourseComments: async () => [base], storage, navigation };
   await assert.rejects(() => handleCommentNavigationMessage({ type: "PREPARE_COMMENT_NAVIGATION", comment_id: base.id, page_url: base.page_url }, { id: "extension", tab: { id: 7 }, frameId: 0, url: context.parent_activity_url }, dependencies), /Invalid embedded parent/);
+});
+
+test("SCORM launch recovery survives a background cache reconstruction and preserves navigation checks", async () => {
+  const storage = new NavigationStorage(); const rawUrl = "https://my.uconline.ac.nz/pluginfile.php/165226/mod_scorm/content/27/scormcontent/index.html#/lesson";
+  const complete = "https://my.uconline.ac.nz/mod/scorm/player.php?mode=normal&scoid=15621&cm=146308&currentorg=rise";
+  const beforeRestart = new ScormLaunchCache(storage, () => 1_000);
+  await beforeRestart.put({ courseId: id(3), configuredOrigin: "https://my.uconline.ac.nz", cmid: 146308, packageRoot: packageRootFromScormUrl(rawUrl), playerUrl: complete });
+  const afterRestart = new ScormLaunchCache(storage, () => 2_000);
+  const listed: PageComment = { id: id(21), body: "Feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: rawUrl, page_title: "Embedded", parent_activity_url: "https://my.uconline.ac.nz/mod/scorm/player.php", embedded_locator: "#/lesson", anchor_type: "visual_pin", selected_quote: null, prefix: null, suffix: null, css_selector: "#card", dom_selector: null, relative_x: .2, relative_y: .7, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } };
+  let destination = "";
+  const navigation = new EmbeddedCommentNavigation(storage, { current: () => ({ courseId: id(3), topUrl: listed.parent_activity_url! }), navigateParent: async (_tabId, url) => { destination = url; }, applyLocator: async () => undefined, projectionContains: () => false, takeToContext: async () => undefined });
+  const trusted = { id: "extension", tab: { id: 7 }, frameId: 0, url: "https://my.uconline.ac.nz/mod/scorm/player.php" };
+  const result = await handleCommentNavigationMessage({ type: "PREPARE_COMMENT_NAVIGATION", comment_id: listed.id, page_url: rawUrl }, trusted, {
+    extensionId: "extension", authorizeMoodle: async () => true, courseId: () => id(3), listCourseComments: async () => [listed], storage, navigation,
+    recoverScormParent: (_courseId, pageUrl) => afterRestart.get({ courseId: id(3), configuredOrigin: "https://my.uconline.ac.nz", packageUrl: pageUrl, cmid: 146308 }),
+  }) as { state: string };
+  assert.equal(result.state, "parent-loading"); assert.equal(destination, complete); navigation.cancel(7);
 });

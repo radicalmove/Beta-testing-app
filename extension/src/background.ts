@@ -9,6 +9,7 @@ import { ScreenshotCapabilities } from "./screenshot-capabilities.ts";
 import { PendingAccessStore, PendingApprovalManager } from "./pending-access.ts";
 import { FrameCoordinatorRuntime, workerReadyMatchesState, type WorkerReadyNotification } from "./frame-coordination-runtime.ts";
 import { validateScormMessage, type ScormCommand, type ScormEvent } from "./scorm-protocol.ts";
+import { packageRootFromScormUrl, ScormLaunchCache, validateScormLaunchRegistration } from "./scorm-launch.ts";
 
 declare const chrome: any;
 declare const __MOODLE_PATTERNS__: string[];
@@ -50,6 +51,13 @@ function publishWorkerReady(tabId: number): boolean {
 }
 const screenshotCapabilities = new ScreenshotCapabilities(chrome.storage.session);
 const embeddedAnchorCapabilities = new EmbeddedAnchorCapabilities(chrome.storage.session);
+const scormLaunchCache = new ScormLaunchCache(chrome.storage.session);
+const cacheScormLaunchForEvent = async (tabId: number, event: ScormEvent) => {
+  const context = reviewContexts.exportTab(tabId); if (!context) return;
+  let player: URL; try { player = new URL(context.parent_activity_url); } catch { return; }
+  const cmid = Number(player.searchParams.get("cm")); if (!Number.isSafeInteger(cmid) || cmid <= 0) return;
+  try { await scormLaunchCache.put({ courseId: context.id, configuredOrigin: new URL(context.course_url).origin, cmid, packageRoot: packageRootFromScormUrl(event.page_url), playerUrl: context.parent_activity_url }); } catch { /* non-package worker events are not cacheable */ }
+};
 const navigationCommand = async (tabId: number, type: "SCORM_APPLY_LOCATOR" | "SCORM_TAKE_TO_CONTEXT", payload: Record<string, string>): Promise<void> => {
   const owner = frameCoordination.currentOwner(tabId); const state = latestWorkerEvent.get(tabId); const context = reviewContexts.exportTab(tabId);
   if (!owner || !state || !context || state.worker_instance_id !== owner.workerInstanceId || state.generation !== owner.generation) throw new Error("SCORM worker is not ready");
@@ -313,6 +321,17 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
         return resolved;
       },
     });
+  } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "REGISTER_SCORM_LAUNCH") {
+    operation = (async () => {
+      const registration = validateScormLaunchRegistration(message);
+      if (sender.frameId !== 0 || typeof sender.tab?.id !== "number" || !await authorizeAuthenticateSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, hasPermission: async () => false })) throw new Error("Unauthorized SCORM launch registration");
+      const senderOrigin = new URL(sender.url!).origin; const player = new URL(registration.player_url);
+      if (player.origin !== senderOrigin || reviewContexts.courseId(sender) !== registration.course_id || !reviewContexts.updateParentActivity(sender, registration.course_id, registration.player_url)) throw new Error("SCORM launch registration context mismatch");
+      const stored = reviewContexts.exportTab(sender.tab.id); if (!stored) throw new Error("SCORM launch registration context mismatch");
+      await chrome.storage.session.set({ [`reviewContext:${sender.tab.id}`]: stored });
+      const workerEvent = latestWorkerEvent.get(sender.tab.id); if (workerEvent) await cacheScormLaunchForEvent(sender.tab.id, workerEvent);
+      return {};
+    })();
   } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "SCORM_TOP_COMMAND") {
     operation = (async () => {
       const record = message as Record<string, unknown>;
@@ -338,7 +357,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
         currentOwner: frameCoordination.currentOwner(sender.tab.id),
         capabilities: embeddedAnchorCapabilities,
       });
-      const event = validateScormMessage(message) as ScormEvent; rememberWorkerEvent(sender.tab.id, event.request_id); latestWorkerEvent.set(sender.tab.id, event);
+      const event = validateScormMessage(message) as ScormEvent; rememberWorkerEvent(sender.tab.id, event.request_id); latestWorkerEvent.set(sender.tab.id, event); await cacheScormLaunchForEvent(sender.tab.id, event);
       chrome.tabs.sendMessage(sender.tab.id, { type: "SCORM_WORKER_EVENT", event: message, capability }, { frameId: 0 }, () => void chrome.runtime.lastError);
       return { capability };
     })();
@@ -348,6 +367,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       const event = validateScormMessage(message) as ScormEvent; rememberWorkerEvent(sender.tab.id, event.request_id); const owner = frameCoordination.currentOwner(sender.tab.id); const courseId = reviewContexts.courseId(sender);
       if (!owner || owner.frameId !== sender.frameId || owner.workerInstanceId !== event.worker_instance_id || owner.generation !== event.generation || courseId !== event.course_id) throw new Error("Stale SCORM event");
       latestWorkerEvent.set(sender.tab.id, event);
+      await cacheScormLaunchForEvent(sender.tab.id, event);
       chrome.tabs.sendMessage(sender.tab.id, { type: "SCORM_WORKER_EVENT", event }, { frameId: 0 }, () => void chrome.runtime.lastError);
       if (event.type === "SCORM_PAGE_IDENTITY_CHANGED") resumeEmbeddedNavigation(sender.tab.id);
       return {};
@@ -406,6 +426,13 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       listCourseComments: async (courseId) => validatePageCommentsResponse(await listCourseComments(courseId)),
       storage: chrome.storage.session,
       navigation: embeddedNavigation,
+      recoverScormParent: async (courseId, pageUrl) => {
+        const context = typeof sender.tab?.id === "number" ? reviewContexts.exportTab(sender.tab.id) : undefined;
+        if (!context || context.id !== courseId) return undefined;
+        let cmid: number; try { cmid = Number(new URL(context.parent_activity_url).searchParams.get("cm")); } catch { return undefined; }
+        if (!Number.isSafeInteger(cmid) || cmid <= 0) return undefined;
+        return scormLaunchCache.get({ courseId, configuredOrigin: new URL(context.course_url).origin, packageUrl: pageUrl, cmid });
+      },
     });
   } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "GET_CURRENT_VIEWER") {
     operation = (async () => {
