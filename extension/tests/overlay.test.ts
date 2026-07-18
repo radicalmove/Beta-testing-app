@@ -505,6 +505,10 @@ test("course scope and status filters share one compact row", () => {
   assert.match(approvedControlStyles, /--review-status:#176b43/);
 });
 
+test("current page heading cannot shrink behind the comment filters", () => {
+  assert.match(commentListLayoutStyles, /\.panel-title\{[^}]*flex:0 0 auto/);
+});
+
 test("toolbar and semantic comment controls expose approved states", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
