@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Window } from "happy-dom";
 
-import { approvedControlStyles, commentListLayoutStyles, controlAlignmentStyles, createOverlayMarkup, mountReviewOverlay, OVERLAY_HOST_ID, overlayStyles, tealOverlayOverrides } from "../src/overlay/root.ts";
+import { approvedControlStyles, commentListLayoutStyles, controlAlignmentStyles, createOverlayMarkup, mountReviewOverlay, OVERLAY_HOST_ID, overlayStyles, semanticFilterHoverStyles, tealOverlayOverrides } from "../src/overlay/root.ts";
 
 const context = { course_url: "https://learn.example/course/view.php?id=1", page_url: "https://learn.example/mod/page/view.php?id=2", title: "Law", pageTitle: "Week 2", moodle_course_id: 1, identityConfidence: "confirmed" as const };
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -550,6 +550,12 @@ test("unselected comment controls keep their semantic hover colours", () => {
   assert.match(approvedControlStyles, /\.comment-filters \.comment-scope:hover\{background:var\(--review-scope\);color:#fff\}/);
   assert.match(approvedControlStyles, /\.comment-filters \.comment-status:hover\{background:var\(--review-status\);color:#fff\}/);
   assert.match(approvedControlStyles, /\.comment-page-field \.comment-jump:hover\{background:var\(--review-jump\);color:#fff\}/);
+});
+
+test("comment filter buttons override dark fallback hover states", () => {
+  assert.match(semanticFilterHoverStyles, /\.comment-filters \.comment-scope:hover\{background:var\(--review-scope\);border-color:var\(--review-scope\);color:#fff\}/);
+  assert.match(semanticFilterHoverStyles, /\.comment-filters \.comment-status:hover\{background:var\(--review-status\);border-color:var\(--review-status\);color:#fff\}/);
+  assert.match(semanticFilterHoverStyles, /\.comment-jump\[aria-expanded="true"\]\{background:var\(--review-jump\);border-color:var\(--review-jump\);color:#fff\}/);
 });
 
 test("comments button keeps its collapsed colours while the panel is open", () => {
