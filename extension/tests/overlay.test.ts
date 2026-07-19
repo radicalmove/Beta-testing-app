@@ -393,13 +393,16 @@ test("thread edit and reply controls toggle without duplicating composers", asyn
 test("thread popover remains positioned from its marker and markers have no white border", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   document.body.innerHTML = '<main><div id="target">Target</div></main>';
-  const overlay = mountReviewOverlay(document, context, "connected");
+  const overlay = mountReviewOverlay(document, context, "connected", { deleteThread: async () => {} });
   const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   const comment = { id: "00000000-0000-4000-8000-000000000011", body: "Pinned", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: context.pageTitle, parent_activity_url: null, embedded_locator: null, anchor_type: "visual_pin" as const, selected_quote: null, prefix: null, suffix: null, css_selector: "#target", dom_selector: null, relative_x: .5, relative_y: .5, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: true } };
   overlay.setPageComments([comment]);
   const marker = document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")!;
   assert.doesNotMatch(marker.style.border, /white/i);
   marker.click(); const popover = shadow.querySelector<HTMLElement>("[data-thread-popover]")!;
+  const deleteButton = popover.querySelector<HTMLElement>('[aria-label="Delete thread"]')!;
+  assert.equal(deleteButton.className, "thread-delete");
+  assert.match(Array.from(shadow.querySelectorAll("style")).map((style) => style.textContent).join("\n"), /\.thread-delete\{position:absolute;right:8px;top:8px[^}]*background:#d73b3d/);
   const before = popover.style.left; window.dispatchEvent(new window.Event("scroll"));
   assert.equal(popover.style.left, before); assert.equal(marker.getAttribute("aria-expanded"), "true");
   marker.click(); assert.equal(shadow.querySelector("[data-thread-popover]"), null);

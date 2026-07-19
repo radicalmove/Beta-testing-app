@@ -54,7 +54,7 @@ function createThreadRoot(document: Document): { root: ShadowRoot; dispose: () =
   host.setAttribute("data-moodle-review-ui", "true");
   host.style.cssText = "all:initial;position:fixed;inset:0;z-index:2147483646;pointer-events:none";
   const root = host.attachShadow({ mode: "open" });
-  const style = document.createElement("style"); style.textContent = rendererStyles; root.append(style);
+  const style = document.createElement("style"); style.dataset.commentRendererStyles = "true"; style.textContent = rendererStyles; root.append(style);
   document.documentElement.append(host);
   return { root, dispose: () => host.remove() };
 }
@@ -62,6 +62,9 @@ function createThreadRoot(document: Document): { root: ShadowRoot; dispose: () =
 export function createCommentRenderer(document: Document, pageUrl: string, options: CommentRendererOptions = {}): CommentRenderer {
   const ownedRoot = options.root ? undefined : createThreadRoot(document);
   const root = options.root ?? ownedRoot!.root;
+  if (options.root && !root.querySelector("style[data-comment-renderer-styles]")) {
+    const style = document.createElement("style"); style.dataset.commentRendererStyles = "true"; style.textContent = rendererStyles; root.append(style);
+  }
   let comments = new Map<string, PageComment>();
   let cleanups: Array<() => void> = [];
   let markers = new Map<string, HTMLElement>();
