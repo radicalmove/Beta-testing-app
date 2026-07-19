@@ -208,7 +208,7 @@ test("editing uploads the selected attachment after saving the text", async () =
   assert.match(calls[1] ?? "", /^upload:data:application\/pdf;base64,/);
 });
 
-test("edit composer presents separated semantic save and cancel buttons", () => {
+test("edit composer presents an icon save beside the editor and red cancel at bottom right", () => {
   const { document } = setup();
   const renderer = createCommentRenderer(document, pageUrl, { editThread: async () => {} });
   renderer.setComments([comment()]);
@@ -216,13 +216,16 @@ test("edit composer presents separated semantic save and cancel buttons", () => 
   const root = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!;
   root.querySelector<HTMLElement>('[aria-label="Edit original comment"]')!.click();
 
+  const fieldRow = root.querySelector<HTMLElement>("[data-edit-field-row]")!;
   const actions = root.querySelector<HTMLElement>("[data-edit-actions]")!;
-  assert.deepEqual(Array.from(actions.children).map((node) => node.textContent), ["Save", "Cancel"]);
-  assert.equal(actions.querySelector("[data-cancel-edit]")?.className, "edit-cancel");
-  assert.equal(actions.querySelector("[data-save-edit]")?.className, "edit-save");
-  assert.match(root.querySelector("style")!.textContent!, /\.edit-actions\{display:flex;justify-content:flex-end;gap:8px/);
-  assert.match(root.querySelector("style")!.textContent!, /\.edit-save\{border-color:#073f3e;background:#073f3e;color:#fff\}/);
-  assert.match(root.querySelector("style")!.textContent!, /\.edit-cancel\{border-color:#a84f12;background:#fff;color:#a84f12\}/);
+  assert.deepEqual(Array.from(fieldRow.children).map((node) => node.tagName), ["TEXTAREA", "BUTTON"]);
+  assert.equal(fieldRow.querySelector("[data-save-edit]")?.getAttribute("aria-label"), "Save edited comment");
+  assert.ok(fieldRow.querySelector("[data-save-edit] svg .save-body"), "save uses a floppy-disk silhouette");
+  assert.deepEqual(Array.from(actions.children).map((node) => node.textContent), ["Cancel"]);
+  assert.match(root.querySelector("style")!.textContent!, /\.edit-field-row\{display:grid;grid-template-columns:minmax\(0,1fr\) 44px;gap:8px/);
+  assert.match(root.querySelector("style")!.textContent!, /\.edit-save\{[^}]*border:2px solid #176b43[^}]*background:#176b43/);
+  assert.match(root.querySelector("style")!.textContent!, /\.edit-cancel\{[^}]*border:2px solid #d73b3d[^}]*background:#d73b3d[^}]*color:#fff/);
+  assert.match(root.querySelector("style")!.textContent!, /\.edit-actions\{display:flex;justify-content:flex-end/);
 });
 
 test("replying uploads the selected attachment after saving the reply", async () => {
