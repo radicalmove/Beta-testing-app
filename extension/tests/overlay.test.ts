@@ -753,6 +753,13 @@ test("Jump to closes when the reviewer clicks elsewhere in the review panel", ()
   assert.equal(shadow.querySelector<HTMLElement>("[role=listbox]")!.hidden, true);
 });
 
+test("Jump to opens a compact single-line list above the review panel", () => {
+  assert.match(semanticFilterHoverStyles, /\.comment-page-list\{top:auto;bottom:42px;width:min\(380px,calc\(100vw - 32px\)\)\}/);
+  assert.match(semanticFilterHoverStyles, /\.comment-page-option\{min-height:34px!important;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:500\}/);
+  assert.match(semanticFilterHoverStyles, /\.comment-page-option\[aria-selected="true"\]\{font-weight:650\}/);
+  assert.match(semanticFilterHoverStyles, /\.shell:has\(\.comment-jump\[aria-expanded="true"\]\),\.panel:has\(\.comment-jump\[aria-expanded="true"\]\)\{overflow:visible\}/);
+});
+
 test("comment list filters persist across refreshes and missing selected pages reset to all pages", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
