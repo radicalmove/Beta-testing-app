@@ -124,7 +124,7 @@ test("contextual thread controls use the established button styles", () => {
   assert.ok(root.querySelector('[aria-label="Delete thread"] svg'), "delete uses the same white bin artwork as the course list");
   assert.match(root.querySelector("style")!.textContent!, /\.thread-delete\{[^}]*background:#d73b3d/);
   assert.match(root.querySelector("style")!.textContent!, /\.thread-delete:hover\{border-color:#d73b3d;background:#fff\}/);
-  assert.match(root.querySelector("style")!.textContent!, /\.resolve-toggle\{position:absolute;right:50px;top:8px;width:34px;min-height:34px;height:34px;padding:2px;border:2px solid #111;border-radius:2px;background:#fff\}/);
+  assert.match(root.querySelector("style")!.textContent!, /\.resolve-toggle\{position:absolute;right:50px;top:8px;float:none;margin:0;width:34px;min-height:34px;height:34px;padding:2px;border:2px solid #111;border-radius:2px;background:#fff\}/);
   assert.match(document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")?.title ?? "", /Open comment/);
 });
 
