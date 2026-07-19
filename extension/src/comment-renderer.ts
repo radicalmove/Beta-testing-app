@@ -21,7 +21,7 @@ export type CommentRendererOptions = {
   onUnresolvedAnchors?: (anchors: UnresolvedAnchor[]) => void;
 };
 
-const rendererStyles = `:host{all:initial;font:16px/1.5 Poppins,Arial,sans-serif;color:#102f38}button,textarea,input{box-sizing:border-box;font:inherit}button{appearance:none;min-height:36px;border:2px solid #073f3e;border-radius:5px;background:#fff;color:#073f3e;font-weight:650;padding:7px 9px;cursor:pointer}.thread-action:hover,.thread-action[aria-pressed="true"]{background:#073f3e;color:#fff}.thread-delete{position:absolute;right:8px;top:8px;width:34px;min-height:34px;height:34px;padding:2px;border:2px solid #d73b3d;border-radius:5px;background:#d73b3d;color:#fff}.thread-delete svg{display:block;width:100%;height:100%}.thread-delete:hover{border-color:#b52d30;background:#b52d30}.resolve-toggle{float:right;margin-top:12px;border:2px solid #16833b;background:#fff;color:#11652e}.resolve-toggle:hover{background:#16833b;color:#fff}.resolve-toggle.resolved{background:#16833b;color:#fff}.resolve-toggle.resolved:hover{background:#fff;color:#11652e}.resolve-box{display:inline-grid;place-items:center;width:20px;height:20px;margin-right:7px;border:3px solid #111;background:#fff;color:#111;vertical-align:-4px}.attachment-field{display:block;margin:10px 0;font-size:13px;font-weight:650}.attachment-field input{display:block;width:100%;margin-top:4px;font-size:12px;font-weight:400}`;
+const rendererStyles = `:host{all:initial;font:16px/1.5 Poppins,Arial,sans-serif;color:#102f38}button,textarea,input{box-sizing:border-box;font:inherit}button{appearance:none;min-height:36px;border:2px solid #073f3e;border-radius:5px;background:#fff;color:#073f3e;font-weight:650;padding:7px 9px;cursor:pointer}.thread-action:hover,.thread-action[aria-pressed="true"]{background:#073f3e;color:#fff}.thread-delete{position:absolute;right:8px;top:8px;width:34px;min-height:34px;height:34px;padding:2px;border:2px solid #d73b3d;border-radius:5px;background:#d73b3d;color:#fff}.thread-delete svg,.resolve-toggle svg{display:block;width:100%;height:100%}.thread-delete:hover{border-color:#d73b3d;background:#fff}.thread-delete:hover .delete-body{fill:#d73b3d}.thread-delete:hover .delete-lines{stroke:#fff}.resolve-toggle{position:absolute;right:50px;top:8px;width:34px;min-height:34px;height:34px;padding:2px;border:2px solid #111;border-radius:2px;background:#fff}.resolve-toggle:hover{border-color:#111;background:#f4f4f4}.attachment-field{display:block;margin:10px 0;font-size:13px;font-weight:650}.attachment-field input{display:block;width:100%;margin-top:4px;font-size:12px;font-weight:400}`;
 
 const attachmentAccept = ".pdf,.doc,.docx,.png,.jpg,.jpeg,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg";
 const maxAttachmentBytes = 10 * 1024 * 1024;
@@ -44,7 +44,13 @@ function readAttachment(document: Document, file: File): Promise<string> {
 
 function deleteIcon(document: Document): SVGSVGElement {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true");
-  svg.innerHTML = '<path d="M4 6h16l-1.4 15H5.4L4 6Z" fill="white"/><path d="M8 3h8l1 2H7l1-2ZM3 5h18v2H3V5Z" fill="white"/><path d="M8.5 9v8M12 9v8M15.5 9v8" stroke="#d73b3d" stroke-width="1.8" stroke-linecap="round"/>';
+  svg.innerHTML = '<path class="delete-body" d="M4 6h16l-1.4 15H5.4L4 6Z" fill="white"/><path class="delete-body" d="M8 3h8l1 2H7l1-2ZM3 5h18v2H3V5Z" fill="white"/><path class="delete-lines" d="M8.5 9v8M12 9v8M15.5 9v8" stroke="#d73b3d" stroke-width="1.8" stroke-linecap="round"/>';
+  return svg;
+}
+
+function statusIcon(document: Document, resolved: boolean): SVGSVGElement {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("viewBox", "0 0 34 34"); svg.setAttribute("aria-hidden", "true");
+  if (resolved) { const path = document.createElementNS(svg.namespaceURI, "path"); path.setAttribute("d", "M5.5 18c3 1.5 5 3.5 7.2 6C17 17.5 21 11.5 28 6.8"); path.setAttribute("fill", "none"); path.setAttribute("stroke", "#176b43"); path.setAttribute("stroke-width", "3.5"); path.setAttribute("stroke-linecap", "round"); path.setAttribute("stroke-linejoin", "round"); svg.append(path); }
   return svg;
 }
 
@@ -169,8 +175,8 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
 
     if (comment.capabilities.can_change_status && options.changeStatus) {
       const target = comment.status === "resolved" ? "open" : "resolved";
-      const button = document.createElement("button"); button.type = "button"; button.className = `resolve-toggle${comment.status === "resolved" ? " resolved" : ""}`; button.style.cssText = "font-size:18px;min-height:48px;padding:8px 14px"; button.innerHTML = `<span class="resolve-box">${target === "resolved" ? "☐" : "☑"}</span> ${target === "resolved" ? "Resolve" : "Resolved"}`; button.setAttribute("aria-label", target === "resolved" ? "Resolve this comment" : "Reopen this resolved comment"); button.title = target === "resolved" ? "Resolve comment" : "Reopen comment";
-      button.addEventListener("click", async () => { button.disabled = true; try { await runMutation(() => options.changeStatus!(comment.id, target)); if (target === "resolved") { button.innerHTML = '<span class="resolve-box">☑</span> Resolved'; button.classList.add("resolved"); document.defaultView?.setTimeout(() => { if (activeThreadId === comment.id) closeThread(); else article.remove(); }, 3000); } else closeThread(); } catch (error) { button.disabled = false; showError(article, error, "Could not update status"); } });
+      const button = document.createElement("button"); button.type = "button"; button.className = `resolve-toggle${comment.status === "resolved" ? " resolved" : ""}`; button.append(statusIcon(document, comment.status === "resolved")); button.setAttribute("aria-label", target === "resolved" ? "Resolve this comment" : "Reopen this resolved comment"); button.title = target === "resolved" ? "Resolve comment" : "Reopen comment";
+      button.addEventListener("click", async () => { button.disabled = true; try { await runMutation(() => options.changeStatus!(comment.id, target)); if (target === "resolved") { button.replaceChildren(statusIcon(document, true)); button.classList.add("resolved"); document.defaultView?.setTimeout(() => { if (activeThreadId === comment.id) closeThread(); else article.remove(); }, 3000); } else closeThread(); } catch (error) { button.disabled = false; showError(article, error, "Could not update status"); } });
       article.append(button);
     }
 

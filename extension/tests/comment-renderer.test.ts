@@ -117,11 +117,14 @@ test("contextual thread controls use the established button styles", () => {
   assert.ok(root.querySelector('[aria-label="Edit original comment"]')?.classList.contains("thread-action"));
   assert.equal(root.querySelector<HTMLElement>('[aria-label="Edit original comment"]')?.title, "Edit comment");
   assert.ok(root.querySelector("[data-reply-toggle]")?.classList.contains("thread-action"));
-  assert.ok(root.querySelector('[aria-label="Resolve this comment"]')?.querySelector(".resolve-box"));
+  assert.equal(root.querySelector<HTMLElement>('[aria-label="Resolve this comment"]')?.textContent, "");
+  assert.ok(root.querySelector('[aria-label="Resolve this comment"] svg'));
   assert.ok(root.querySelector('[aria-label="Delete thread"]')?.classList.contains("thread-delete"));
   assert.equal(root.querySelector<HTMLElement>('[aria-label="Delete thread"]')?.title, "Delete comment thread");
   assert.ok(root.querySelector('[aria-label="Delete thread"] svg'), "delete uses the same white bin artwork as the course list");
   assert.match(root.querySelector("style")!.textContent!, /\.thread-delete\{[^}]*background:#d73b3d/);
+  assert.match(root.querySelector("style")!.textContent!, /\.thread-delete:hover\{border-color:#d73b3d;background:#fff\}/);
+  assert.match(root.querySelector("style")!.textContent!, /\.resolve-toggle\{position:absolute;right:50px;top:8px;width:34px;min-height:34px;height:34px;padding:2px;border:2px solid #111;border-radius:2px;background:#fff\}/);
   assert.match(document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")?.title ?? "", /Open comment/);
 });
 
@@ -304,7 +307,7 @@ test("resolved confirmation survives a callback projection refresh until its thr
 
   root.querySelector<HTMLElement>('[aria-label="Resolve this comment"]')!.click();
   await settle();
-  assert.equal(root.querySelector<HTMLElement>('[aria-label="Resolve this comment"]')?.textContent, "☑ Resolved");
+  assert.ok(root.querySelector<HTMLElement>('[aria-label="Resolve this comment"] svg path'), "resolved confirmation uses the green pen tick");
   assert.ok(root.querySelector("[data-thread-popover]"));
 
   delayed?.();

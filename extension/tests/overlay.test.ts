@@ -393,15 +393,17 @@ test("thread edit and reply controls toggle without duplicating composers", asyn
 test("thread popover remains positioned from its marker and markers have no white border", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   document.body.innerHTML = '<main><div id="target">Target</div></main>';
-  const overlay = mountReviewOverlay(document, context, "connected", { deleteThread: async () => {} });
+  const overlay = mountReviewOverlay(document, context, "connected", { changeStatus: async () => {}, deleteThread: async () => {} });
   const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
-  const comment = { id: "00000000-0000-4000-8000-000000000011", body: "Pinned", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: context.pageTitle, parent_activity_url: null, embedded_locator: null, anchor_type: "visual_pin" as const, selected_quote: null, prefix: null, suffix: null, css_selector: "#target", dom_selector: null, relative_x: .5, relative_y: .5, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: true } };
+  const comment = { id: "00000000-0000-4000-8000-000000000011", body: "Pinned", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: context.pageTitle, parent_activity_url: null, embedded_locator: null, anchor_type: "visual_pin" as const, selected_quote: null, prefix: null, suffix: null, css_selector: "#target", dom_selector: null, relative_x: .5, relative_y: .5, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: true, can_share_with_sme: false, can_delete: true } };
   overlay.setPageComments([comment]);
   const marker = document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")!;
   assert.doesNotMatch(marker.style.border, /white/i);
   marker.click(); const popover = shadow.querySelector<HTMLElement>("[data-thread-popover]")!;
   const deleteButton = popover.querySelector<HTMLElement>('[aria-label="Delete thread"]')!;
+  const resolveButton = popover.querySelector<HTMLElement>('[aria-label="Resolve this comment"]')!;
   assert.equal(deleteButton.className, "thread-delete");
+  assert.equal(resolveButton.className, "resolve-toggle");
   assert.match(Array.from(shadow.querySelectorAll("style")).map((style) => style.textContent).join("\n"), /\.thread-delete\{position:absolute;right:8px;top:8px;width:34px;min-height:34px;height:34px;padding:2px;border:2px solid #d73b3d;border-radius:5px;background:#d73b3d/);
   const before = popover.style.left; window.dispatchEvent(new window.Event("scroll"));
   assert.equal(popover.style.left, before); assert.equal(marker.getAttribute("aria-expanded"), "true");
@@ -465,7 +467,7 @@ test("resolving shows a large checked confirmation for three seconds", async () 
   const comment = { id: "00000000-0000-4000-8000-000000000051", body: "Resolve me", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: context.pageTitle, parent_activity_url: null, embedded_locator: null, anchor_type: "visual_pin" as const, selected_quote: null, prefix: null, suffix: null, css_selector: "#target", dom_selector: null, relative_x: .5, relative_y: .5, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: true, can_share_with_sme: false, can_delete: false } };
   overlay.setPageComments([comment]); document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")!.click();
   const resolve = shadow.querySelector<HTMLButtonElement>(".resolve-toggle")!; resolve.click(); await Promise.resolve(); await Promise.resolve();
-  assert.equal(resolve.textContent, "☑ Resolved"); assert.match(resolve.style.fontSize, /18px/); assert.equal(delay, 3000); assert.ok(shadow.querySelector("[data-thread-popover]"));
+  assert.equal(resolve.textContent, ""); assert.ok(resolve.querySelector("svg path")); assert.equal(delay, 3000); assert.ok(shadow.querySelector("[data-thread-popover]"));
   delayed?.(); assert.equal(shadow.querySelector("[data-thread-popover]"), null);
   overlay.destroy();
 });
@@ -544,6 +546,7 @@ test("marker and delete controls follow the approved button states", () => {
   assert.match(semanticFilterHoverStyles, /\.toolbar-actions \[data-action="add-comment"\]\[aria-pressed="true"\]\{background:var\(--review-red\);border-color:var\(--review-red\);color:#fff\}/);
   assert.match(semanticFilterHoverStyles, /\.toolbar-actions \[data-action="add-comment"\]\[aria-pressed="true"\]:hover\{background:#fff;border-color:var\(--review-red\);color:var\(--review-red\)\}/);
   assert.match(semanticFilterHoverStyles, /\.comment-row-action\.delete-action\{border-radius:5px\}/);
+  assert.match(semanticFilterHoverStyles, /\.comment-row-action\.delete-action:hover\{background:#fff;border-color:var\(--review-red\)\}/);
 });
 
 test("comment controls use their semantic colours for selected and unselected states", () => {
