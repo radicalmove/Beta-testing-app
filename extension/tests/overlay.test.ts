@@ -402,7 +402,7 @@ test("thread popover remains positioned from its marker and markers have no whit
   marker.click(); const popover = shadow.querySelector<HTMLElement>("[data-thread-popover]")!;
   const deleteButton = popover.querySelector<HTMLElement>('[aria-label="Delete thread"]')!;
   assert.equal(deleteButton.className, "thread-delete");
-  assert.match(Array.from(shadow.querySelectorAll("style")).map((style) => style.textContent).join("\n"), /\.thread-delete\{position:absolute;right:8px;top:8px[^}]*background:#d73b3d/);
+  assert.match(Array.from(shadow.querySelectorAll("style")).map((style) => style.textContent).join("\n"), /\.thread-delete\{position:absolute;right:8px;top:8px;width:34px;min-height:34px;height:34px;padding:2px;border:2px solid #d73b3d;border-radius:5px;background:#d73b3d/);
   const before = popover.style.left; window.dispatchEvent(new window.Event("scroll"));
   assert.equal(popover.style.left, before); assert.equal(marker.getAttribute("aria-expanded"), "true");
   marker.click(); assert.equal(shadow.querySelector("[data-thread-popover]"), null);
