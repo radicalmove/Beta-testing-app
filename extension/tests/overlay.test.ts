@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Window } from "happy-dom";
 
-import { approvedControlStyles, commentListLayoutStyles, controlAlignmentStyles, createOverlayMarkup, helpButtonStyles, mountReviewOverlay, OVERLAY_HOST_ID, overlayStyles, semanticFilterHoverStyles, tealOverlayOverrides } from "../src/overlay/root.ts";
+import { approvedControlStyles, commentListLayoutStyles, commentsButtonStyles, controlAlignmentStyles, createOverlayMarkup, helpButtonStyles, mountReviewOverlay, OVERLAY_HOST_ID, overlayStyles, semanticFilterHoverStyles, tealOverlayOverrides } from "../src/overlay/root.ts";
 
 const context = { course_url: "https://learn.example/course/view.php?id=1", page_url: "https://learn.example/mod/page/view.php?id=2", title: "Law", pageTitle: "Week 2", moodle_course_id: 1, identityConfidence: "confirmed" as const };
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -570,17 +570,17 @@ test("comment filter buttons override dark fallback hover states", () => {
   assert.match(semanticFilterHoverStyles, /\.comment-jump\[aria-expanded="true"\]\{background:var\(--review-jump\);border-color:var\(--review-jump\);color:#fff\}/);
 });
 
-test("comments button keeps its collapsed colours while the panel is open", () => {
+test("comments button changes from outlined to solid while the panel is open", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   const comments = shadow.querySelector<HTMLButtonElement>('[data-action="panel"]')!;
   const colours = () => { const style = window.getComputedStyle(comments as any); return [style.backgroundColor, style.color]; };
-  const collapsedColours = colours();
-  assert.deepEqual(collapsedColours, ["#fff", "#0b6261"]);
+  assert.deepEqual(colours(), ["#fff", "#0b6261"]);
   comments.click();
   assert.equal(comments.getAttribute("aria-expanded"), "true");
-  assert.deepEqual(colours(), collapsedColours);
-  assert.match(approvedControlStyles, /\[data-action="panel"\]\[aria-expanded="true"\]:hover\{background:var\(--review-teal-dark\);color:#fff;border-color:var\(--review-teal-dark\)\}/);
+  assert.deepEqual(colours(), ["#0b6261", "#fff"]);
+  assert.match(commentsButtonStyles, /\[data-action="panel"\]\[aria-expanded="true"\]\{background:var\(--review-teal-dark\);border-color:var\(--review-teal-dark\);color:#fff\}/);
+  assert.match(commentsButtonStyles, /\[data-action="panel"\]\[aria-expanded="true"\]:hover\{background:#fff;border-color:var\(--review-teal-dark\);color:var\(--review-teal-dark\)\}/);
   overlay.destroy();
 });
 
