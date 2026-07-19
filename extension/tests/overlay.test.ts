@@ -530,6 +530,13 @@ test("toolbar and semantic comment controls expose approved states", () => {
   overlay.destroy();
 });
 
+test("marker and delete controls follow the approved button states", () => {
+  assert.match(semanticFilterHoverStyles, /\.toolbar-actions \[data-action="add-comment"\]:hover\{background:var\(--review-dark-teal\);border-color:var\(--review-dark-teal\);color:#fff\}/);
+  assert.match(semanticFilterHoverStyles, /\.toolbar-actions \[data-action="add-comment"\]\[aria-pressed="true"\]\{background:var\(--review-red\);border-color:var\(--review-red\);color:#fff\}/);
+  assert.match(semanticFilterHoverStyles, /\.toolbar-actions \[data-action="add-comment"\]\[aria-pressed="true"\]:hover\{background:#fff;border-color:var\(--review-red\);color:var\(--review-red\)\}/);
+  assert.match(semanticFilterHoverStyles, /\.comment-row-action\.delete-action\{border-radius:5px\}/);
+});
+
 test("comment controls use their semantic colours for selected and unselected states", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
