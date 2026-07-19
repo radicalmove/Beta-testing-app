@@ -115,11 +115,14 @@ test("contextual thread controls use the established button styles", () => {
   const root = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!;
 
   assert.ok(root.querySelector('[aria-label="Edit original comment"]')?.classList.contains("thread-action"));
+  assert.equal(root.querySelector<HTMLElement>('[aria-label="Edit original comment"]')?.title, "Edit comment");
   assert.ok(root.querySelector("[data-reply-toggle]")?.classList.contains("thread-action"));
   assert.ok(root.querySelector('[aria-label="Resolve this comment"]')?.querySelector(".resolve-box"));
   assert.ok(root.querySelector('[aria-label="Delete thread"]')?.classList.contains("thread-delete"));
+  assert.equal(root.querySelector<HTMLElement>('[aria-label="Delete thread"]')?.title, "Delete comment thread");
   assert.ok(root.querySelector('[aria-label="Delete thread"] svg'), "delete uses the same white bin artwork as the course list");
   assert.match(root.querySelector("style")!.textContent!, /\.thread-delete\{[^}]*background:#d73b3d/);
+  assert.match(document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")?.title ?? "", /Open comment/);
 });
 
 test("editing uploads the selected attachment after saving the text", async () => {

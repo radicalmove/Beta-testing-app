@@ -119,7 +119,7 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
     article.append(contextLine, byline, body);
 
     if (comment.capabilities.can_edit && options.editThread) {
-      const edit = document.createElement("button"); edit.type = "button"; edit.className = "thread-action"; edit.textContent = "✎"; edit.setAttribute("aria-label", "Edit original comment"); edit.style.cssText = "width:44px;height:44px;padding:0;font-size:24px";
+      const edit = document.createElement("button"); edit.type = "button"; edit.className = "thread-action"; edit.textContent = "✎"; edit.setAttribute("aria-label", "Edit original comment"); edit.title = "Edit comment"; edit.style.cssText = "width:44px;height:44px;padding:0;font-size:24px";
       edit.addEventListener("click", () => {
         const existing = article.querySelector<HTMLElement>("[data-edit-composer]");
         if (existing) { existing.remove(); edit.setAttribute("aria-pressed", "false"); body.hidden = false; edit.focus(); return; }
@@ -166,13 +166,13 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
 
     if (comment.capabilities.can_change_status && options.changeStatus) {
       const target = comment.status === "resolved" ? "open" : "resolved";
-      const button = document.createElement("button"); button.type = "button"; button.className = `resolve-toggle${comment.status === "resolved" ? " resolved" : ""}`; button.style.cssText = "font-size:18px;min-height:48px;padding:8px 14px"; button.innerHTML = `<span class="resolve-box">${target === "resolved" ? "☐" : "☑"}</span> ${target === "resolved" ? "Resolve" : "Resolved"}`; button.setAttribute("aria-label", target === "resolved" ? "Resolve this comment" : "Reopen this resolved comment");
+      const button = document.createElement("button"); button.type = "button"; button.className = `resolve-toggle${comment.status === "resolved" ? " resolved" : ""}`; button.style.cssText = "font-size:18px;min-height:48px;padding:8px 14px"; button.innerHTML = `<span class="resolve-box">${target === "resolved" ? "☐" : "☑"}</span> ${target === "resolved" ? "Resolve" : "Resolved"}`; button.setAttribute("aria-label", target === "resolved" ? "Resolve this comment" : "Reopen this resolved comment"); button.title = target === "resolved" ? "Resolve comment" : "Reopen comment";
       button.addEventListener("click", async () => { button.disabled = true; try { await runMutation(() => options.changeStatus!(comment.id, target)); if (target === "resolved") { button.innerHTML = '<span class="resolve-box">☑</span> Resolved'; button.classList.add("resolved"); document.defaultView?.setTimeout(() => { if (activeThreadId === comment.id) closeThread(); else article.remove(); }, 3000); } else closeThread(); } catch (error) { button.disabled = false; showError(article, error, "Could not update status"); } });
       article.append(button);
     }
 
     if (comment.capabilities.can_delete && options.deleteThread) {
-      const remove = document.createElement("button"); remove.type = "button"; remove.className = "thread-delete"; remove.append(deleteIcon(document)); remove.setAttribute("aria-label", "Delete thread");
+      const remove = document.createElement("button"); remove.type = "button"; remove.className = "thread-delete"; remove.append(deleteIcon(document)); remove.setAttribute("aria-label", "Delete thread"); remove.title = "Delete comment thread";
       remove.addEventListener("click", async () => { if (document.defaultView?.confirm && !document.defaultView.confirm("Delete this entire thread, including all replies and screenshots?")) return; remove.disabled = true; try { await runMutation(() => options.deleteThread!(comment.id)); closeThread(); } catch (error) { remove.disabled = false; showError(article, error, "Could not delete thread"); } });
       article.append(remove);
     }
@@ -188,7 +188,7 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
   const clear = () => { closeThread(false); for (const cleanup of cleanups) cleanup(); cleanups = []; stopRepositioning(); markers.clear(); comments.clear(); };
 
   const renderMarker = (comment: PageComment, index: number, place: (marker: HTMLElement) => void) => {
-    const marker = document.createElement("button"); marker.type = "button"; marker.setAttribute("aria-label", `Open feedback: ${comment.body}`); marker.setAttribute("aria-expanded", "false"); marker.textContent = "💬"; marker.style.cssText = "position:fixed;z-index:900;width:38px;height:38px;border:2px solid #0b6261;border-radius:10px;background:#28c4c2;color:#082f2f;padding:4px;font:20px/1 sans-serif;box-shadow:0 3px 10px #0005";
+    const marker = document.createElement("button"); marker.type = "button"; marker.setAttribute("aria-label", `Open feedback: ${comment.body}`); marker.title = "Open comment"; marker.setAttribute("aria-expanded", "false"); marker.textContent = "💬"; marker.style.cssText = "position:fixed;z-index:900;width:38px;height:38px;border:2px solid #0b6261;border-radius:10px;background:#28c4c2;color:#082f2f;padding:4px;font:20px/1 sans-serif;box-shadow:0 3px 10px #0005";
     marker.addEventListener("click", () => openThread(comment, index, marker)); document.documentElement.append(marker); markers.set(comment.id, marker);
     const reposition = () => place(marker); repositioners.add(reposition); startRepositioning(); reposition();
     cleanups.push(() => { repositioners.delete(reposition); marker.remove(); });

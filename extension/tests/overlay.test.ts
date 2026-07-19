@@ -135,6 +135,7 @@ test("compact toolbar exposes one primary action and calm metadata", () => {
   assert.match(markup, />Add comment marker</);
   assert.match(markup, />Comments \(/); assert.match(markup, /data-comment-count>0/);
   assert.match(markup, /aria-label="Help and instructions"/);
+  assert.match(markup, /title="Help and instructions"/);
   assert.doesNotMatch(markup, />Highlight text</);
   assert.doesNotMatch(markup, />Add pin</);
   assert.doesNotMatch(markup, /<span class="label">Course:/);
