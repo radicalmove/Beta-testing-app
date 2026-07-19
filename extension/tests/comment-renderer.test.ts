@@ -220,10 +220,12 @@ test("edit composer presents an icon save beside the editor and red cancel at bo
   const actions = root.querySelector<HTMLElement>("[data-edit-actions]")!;
   assert.deepEqual(Array.from(fieldRow.children).map((node) => node.tagName), ["TEXTAREA", "BUTTON"]);
   assert.equal(fieldRow.querySelector("[data-save-edit]")?.getAttribute("aria-label"), "Save edited comment");
+  assert.equal(fieldRow.querySelector<HTMLElement>("[data-save-edit]")?.title, "Save edited comment");
   assert.ok(fieldRow.querySelector("[data-save-edit] svg .save-body"), "save uses a floppy-disk silhouette");
   assert.deepEqual(Array.from(actions.children).map((node) => node.textContent), ["Cancel"]);
-  assert.match(root.querySelector("style")!.textContent!, /\.edit-field-row\{display:grid;grid-template-columns:minmax\(0,1fr\) 44px;gap:8px/);
-  assert.match(root.querySelector("style")!.textContent!, /\.edit-save\{[^}]*border:2px solid #176b43[^}]*background:#176b43/);
+  assert.equal(actions.previousElementSibling?.getAttribute("data-thread-navigation"), "true", "cancel sits below the navigation row");
+  assert.match(root.querySelector("style")!.textContent!, /\.edit-field-row\{display:grid;grid-template-columns:minmax\(0,1fr\) 34px;gap:8px/);
+  assert.match(root.querySelector("style")!.textContent!, /\.edit-save\{width:34px;height:34px;min-height:34px[^}]*border:2px solid #176b43[^}]*background:#176b43/);
   assert.match(root.querySelector("style")!.textContent!, /\.edit-cancel\{[^}]*border:2px solid #d73b3d[^}]*background:#d73b3d[^}]*color:#fff/);
   assert.match(root.querySelector("style")!.textContent!, /\.edit-actions\{display:flex;justify-content:flex-end/);
 });
