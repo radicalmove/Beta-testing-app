@@ -404,7 +404,9 @@ test("thread popover remains positioned from its marker and markers have no whit
   const resolveButton = popover.querySelector<HTMLElement>('[aria-label="Resolve this comment"]')!;
   assert.equal(deleteButton.className, "thread-delete");
   assert.equal(resolveButton.className, "resolve-toggle");
+  assert.ok(resolveButton.querySelector(".status-hover-tick"));
   assert.match(Array.from(shadow.querySelectorAll("style")).map((style) => style.textContent).join("\n"), /\.thread-delete\{right:8px;border:2px solid #d73b3d;background:#d73b3d/);
+  assert.match(Array.from(shadow.querySelectorAll("style")).map((style) => style.textContent).join("\n"), /\.status-action:hover \.status-hover-tick\{opacity:\.28\}/);
   const before = popover.style.left; window.dispatchEvent(new window.Event("scroll"));
   assert.equal(popover.style.left, before); assert.equal(marker.getAttribute("aria-expanded"), "true");
   marker.click(); assert.equal(shadow.querySelector("[data-thread-popover]"), null);

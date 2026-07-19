@@ -120,12 +120,14 @@ test("contextual thread controls use the established button styles", () => {
   assert.ok(root.querySelector("[data-reply-toggle]")?.classList.contains("thread-reply"));
   assert.equal(root.querySelector<HTMLElement>('[aria-label="Resolve this comment"]')?.textContent, "");
   assert.ok(root.querySelector('[aria-label="Resolve this comment"] svg'));
+  assert.ok(root.querySelector('[aria-label="Resolve this comment"] .status-hover-tick'));
   assert.ok(root.querySelector('[aria-label="Delete thread"]')?.classList.contains("thread-delete"));
   assert.equal(root.querySelector<HTMLElement>('[aria-label="Delete thread"]')?.title, "Delete comment thread");
   assert.ok(root.querySelector('[aria-label="Delete thread"] svg'), "delete uses the same white bin artwork as the course list");
   assert.match(root.querySelector("style")!.textContent!, /\.thread-delete\{[^}]*background:#d73b3d/);
   assert.match(root.querySelector("style")!.textContent!, /\.thread-delete:hover\{border-color:#d73b3d;background:#fff\}/);
   assert.match(root.querySelector("style")!.textContent!, /\.resolve-toggle\{right:50px;margin:0;border:2px solid #111;border-radius:2px;background:#fff\}/);
+  assert.match(root.querySelector("style")!.textContent!, /\.resolve-toggle:hover \.status-hover-tick\{opacity:\.28\}/);
   assert.match(document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")?.title ?? "", /Open comment/);
 });
 
