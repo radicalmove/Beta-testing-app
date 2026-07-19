@@ -124,7 +124,7 @@ class DeploymentPackageTests(unittest.TestCase):
         self.assertIn("disposable", operations.lower())
         for token in ("CRJU150", "896", "9972", "9976", "118172", "146308", "Reviewer", "LD", "SME"):
             self.assertIn(token, pilot)
-        for token in ("0.4.51", "pilot-builds/moodle-review-extension", "chrome://extensions", "edge://extensions", "exactly one teal review toolbar", "Clear all", "revoke the permission"):
+        for token in ("0.4.52", "pilot-builds/moodle-review-extension", "chrome://extensions", "edge://extensions", "exactly one teal review toolbar", "Clear all", "revoke the permission"):
             self.assertIn(token, pilot)
         for route in (
             "https://my.uconline.ac.nz/course/view.php?id=896",
@@ -224,7 +224,7 @@ class DeploymentPackageTests(unittest.TestCase):
 
     def test_production_manifest_uses_only_real_pilot_hosts(self):
         manifest = json.loads((ROOT / "extension/dist/manifest.json").read_text())
-        self.assertEqual(manifest["version"], "0.4.51")
+        self.assertEqual(manifest["version"], "0.4.52")
         assert_production_manifest(manifest)
 
     def test_manifest_validator_rejects_placeholder_or_additional_hosts(self):

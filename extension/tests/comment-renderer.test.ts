@@ -208,6 +208,23 @@ test("editing uploads the selected attachment after saving the text", async () =
   assert.match(calls[1] ?? "", /^upload:data:application\/pdf;base64,/);
 });
 
+test("edit composer presents separated semantic save and cancel buttons", () => {
+  const { document } = setup();
+  const renderer = createCommentRenderer(document, pageUrl, { editThread: async () => {} });
+  renderer.setComments([comment()]);
+  document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")!.click();
+  const root = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!;
+  root.querySelector<HTMLElement>('[aria-label="Edit original comment"]')!.click();
+
+  const actions = root.querySelector<HTMLElement>("[data-edit-actions]")!;
+  assert.deepEqual(Array.from(actions.children).map((node) => node.textContent), ["Save", "Cancel"]);
+  assert.equal(actions.querySelector("[data-cancel-edit]")?.className, "edit-cancel");
+  assert.equal(actions.querySelector("[data-save-edit]")?.className, "edit-save");
+  assert.match(root.querySelector("style")!.textContent!, /\.edit-actions\{display:flex;justify-content:flex-end;gap:8px/);
+  assert.match(root.querySelector("style")!.textContent!, /\.edit-save\{border-color:#073f3e;background:#073f3e;color:#fff\}/);
+  assert.match(root.querySelector("style")!.textContent!, /\.edit-cancel\{border-color:#a84f12;background:#fff;color:#a84f12\}/);
+});
+
 test("replying uploads the selected attachment after saving the reply", async () => {
   const { window, document } = setup();
   const calls: string[] = [];
