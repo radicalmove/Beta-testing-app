@@ -224,11 +224,9 @@ test("edit composer presents an icon save beside the editor and red cancel at bo
   assert.equal(fieldRow.querySelector<HTMLElement>("[data-save-edit]")?.title, "Save edited comment");
   const icon = fieldRow.querySelector("[data-save-edit] svg")!;
   assert.equal(icon.getAttribute("viewBox"), "0 0 220 220");
-  const source = icon.querySelector("mask image")?.getAttribute("href") ?? "";
-  assert.match(source, /^data:image\/png;base64,/);
-  assert.ok(source.length > 13_000, "save icon embeds the supplied source silhouette");
-  assert.equal(icon.querySelector("mask image")?.getAttribute("x"), "-47");
-  assert.equal(icon.querySelector("mask image")?.getAttribute("y"), "-10");
+  const suppliedSilhouette = icon.querySelector("path")?.getAttribute("d") ?? "";
+  assert.ok(suppliedSilhouette.length > 1_900, "save icon embeds a self-contained vector trace of the supplied silhouette");
+  assert.equal(icon.querySelector("image, mask"), null, "save icon must not depend on Chrome rendering an image inside an SVG mask");
   assert.equal(fieldRow.nextElementSibling?.className, "attachment-field");
   assert.deepEqual(Array.from(actions.children).map((node) => node.textContent), ["Cancel"]);
   assert.equal(actions.previousElementSibling?.getAttribute("data-thread-navigation"), "true", "cancel sits below the navigation row");

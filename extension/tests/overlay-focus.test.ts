@@ -80,9 +80,9 @@ test("initial comment creation uses the shared composer controls", () => {
   assert.equal(save.getAttribute("aria-label"), "Save comment");
   assert.equal(save.title, "Save comment");
   assert.equal(save.querySelector("svg")?.getAttribute("viewBox"), "0 0 220 220");
-  const source = save.querySelector("mask image")?.getAttribute("href") ?? "";
-  assert.match(source, /^data:image\/png;base64,/);
-  assert.ok(source.length > 13_000);
+  const suppliedSilhouette = save.querySelector("svg path")?.getAttribute("d") ?? "";
+  assert.ok(suppliedSilhouette.length > 1_900);
+  assert.equal(save.querySelector("svg image, svg mask"), null);
   assert.equal(row.nextElementSibling?.classList.contains("field"), true);
   assert.equal(composer.lastElementChild, actions);
   assert.deepEqual(Array.from(actions.children).map((node) => node.textContent), ["Cancel"]);
