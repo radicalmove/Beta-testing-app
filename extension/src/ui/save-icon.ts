@@ -1,12 +1,12 @@
-export const APPROVED_SAVE_ICON_PATH = "M5 2h12l5 5v12a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3V5a3 3 0 0 1 3-3Zm2 1v7a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2V4.4L16.6 3H7Zm1 13v6h8v-6H8Zm3-13v5h4V3h-4Z";
+export const APPROVED_SAVE_ICON_PATH = "M48 10H208L246 48V215c0 18-13 31-31 31H48c-21 0-38-17-38-38V48c0-21 17-38 38-38ZM70 32h24v166c0 8-6 14-14 14H70V32Zm24 0h24v42h52V32h38v59c0 8-6 14-14 14h-86c-8 0-14-6-14-14V32Zm114 18h24v148c0 8-6 14-14 14h-10V50ZM94 151c0-8 6-14 14-14h86c8 0 14 6 14 14v61H94v-61Z";
 
 export function saveIconMarkup(): string {
-  return `<svg viewBox="0 0 24 24" aria-hidden="true"><path class="save-silhouette" d="${APPROVED_SAVE_ICON_PATH}" fill="currentColor" fill-rule="evenodd"/></svg>`;
+  return `<svg viewBox="0 0 256 256" aria-hidden="true"><path class="save-silhouette" d="${APPROVED_SAVE_ICON_PATH}" fill="currentColor" fill-rule="evenodd"/></svg>`;
 }
 
 export function createSaveIcon(document: Document): SVGSVGElement {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("viewBox", "0 0 256 256");
   svg.setAttribute("aria-hidden", "true");
   const path = document.createElementNS(svg.namespaceURI, "path");
   path.setAttribute("class", "save-silhouette");

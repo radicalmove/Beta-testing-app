@@ -223,15 +223,17 @@ test("edit composer presents an icon save beside the editor and red cancel at bo
   assert.equal(fieldRow.querySelector("[data-save-edit]")?.getAttribute("aria-label"), "Save edited comment");
   assert.equal(fieldRow.querySelector<HTMLElement>("[data-save-edit]")?.title, "Save edited comment");
   const icon = fieldRow.querySelector("[data-save-edit] svg")!;
-  assert.equal(icon.getAttribute("viewBox"), "0 0 24 24");
-  assert.equal(icon.querySelector("path")?.getAttribute("d"), "M5 2h12l5 5v12a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3V5a3 3 0 0 1 3-3Zm2 1v7a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2V4.4L16.6 3H7Zm1 13v6h8v-6H8Zm3-13v5h4V3h-4Z");
+  assert.equal(icon.getAttribute("viewBox"), "0 0 256 256");
+  assert.equal(icon.querySelector("path")?.getAttribute("d"), "M48 10H208L246 48V215c0 18-13 31-31 31H48c-21 0-38-17-38-38V48c0-21 17-38 38-38ZM70 32h24v166c0 8-6 14-14 14H70V32Zm24 0h24v42h52V32h38v59c0 8-6 14-14 14h-86c-8 0-14-6-14-14V32Zm114 18h24v148c0 8-6 14-14 14h-10V50ZM94 151c0-8 6-14 14-14h86c8 0 14 6 14 14v61H94v-61Z");
   assert.equal(icon.querySelector("path")?.getAttribute("fill-rule"), "evenodd");
   assert.equal(fieldRow.nextElementSibling?.className, "attachment-field");
   assert.deepEqual(Array.from(actions.children).map((node) => node.textContent), ["Cancel"]);
   assert.equal(actions.previousElementSibling?.getAttribute("data-thread-navigation"), "true", "cancel sits below the navigation row");
   assert.match(root.querySelector("style")!.textContent!, /\.comment-composer-field-row\{display:grid;grid-template-columns:minmax\(0,1fr\) 34px;gap:8px/);
+  assert.match(root.querySelector("style")!.textContent!, /\.comment-composer-field-row\{[^}]*margin-right:-6px/);
   assert.match(root.querySelector("style")!.textContent!, /\.comment-composer-save\{[^}]*width:34px;height:34px;min-height:34px[^}]*border:2px solid #176b43[^}]*background:#176b43/);
   assert.match(root.querySelector("style")!.textContent!, /\.comment-composer-cancel\{[^}]*border:2px solid #d73b3d[^}]*background:#d73b3d[^}]*color:#fff/);
+  assert.match(root.querySelector("style")!.textContent!, /\.comment-composer-cancel\{[^}]*width:calc\(\(100% - 16px\)\/3\);[^}]*height:34px/);
   assert.match(root.querySelector("style")!.textContent!, /\.comment-composer-actions\{display:flex;justify-content:flex-end/);
 });
 
