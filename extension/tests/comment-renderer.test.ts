@@ -104,6 +104,66 @@ test("contextual threads preserve edit, reply, delete, and status callbacks", as
   assert.deepEqual(calls, ["edit", "reply", "status", "delete"]);
 });
 
+test("contextual thread controls use the established button styles", () => {
+  const { document } = setup();
+  const renderer = createCommentRenderer(document, pageUrl, {
+    editThread: async () => {}, replyThread: async () => {},
+    deleteThread: async () => {}, changeStatus: async () => {},
+  });
+  renderer.setComments([comment()]);
+  document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")!.click();
+  const root = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!;
+
+  assert.ok(root.querySelector('[aria-label="Edit original comment"]')?.classList.contains("thread-action"));
+  assert.ok(root.querySelector("[data-reply-toggle]")?.classList.contains("thread-action"));
+  assert.ok(root.querySelector('[aria-label="Resolve this comment"]')?.querySelector(".resolve-box"));
+  assert.ok(root.querySelector('[aria-label="Delete thread"]')?.classList.contains("thread-delete"));
+  assert.ok(root.querySelector('[aria-label="Delete thread"] svg'), "delete uses the same white bin artwork as the course list");
+  assert.match(root.querySelector("style")!.textContent!, /\.thread-delete\{[^}]*background:#d73b3d/);
+});
+
+test("editing uploads the selected attachment after saving the text", async () => {
+  const { window, document } = setup();
+  const calls: string[] = [];
+  const renderer = createCommentRenderer(document, pageUrl, {
+    editThread: async () => { calls.push("edit"); },
+    uploadAttachment: async (_id, dataUrl) => { calls.push(`upload:${dataUrl}`); },
+  });
+  renderer.setComments([comment()]);
+  document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")!.click();
+  const root = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!;
+  root.querySelector<HTMLElement>('[aria-label="Edit original comment"]')!.click();
+  root.querySelector<HTMLTextAreaElement>("[data-edit-composer] textarea")!.value = "Updated";
+  const attachment = root.querySelector<HTMLInputElement>("[data-edit-composer] [data-attachment]")!;
+  Object.defineProperty(attachment, "files", { value: [new window.File(["notes"], "notes.pdf", { type: "application/pdf" })] });
+  root.querySelector<HTMLElement>("[data-edit-composer] [data-save-edit]")!.click();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  assert.equal(calls[0], "edit");
+  assert.match(calls[1] ?? "", /^upload:data:application\/pdf;base64,/);
+});
+
+test("replying uploads the selected attachment after saving the reply", async () => {
+  const { window, document } = setup();
+  const calls: string[] = [];
+  const renderer = createCommentRenderer(document, pageUrl, {
+    replyThread: async () => { calls.push("reply"); },
+    uploadAttachment: async (_id, dataUrl) => { calls.push(`upload:${dataUrl}`); },
+  });
+  renderer.setComments([comment()]);
+  document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")!.click();
+  const root = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!;
+  root.querySelector<HTMLElement>("[data-reply-toggle]")!.click();
+  root.querySelector<HTMLTextAreaElement>("[data-reply-composer] textarea")!.value = "Reply";
+  const attachment = root.querySelector<HTMLInputElement>("[data-reply-composer] [data-attachment]")!;
+  Object.defineProperty(attachment, "files", { value: [new window.File(["image"], "image.png", { type: "image/png" })] });
+  root.querySelector<HTMLElement>("[data-save-reply]")!.click();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  assert.equal(calls[0], "reply");
+  assert.match(calls[1] ?? "", /^upload:data:image\/png;base64,/);
+});
+
 test("projection refreshes inside edit and reply callbacks keep the active thread visible", async () => {
   const { document } = setup();
   let renderer: ReturnType<typeof createCommentRenderer>;

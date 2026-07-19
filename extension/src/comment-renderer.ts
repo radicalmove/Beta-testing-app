@@ -14,13 +14,39 @@ export type CommentRendererOptions = {
   root?: ShadowRoot;
   editThread?: (commentId: string, body: string) => Promise<void>;
   replyThread?: (commentId: string, body: string) => Promise<void>;
+  uploadAttachment?: (commentId: string, dataUrl: string) => Promise<void>;
   changeStatus?: (commentId: string, status: string) => Promise<void>;
   manageSme?: (commentId: string, userIds?: string[]) => Promise<{ available_recipients: Array<{ id: string; display_name: string }>; selected_user_ids: string[] }>;
   deleteThread?: (commentId: string) => Promise<void>;
   onUnresolvedAnchors?: (anchors: UnresolvedAnchor[]) => void;
 };
 
-const rendererStyles = `:host{all:initial;font:16px/1.5 Poppins,Arial,sans-serif;color:#102f38}button,textarea{box-sizing:border-box;font:inherit}button{appearance:none;min-height:36px;border:1px solid #b9b9b9;border-radius:5px;background:#f2f2f2;color:#000;font-weight:650;padding:7px 9px;cursor:pointer}.resolve-toggle{float:right;margin-top:12px;border:2px solid #16833b;background:#fff;color:#11652e}.resolve-toggle.resolved{background:#16833b;color:#fff}`;
+const rendererStyles = `:host{all:initial;font:16px/1.5 Poppins,Arial,sans-serif;color:#102f38}button,textarea,input{box-sizing:border-box;font:inherit}button{appearance:none;min-height:36px;border:2px solid #073f3e;border-radius:5px;background:#fff;color:#073f3e;font-weight:650;padding:7px 9px;cursor:pointer}.thread-action:hover,.thread-action[aria-pressed="true"]{background:#073f3e;color:#fff}.thread-delete{position:absolute;right:8px;top:8px;width:44px;height:44px;padding:0;border-color:#d73b3d;background:#d73b3d;color:#fff;font-size:22px}.thread-delete:hover{border-color:#b52d30;background:#b52d30}.resolve-toggle{float:right;margin-top:12px;border:2px solid #16833b;background:#fff;color:#11652e}.resolve-toggle:hover{background:#16833b;color:#fff}.resolve-toggle.resolved{background:#16833b;color:#fff}.resolve-toggle.resolved:hover{background:#fff;color:#11652e}.resolve-box{display:inline-grid;place-items:center;width:20px;height:20px;margin-right:7px;border:3px solid #111;background:#fff;color:#111;vertical-align:-4px}.attachment-field{display:block;margin:10px 0;font-size:13px;font-weight:650}.attachment-field input{display:block;width:100%;margin-top:4px;font-size:12px;font-weight:400}`;
+
+const attachmentAccept = ".pdf,.doc,.docx,.png,.jpg,.jpeg,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg";
+const maxAttachmentBytes = 10 * 1024 * 1024;
+
+function attachmentField(document: Document): { label: HTMLLabelElement; input: HTMLInputElement } {
+  const label = document.createElement("label"); label.className = "attachment-field"; label.textContent = "Attach a file (optional)";
+  const input = document.createElement("input"); input.type = "file"; input.dataset.attachment = "true"; input.accept = attachmentAccept;
+  label.append(input); return { label, input };
+}
+
+function readAttachment(document: Document, file: File): Promise<string> {
+  if (file.size > maxAttachmentBytes) return Promise.reject(new Error("The attachment must be 10 MB or smaller."));
+  return new Promise((resolve, reject) => {
+    const Reader = document.defaultView?.FileReader;
+    if (!Reader) { reject(new Error("This browser cannot read the selected attachment.")); return; }
+    const reader = new Reader(); reader.addEventListener("load", () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("Could not read attachment")));
+    reader.addEventListener("error", () => reject(new Error("Could not read attachment"))); reader.readAsDataURL(file);
+  });
+}
+
+function deleteIcon(document: Document): SVGSVGElement {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true"); svg.style.cssText = "width:24px;height:24px";
+  svg.innerHTML = '<path d="M4 6h16l-1.4 15H5.4L4 6Z" fill="white"/><path d="M8 3h8l1 2H7l1-2ZM3 5h18v2H3V5Z" fill="white"/><path d="M8.5 9v8M12 9v8M15.5 9v8" stroke="#d73b3d" stroke-width="1.8" stroke-linecap="round"/>';
+  return svg;
+}
 
 function createThreadRoot(document: Document): { root: ShadowRoot; dispose: () => void } {
   const host = document.createElement("div");
@@ -93,19 +119,20 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
     article.append(contextLine, byline, body);
 
     if (comment.capabilities.can_edit && options.editThread) {
-      const edit = document.createElement("button"); edit.type = "button"; edit.textContent = "✎"; edit.setAttribute("aria-label", "Edit original comment"); edit.style.cssText = "width:44px;height:44px;padding:0;font-size:24px";
+      const edit = document.createElement("button"); edit.type = "button"; edit.className = "thread-action"; edit.textContent = "✎"; edit.setAttribute("aria-label", "Edit original comment"); edit.style.cssText = "width:44px;height:44px;padding:0;font-size:24px";
       edit.addEventListener("click", () => {
         const existing = article.querySelector<HTMLElement>("[data-edit-composer]");
         if (existing) { existing.remove(); edit.setAttribute("aria-pressed", "false"); body.hidden = false; edit.focus(); return; }
         article.querySelector("[data-reply-composer]")?.remove();
         const editor = document.createElement("div"); editor.dataset.editComposer = "true";
         const input = document.createElement("textarea"); input.value = body.textContent ?? comment.body; input.style.cssText = "width:100%;min-height:90px";
-        const save = document.createElement("button"); save.type = "button"; save.textContent = "Save";
+        const { label: attachmentLabel, input: attachment } = attachmentField(document); attachmentLabel.hidden = !options.uploadAttachment;
+        const save = document.createElement("button"); save.type = "button"; save.dataset.saveEdit = "true"; save.textContent = "Save";
         const cancel = document.createElement("button"); cancel.type = "button"; cancel.textContent = "Cancel";
         const close = () => { editor.remove(); edit.setAttribute("aria-pressed", "false"); body.hidden = false; edit.focus(); };
         cancel.addEventListener("click", close);
-        save.addEventListener("click", async () => { if (!input.value.trim()) return; save.disabled = true; try { await runMutation(() => options.editThread!(comment.id, input.value.trim())); body.textContent = input.value.trim(); close(); } catch (error) { save.disabled = false; showError(article, error, "Could not save edit"); } });
-        editor.append(input, save, cancel); body.hidden = true; body.after(editor); edit.setAttribute("aria-pressed", "true"); input.focus();
+        save.addEventListener("click", async () => { if (!input.value.trim()) return; save.disabled = true; try { await runMutation(() => options.editThread!(comment.id, input.value.trim())); const file = attachment.files?.[0]; if (file && options.uploadAttachment) await runMutation(async () => options.uploadAttachment!(comment.id, await readAttachment(document, file))); body.textContent = input.value.trim(); close(); } catch (error) { save.disabled = false; showError(article, error, "Could not save edit"); } });
+        editor.append(input, attachmentLabel, save, cancel); body.hidden = true; body.after(editor); edit.setAttribute("aria-pressed", "true"); input.focus();
       });
       byline.append(" ", edit);
     }
@@ -113,19 +140,20 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
     for (const reply of comment.replies) { const node = document.createElement("div"); node.textContent = `${reply.author.display_name} (${reply.author.role.replaceAll("_", " ")}): ${reply.body}`; node.style.cssText = "margin-top:8px;padding:10px;border:1px solid #d7e6e6;border-radius:8px"; article.append(node); }
 
     if (comment.capabilities.can_reply && options.replyThread) {
-      const toggle = document.createElement("button"); toggle.type = "button"; toggle.dataset.replyToggle = "true"; toggle.textContent = "Reply"; toggle.style.cssText = "margin-top:10px;border:0;background:transparent;color:#0b6261;text-decoration:underline;padding:6px";
+      const toggle = document.createElement("button"); toggle.type = "button"; toggle.className = "thread-action"; toggle.dataset.replyToggle = "true"; toggle.textContent = "Reply"; toggle.style.cssText = "margin-top:10px";
       toggle.addEventListener("click", () => {
         const existing = article.querySelector<HTMLElement>("[data-reply-composer]");
         if (existing) { existing.remove(); toggle.setAttribute("aria-expanded", "false"); toggle.focus(); return; }
         article.querySelector("[data-edit-composer]")?.remove();
         const composer = document.createElement("div"); composer.dataset.replyComposer = "true";
         const input = document.createElement("textarea"); input.placeholder = "Add a reply…"; input.setAttribute("aria-label", "Add a reply"); input.style.cssText = "width:100%;min-height:72px;margin-top:8px";
+        const { label: attachmentLabel, input: attachment } = attachmentField(document); attachmentLabel.hidden = !options.uploadAttachment;
         const save = document.createElement("button"); save.type = "button"; save.dataset.saveReply = "true"; save.textContent = "Save reply";
         const cancel = document.createElement("button"); cancel.type = "button"; cancel.textContent = "Cancel";
         const close = () => { composer.remove(); toggle.setAttribute("aria-expanded", "false"); toggle.focus(); };
         cancel.addEventListener("click", close);
-        save.addEventListener("click", async () => { const value = input.value.trim(); if (!value) return; save.disabled = true; try { await runMutation(() => options.replyThread!(comment.id, value)); const node = document.createElement("div"); node.textContent = value; node.style.cssText = "margin-top:8px;padding:10px;border:1px solid #d7e6e6;border-radius:8px"; toggle.before(node); close(); } catch (error) { save.disabled = false; showError(article, error, "Could not save reply"); } });
-        composer.append(input, save, cancel); toggle.after(composer); toggle.setAttribute("aria-expanded", "true"); input.focus();
+        save.addEventListener("click", async () => { const value = input.value.trim(); if (!value) return; save.disabled = true; try { await runMutation(() => options.replyThread!(comment.id, value)); const file = attachment.files?.[0]; if (file && options.uploadAttachment) await runMutation(async () => options.uploadAttachment!(comment.id, await readAttachment(document, file))); const node = document.createElement("div"); node.textContent = value; node.style.cssText = "margin-top:8px;padding:10px;border:1px solid #d7e6e6;border-radius:8px"; toggle.before(node); close(); } catch (error) { save.disabled = false; showError(article, error, "Could not save reply"); } });
+        composer.append(input, attachmentLabel, save, cancel); toggle.after(composer); toggle.setAttribute("aria-expanded", "true"); input.focus();
       });
       article.append(toggle);
     }
@@ -138,13 +166,13 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
 
     if (comment.capabilities.can_change_status && options.changeStatus) {
       const target = comment.status === "resolved" ? "open" : "resolved";
-      const button = document.createElement("button"); button.type = "button"; button.className = `resolve-toggle${comment.status === "resolved" ? " resolved" : ""}`; button.style.cssText = "font-size:18px;min-height:48px;padding:8px 14px;background:#e9f7ee;color:#11652e;border:2px solid #16833b"; button.textContent = target === "resolved" ? "☐ Resolve" : "☑ Resolved"; button.setAttribute("aria-label", target === "resolved" ? "Resolve this comment" : "Reopen this resolved comment");
-      button.addEventListener("click", async () => { button.disabled = true; try { await runMutation(() => options.changeStatus!(comment.id, target)); if (target === "resolved") { button.textContent = "☑ Resolved"; button.classList.add("resolved"); button.style.background = "#16833b"; button.style.color = "#fff"; document.defaultView?.setTimeout(() => { if (activeThreadId === comment.id) closeThread(); else article.remove(); }, 3000); } else closeThread(); } catch (error) { button.disabled = false; showError(article, error, "Could not update status"); } });
+      const button = document.createElement("button"); button.type = "button"; button.className = `resolve-toggle${comment.status === "resolved" ? " resolved" : ""}`; button.style.cssText = "font-size:18px;min-height:48px;padding:8px 14px"; button.innerHTML = `<span class="resolve-box">${target === "resolved" ? "☐" : "☑"}</span> ${target === "resolved" ? "Resolve" : "Resolved"}`; button.setAttribute("aria-label", target === "resolved" ? "Resolve this comment" : "Reopen this resolved comment");
+      button.addEventListener("click", async () => { button.disabled = true; try { await runMutation(() => options.changeStatus!(comment.id, target)); if (target === "resolved") { button.innerHTML = '<span class="resolve-box">☑</span> Resolved'; button.classList.add("resolved"); document.defaultView?.setTimeout(() => { if (activeThreadId === comment.id) closeThread(); else article.remove(); }, 3000); } else closeThread(); } catch (error) { button.disabled = false; showError(article, error, "Could not update status"); } });
       article.append(button);
     }
 
     if (comment.capabilities.can_delete && options.deleteThread) {
-      const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "🗑"; remove.setAttribute("aria-label", "Delete thread"); remove.style.cssText = "position:absolute;right:8px;top:8px;width:44px;height:44px;padding:0";
+      const remove = document.createElement("button"); remove.type = "button"; remove.className = "thread-delete"; remove.append(deleteIcon(document)); remove.setAttribute("aria-label", "Delete thread");
       remove.addEventListener("click", async () => { if (document.defaultView?.confirm && !document.defaultView.confirm("Delete this entire thread, including all replies and screenshots?")) return; remove.disabled = true; try { await runMutation(() => options.deleteThread!(comment.id)); closeThread(); } catch (error) { remove.disabled = false; showError(article, error, "Could not delete thread"); } });
       article.append(remove);
     }

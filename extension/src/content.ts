@@ -525,7 +525,8 @@ function startActiveEmbeddedReview(targetWindow: Window & typeof globalThis, tar
         const message = type === "edit" ? { type: "EDIT_COMMENT_THREAD", comment_id: commentId, body: value }
           : type === "reply" ? { type: "REPLY_COMMENT_THREAD", comment_id: commentId, body: value }
             : type === "status" ? { type: "UPDATE_COMMENT_STATUS", comment_id: commentId, status: value }
-              : { type: "DELETE_COMMENT_THREAD", comment_id: commentId };
+              : type === "upload" ? { type: "UPLOAD_SCREENSHOT", comment_id: commentId, data_url: value }
+                : { type: "DELETE_COMMENT_THREAD", comment_id: commentId };
         await send(message);
       },
       createLifecycle: createLifecycleController,

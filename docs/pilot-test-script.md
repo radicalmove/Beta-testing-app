@@ -6,7 +6,7 @@ Use only this unpacked-extension folder in both browsers:
 
 `/Users/rcd58/OpenAI Projects/Beta Testing App/pilot-builds/moodle-review-extension`
 
-In `chrome://extensions` or `edge://extensions`, enable Developer mode, remove any older Moodle Course Review entries, choose **Load unpacked**, and select that folder. Confirm the extension details and the in-course help/version diagnostic both report **0.4.43**. After every replacement build, click **Reload** on the extension card and then reload the Moodle tab. Do not load `extension/dist` or a release-history folder alongside it.
+In `chrome://extensions` or `edge://extensions`, enable Developer mode, remove any older Moodle Course Review entries, choose **Load unpacked**, and select that folder. Confirm the extension details and the in-course help/version diagnostic both report **0.4.44**. After every replacement build, click **Reload** on the extension card and then reload the Moodle tab. Do not load `extension/dist` or a release-history folder alongside it.
 
 If Chrome or Edge shows historical errors after a reload, open the extension's **Errors** page, choose **Clear all**, reload the extension, and reload the Moodle tab. An old warning is not a current failure unless it returns after those steps.
 

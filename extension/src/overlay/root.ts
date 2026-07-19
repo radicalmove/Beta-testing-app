@@ -394,6 +394,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     root: shadow,
     editThread: options.editThread,
     replyThread: options.replyThread,
+    uploadAttachment: options.uploadScreenshot,
     changeStatus: options.changeStatus,
     manageSme: options.manageSme,
     deleteThread: options.deleteThread,

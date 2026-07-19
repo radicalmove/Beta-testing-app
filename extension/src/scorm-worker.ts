@@ -22,7 +22,7 @@ export type ScormWorkerOptions = {
   emit(event: ScormEvent): void;
   createLifecycle: LifecycleFactory;
   createRenderer?: (document: Document, pageUrl: string) => CommentRenderer;
-  mutate?: (type: "edit" | "reply" | "status" | "delete", commentId: string, value?: string) => Promise<void>;
+  mutate?: (type: "edit" | "reply" | "status" | "delete" | "upload", commentId: string, value?: string) => Promise<void>;
   navigate?: (destination: URL, mode: "hash" | "route") => boolean;
 };
 
@@ -73,10 +73,10 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
   }) as Extract<ScormEvent, { type: T }>;
 
   const emitSelectionState = () => options.emit(envelope("SCORM_SELECTION_CHANGED", { has_selection: Boolean(cachedSelection) }));
-  const mutation = async (type: "edit" | "reply" | "status" | "delete", commentId: string, value?: string) => { await options.mutate?.(type, commentId, value); options.emit(envelope("SCORM_COMMENTS_CHANGED", {})); };
+  const mutation = async (type: "edit" | "reply" | "status" | "delete" | "upload", commentId: string, value?: string) => { await options.mutate?.(type, commentId, value); options.emit(envelope("SCORM_COMMENTS_CHANGED", {})); };
   const createRenderer = (pageUrl: string) => options.createRenderer
     ? options.createRenderer(document, pageUrl)
-    : createCommentRenderer(document, pageUrl, { editThread: (id, body) => mutation("edit", id, body), replyThread: (id, body) => mutation("reply", id, body), changeStatus: (id, status) => mutation("status", id, status), deleteThread: (id) => mutation("delete", id) });
+    : createCommentRenderer(document, pageUrl, { editThread: (id, body) => mutation("edit", id, body), replyThread: (id, body) => mutation("reply", id, body), uploadAttachment: (id, dataUrl) => mutation("upload", id, dataUrl), changeStatus: (id, status) => mutation("status", id, status), deleteThread: (id) => mutation("delete", id) });
   renderer = createRenderer(identity.pageUrl);
 
   const onSelectionChange = () => {
