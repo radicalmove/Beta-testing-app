@@ -50,16 +50,44 @@ test("mounted Shadow DOM traps focus, closes on Escape, and returns focus", () =
   trigger.click();
   const textarea = shadow.querySelector<HTMLElement>("textarea")!;
   const cancel = shadow.querySelector<HTMLElement>("[data-cancel]")!;
-  const save = shadow.querySelector<HTMLElement>(".primary")!;
+  const save = shadow.querySelector<HTMLElement>("[data-save]")!;
   assert.equal(shadow.activeElement, textarea);
-  save.focus();
-  save.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Tab", bubbles: true }) as unknown as Event);
+  assert.equal(save.getAttribute("aria-label"), "Save comment");
+  cancel.focus();
+  cancel.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Tab", bubbles: true }) as unknown as Event);
   assert.equal(shadow.activeElement, textarea);
   textarea.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true }) as unknown as Event);
-  assert.equal(shadow.activeElement, save);
+  assert.equal(shadow.activeElement, cancel);
   cancel.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }) as unknown as Event);
   assert.equal(shadow.querySelector(".dialog"), null);
   assert.equal(shadow.activeElement, trigger);
+});
+
+test("initial comment creation uses the shared composer controls", () => {
+  const window = new Window();
+  const document = window.document as unknown as Document;
+  window.document.body.innerHTML = "<p>Selected words</p>";
+  const range = window.document.createRange(); range.selectNodeContents(window.document.querySelector("p")!.firstChild!); window.getSelection()!.addRange(range);
+  mountReviewOverlay(document, context);
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  shadow.querySelector<HTMLElement>('[data-action="add-comment"]')!.click();
+
+  const composer = shadow.querySelector<HTMLElement>(".comment-composer")!;
+  const row = composer.querySelector<HTMLElement>(".comment-composer-field-row")!;
+  const save = row.querySelector<HTMLElement>("[data-save]")!;
+  const actions = composer.querySelector<HTMLElement>(".comment-composer-actions")!;
+  assert.deepEqual(Array.from(row.children).map((node) => node.tagName), ["TEXTAREA", "BUTTON"]);
+  assert.equal(save.getAttribute("aria-label"), "Save comment");
+  assert.equal(save.title, "Save comment");
+  assert.equal(save.querySelector("path")?.getAttribute("d"), "M5 2h12l5 5v12a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3V5a3 3 0 0 1 3-3Zm2 1v7a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2V4.4L16.6 3H7Zm1 13v6h8v-6H8Zm3-13v5h4V3h-4Z");
+  assert.equal(row.nextElementSibling?.classList.contains("field"), true);
+  assert.equal(composer.lastElementChild, actions);
+  assert.deepEqual(Array.from(actions.children).map((node) => node.textContent), ["Cancel"]);
+  assert.equal(composer.querySelector("[data-thread-navigation]"), null);
+  assert.equal(composer.nextElementSibling?.classList.contains("error"), true);
+  const styles = Array.from(shadow.querySelectorAll("style")).map((node) => node.textContent).join("");
+  assert.match(styles, /\.comment-composer-field-row\{display:grid;grid-template-columns:minmax\(0,1fr\) 34px;gap:8px/);
+  assert.match(styles, /@media\(max-width:420px\)\{\.comment-composer-actions button\{flex:0 0 auto\}/);
 });
 
 test("marker placement cancels with Escape and restores Add comment focus", () => {

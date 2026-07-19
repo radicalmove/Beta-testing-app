@@ -1,6 +1,7 @@
 import { recoverPinAnchor } from "./anchors/pin.ts";
 import { recoverTextAnchor, renderTextHighlight } from "./anchors/recover.ts";
 import type { PageComment } from "./background-bridge.ts";
+import { createSaveIcon } from "./ui/save-icon.ts";
 import { projectCourseComments } from "./course-comment-order.ts";
 
 export type UnresolvedAnchor = { id: string; label: string; quote?: string };
@@ -23,7 +24,7 @@ export type CommentRendererOptions = {
   onUnresolvedAnchors?: (anchors: UnresolvedAnchor[]) => void;
 };
 
-const rendererStyles = `:host{all:initial;font:16px/1.5 Poppins,Arial,sans-serif;color:#102f38}button,textarea,input{box-sizing:border-box;font:inherit}button{appearance:none;min-height:36px;border:2px solid #073f3e;border-radius:5px;background:#fff;color:#073f3e;font-weight:650;padding:7px 9px;cursor:pointer}.thread-action:hover,.thread-action[aria-pressed="true"]{background:#073f3e;color:#fff}.thread-top-actions{display:contents}.thread-edit,.thread-delete,.resolve-toggle{position:absolute;top:8px;width:34px;min-height:34px;height:34px;padding:2px;border-radius:5px}.thread-edit{right:92px;border:2px solid #a84f12;background:#fff;color:#a84f12;font-size:23px;line-height:1}.thread-edit:hover,.thread-edit[aria-pressed="true"]{background:#a84f12;color:#fff}.thread-delete{right:8px;border:2px solid #d73b3d;background:#d73b3d;color:#fff}.thread-delete svg,.resolve-toggle svg{display:block;width:100%;height:100%}.thread-delete:hover{border-color:#d73b3d;background:#fff}.thread-delete:hover .delete-body{fill:#d73b3d}.thread-delete:hover .delete-lines{stroke:#fff}.resolve-toggle{right:50px;margin:0;border:2px solid #111;border-radius:2px;background:#fff}.resolve-toggle:hover{border-color:#111;background:#f4f4f4}.status-hover-tick{opacity:0;transition:opacity .15s ease}.resolve-toggle:hover .status-hover-tick{opacity:.28}.status-resolved-tick{opacity:1}.thread-navigation{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}.thread-navigation button{height:34px;min-height:34px;padding:3px 6px;white-space:nowrap}.thread-navigation button:disabled{cursor:default;opacity:.42}.thread-previous,.thread-next{border-color:#356f9f;color:#356f9f}.thread-previous:not(:disabled):hover,.thread-next:not(:disabled):hover{background:#356f9f;color:#fff}.thread-reply{border-color:#073f3e;color:#073f3e}.thread-reply:hover,.thread-reply[aria-expanded="true"]{background:#073f3e;color:#fff}.edit-field-row{display:grid;grid-template-columns:minmax(0,1fr) 34px;gap:8px;align-items:start}.edit-field-row textarea{min-width:0}.edit-save{width:34px;height:34px;min-height:34px;padding:2px;border:2px solid #176b43;background:#176b43}.edit-save svg{display:block;width:100%;height:100%}.edit-save:hover{background:#fff}.edit-save:hover .save-body{fill:#176b43}.edit-save:hover .save-detail{fill:#fff}.edit-actions{display:flex;justify-content:flex-end;margin-top:8px}.edit-cancel{height:34px;min-height:34px;padding:3px 9px;border:2px solid #d73b3d;background:#d73b3d;color:#fff;font:inherit;font-weight:650;line-height:1}.edit-cancel:hover{background:#fff;color:#d73b3d}.attachment-field{display:block;margin:10px 0;font-size:13px;font-weight:650}.attachment-field input{display:block;width:100%;margin-top:4px;font-size:12px;font-weight:400}`;
+const rendererStyles = `:host{all:initial;font:16px/1.5 Poppins,Arial,sans-serif;color:#102f38}button,textarea,input{box-sizing:border-box;font:inherit}button{appearance:none;min-height:36px;border:2px solid #073f3e;border-radius:5px;background:#fff;color:#073f3e;font-weight:650;padding:7px 9px;cursor:pointer}.thread-action:hover,.thread-action[aria-pressed="true"]{background:#073f3e;color:#fff}.thread-top-actions{display:contents}.thread-edit,.thread-delete,.resolve-toggle{position:absolute;top:8px;width:34px;min-height:34px;height:34px;padding:2px;border-radius:5px}.thread-edit{right:92px;border:2px solid #a84f12;background:#fff;color:#a84f12;font-size:23px;line-height:1}.thread-edit:hover,.thread-edit[aria-pressed="true"]{background:#a84f12;color:#fff}.thread-delete{right:8px;border:2px solid #d73b3d;background:#d73b3d;color:#fff}.thread-delete svg,.resolve-toggle svg{display:block;width:100%;height:100%}.thread-delete:hover{border-color:#d73b3d;background:#fff}.thread-delete:hover .delete-body{fill:#d73b3d}.thread-delete:hover .delete-lines{stroke:#fff}.resolve-toggle{right:50px;margin:0;border:2px solid #111;border-radius:2px;background:#fff}.resolve-toggle:hover{border-color:#111;background:#f4f4f4}.status-hover-tick{opacity:0;transition:opacity .15s ease}.resolve-toggle:hover .status-hover-tick{opacity:.28}.status-resolved-tick{opacity:1}.thread-navigation{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}.thread-navigation button{height:34px;min-height:34px;padding:3px 6px;white-space:nowrap}.thread-navigation button:disabled{cursor:default;opacity:.42}.thread-previous,.thread-next{border-color:#356f9f;color:#356f9f}.thread-previous:not(:disabled):hover,.thread-next:not(:disabled):hover{background:#356f9f;color:#fff}.thread-reply{border-color:#073f3e;color:#073f3e}.thread-reply:hover,.thread-reply[aria-expanded="true"]{background:#073f3e;color:#fff}.comment-composer-field-row{display:grid;grid-template-columns:minmax(0,1fr) 34px;gap:8px;align-items:start}.comment-composer-field-row textarea{min-width:0;width:100%;min-height:72px}.comment-composer-save{box-sizing:border-box;width:34px;height:34px;min-height:34px;padding:2px;border:2px solid #176b43;border-radius:5px;background:#176b43;color:#fff}.comment-composer-save svg{display:block;width:100%;height:100%}.comment-composer-save:hover{background:#fff;color:#176b43}.comment-composer-actions{display:flex;justify-content:flex-end;margin-top:8px}.comment-composer-cancel{box-sizing:border-box;height:34px;min-height:34px;padding:3px 9px;border:2px solid #d73b3d;border-radius:5px;background:#d73b3d;color:#fff;font:inherit;font-weight:650;line-height:1}.comment-composer-cancel:hover{background:#fff;color:#d73b3d}.attachment-field{display:block;margin:10px 0;font-size:13px;font-weight:650}.attachment-field input{display:block;width:100%;margin-top:4px;font-size:12px;font-weight:400}`;
 
 const attachmentAccept = ".pdf,.doc,.docx,.png,.jpg,.jpeg,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg";
 const maxAttachmentBytes = 10 * 1024 * 1024;
@@ -32,6 +33,18 @@ function attachmentField(document: Document): { label: HTMLLabelElement; input: 
   const label = document.createElement("label"); label.className = "attachment-field"; label.textContent = "Attach a file (optional)";
   const input = document.createElement("input"); input.type = "file"; input.dataset.attachment = "true"; input.accept = attachmentAccept;
   label.append(input); return { label, input };
+}
+
+function createComposerControls(document: Document, kind: "edit" | "reply", saveLabel: string, attachmentEnabled: boolean) {
+  const composer = document.createElement("div"); composer.className = "comment-composer"; composer.dataset[kind === "edit" ? "editComposer" : "replyComposer"] = "true";
+  const textarea = document.createElement("textarea");
+  const { label: attachmentLabel, input: attachment } = attachmentField(document); attachmentLabel.hidden = !attachmentEnabled;
+  const save = document.createElement("button"); save.type = "button"; save.className = "comment-composer-save"; save.dataset[kind === "edit" ? "saveEdit" : "saveReply"] = "true"; save.setAttribute("aria-label", saveLabel); save.title = saveLabel; save.append(createSaveIcon(document));
+  const fieldRow = document.createElement("div"); fieldRow.className = "comment-composer-field-row"; fieldRow.dataset.composerFieldRow = "true"; fieldRow.append(textarea, save);
+  const cancel = document.createElement("button"); cancel.type = "button"; cancel.className = "comment-composer-cancel"; cancel.textContent = "Cancel";
+  const actions = document.createElement("div"); actions.className = "comment-composer-actions"; actions.dataset.composerActions = "true"; actions.append(cancel);
+  composer.append(fieldRow, attachmentLabel);
+  return { composer, textarea, attachment, save, actions, cancel };
 }
 
 function readAttachment(document: Document, file: File): Promise<string> {
@@ -47,12 +60,6 @@ function readAttachment(document: Document, file: File): Promise<string> {
 function deleteIcon(document: Document): SVGSVGElement {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true");
   svg.innerHTML = '<path class="delete-body" d="M4 6h16l-1.4 15H5.4L4 6Z" fill="white"/><path class="delete-body" d="M8 3h8l1 2H7l1-2ZM3 5h18v2H3V5Z" fill="white"/><path class="delete-lines" d="M8.5 9v8M12 9v8M15.5 9v8" stroke="#d73b3d" stroke-width="1.8" stroke-linecap="round"/>';
-  return svg;
-}
-
-function saveIcon(document: Document): SVGSVGElement {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true");
-  svg.innerHTML = '<path class="save-body" d="M3 3h15l3 3v15H3V3Z" fill="white"/><path class="save-detail" d="M7 3h9v6H7V3Zm0 11h10v7H7v-7Z" fill="#176b43"/><path class="save-body" d="M14 4h2v4h-2V4Z" fill="white"/>';
   return svg;
 }
 
@@ -143,19 +150,15 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
       const edit = document.createElement("button"); edit.type = "button"; edit.className = "thread-edit"; edit.textContent = "✎"; edit.setAttribute("aria-label", "Edit original comment"); edit.title = "Edit comment";
       edit.addEventListener("click", () => {
         const existing = article.querySelector<HTMLElement>("[data-edit-composer]");
-        if (existing) { existing.remove(); article.querySelector("[data-edit-actions]")?.remove(); edit.setAttribute("aria-pressed", "false"); body.hidden = false; edit.focus(); return; }
-        article.querySelector("[data-reply-composer]")?.remove();
-        const editor = document.createElement("div"); editor.dataset.editComposer = "true";
-        const input = document.createElement("textarea"); input.value = body.textContent ?? comment.body; input.style.cssText = "width:100%;min-height:72px";
-        const { label: attachmentLabel, input: attachment } = attachmentField(document); attachmentLabel.hidden = !options.uploadAttachment;
-        const save = document.createElement("button"); save.type = "button"; save.dataset.saveEdit = "true"; save.className = "edit-save"; save.append(saveIcon(document)); save.setAttribute("aria-label", "Save edited comment"); save.title = "Save edited comment";
-        const cancel = document.createElement("button"); cancel.type = "button"; cancel.dataset.cancelEdit = "true"; cancel.className = "edit-cancel"; cancel.textContent = "Cancel";
-        const fieldRow = document.createElement("div"); fieldRow.className = "edit-field-row"; fieldRow.dataset.editFieldRow = "true"; fieldRow.append(input, save);
-        const actions = document.createElement("div"); actions.className = "edit-actions"; actions.dataset.editActions = "true"; actions.append(cancel);
+        if (existing) { existing.remove(); article.querySelector("[data-composer-actions]")?.remove(); edit.setAttribute("aria-pressed", "false"); body.hidden = false; edit.focus(); return; }
+        article.querySelector("[data-reply-composer]")?.remove(); article.querySelector("[data-composer-actions]")?.remove(); article.querySelector<HTMLElement>("[data-reply-toggle]")?.setAttribute("aria-expanded", "false");
+        const { composer: editor, textarea: input, attachment, save, actions, cancel } = createComposerControls(document, "edit", "Save edited comment", Boolean(options.uploadAttachment));
+        input.value = body.textContent ?? comment.body;
+        cancel.dataset.cancelEdit = "true";
         const close = () => { editor.remove(); actions.remove(); edit.setAttribute("aria-pressed", "false"); body.hidden = false; edit.focus(); };
         cancel.addEventListener("click", close);
         save.addEventListener("click", async () => { if (!input.value.trim()) return; save.disabled = true; try { await runMutation(() => options.editThread!(comment.id, input.value.trim())); const file = attachment.files?.[0]; if (file && options.uploadAttachment) await runMutation(async () => options.uploadAttachment!(comment.id, await readAttachment(document, file))); body.textContent = input.value.trim(); close(); } catch (error) { save.disabled = false; showError(article, error, "Could not save edit"); } });
-        editor.append(fieldRow, attachmentLabel); body.hidden = true; body.after(editor); article.querySelector("[data-thread-navigation]")?.after(actions); edit.setAttribute("aria-pressed", "true"); input.focus();
+        body.hidden = true; body.after(editor); article.querySelector("[data-thread-navigation]")?.after(actions); edit.setAttribute("aria-pressed", "true"); input.focus();
       });
       topActions.append(edit);
     }
@@ -167,23 +170,20 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
       const toggle = document.createElement("button"); replyToggle = toggle; toggle.type = "button"; toggle.className = "thread-reply"; toggle.dataset.replyToggle = "true"; toggle.textContent = "Reply";
       toggle.addEventListener("click", () => {
         const existing = article.querySelector<HTMLElement>("[data-reply-composer]");
-        if (existing) { existing.remove(); toggle.setAttribute("aria-expanded", "false"); toggle.focus(); return; }
+        if (existing) { existing.remove(); article.querySelector("[data-composer-actions]")?.remove(); toggle.setAttribute("aria-expanded", "false"); toggle.focus(); return; }
         const openEditor = article.querySelector<HTMLElement>("[data-edit-composer]");
         if (openEditor) {
           openEditor.remove();
-          article.querySelector("[data-edit-actions]")?.remove();
+          article.querySelector("[data-composer-actions]")?.remove();
           body.hidden = false;
           article.querySelector<HTMLElement>('[aria-label="Edit original comment"]')?.setAttribute("aria-pressed", "false");
         }
-        const composer = document.createElement("div"); composer.dataset.replyComposer = "true";
-        const input = document.createElement("textarea"); input.placeholder = "Add a reply…"; input.setAttribute("aria-label", "Add a reply"); input.style.cssText = "width:100%;min-height:72px;margin-top:8px";
-        const { label: attachmentLabel, input: attachment } = attachmentField(document); attachmentLabel.hidden = !options.uploadAttachment;
-        const save = document.createElement("button"); save.type = "button"; save.dataset.saveReply = "true"; save.textContent = "Save reply";
-        const cancel = document.createElement("button"); cancel.type = "button"; cancel.textContent = "Cancel";
-        const close = () => { composer.remove(); toggle.setAttribute("aria-expanded", "false"); toggle.focus(); };
+        const { composer, textarea: input, attachment, save, actions, cancel } = createComposerControls(document, "reply", "Save reply", Boolean(options.uploadAttachment));
+        input.placeholder = "Add a reply…"; input.setAttribute("aria-label", "Add a reply");
+        const close = () => { composer.remove(); actions.remove(); toggle.setAttribute("aria-expanded", "false"); toggle.focus(); };
         cancel.addEventListener("click", close);
         save.addEventListener("click", async () => { const value = input.value.trim(); if (!value) return; save.disabled = true; try { await runMutation(() => options.replyThread!(comment.id, value)); const file = attachment.files?.[0]; if (file && options.uploadAttachment) await runMutation(async () => options.uploadAttachment!(comment.id, await readAttachment(document, file))); const node = document.createElement("div"); node.textContent = value; node.style.cssText = "margin-top:8px;padding:10px;border:1px solid #d7e6e6;border-radius:8px"; toggle.before(node); close(); } catch (error) { save.disabled = false; showError(article, error, "Could not save reply"); } });
-        composer.append(input, attachmentLabel, save, cancel); article.querySelector("[data-thread-navigation]")?.before(composer); toggle.setAttribute("aria-expanded", "true"); input.focus();
+        article.querySelector("[data-thread-navigation]")?.before(composer); article.querySelector("[data-thread-navigation]")?.after(actions); toggle.setAttribute("aria-expanded", "true"); input.focus();
       });
     }
 

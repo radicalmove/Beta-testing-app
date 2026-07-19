@@ -216,18 +216,42 @@ test("edit composer presents an icon save beside the editor and red cancel at bo
   const root = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!;
   root.querySelector<HTMLElement>('[aria-label="Edit original comment"]')!.click();
 
-  const fieldRow = root.querySelector<HTMLElement>("[data-edit-field-row]")!;
-  const actions = root.querySelector<HTMLElement>("[data-edit-actions]")!;
+  const composer = root.querySelector<HTMLElement>("[data-edit-composer]")!;
+  const fieldRow = composer.querySelector<HTMLElement>("[data-composer-field-row]")!;
+  const actions = root.querySelector<HTMLElement>("[data-composer-actions]")!;
   assert.deepEqual(Array.from(fieldRow.children).map((node) => node.tagName), ["TEXTAREA", "BUTTON"]);
   assert.equal(fieldRow.querySelector("[data-save-edit]")?.getAttribute("aria-label"), "Save edited comment");
   assert.equal(fieldRow.querySelector<HTMLElement>("[data-save-edit]")?.title, "Save edited comment");
-  assert.ok(fieldRow.querySelector("[data-save-edit] svg .save-body"), "save uses a floppy-disk silhouette");
+  const icon = fieldRow.querySelector("[data-save-edit] svg")!;
+  assert.equal(icon.getAttribute("viewBox"), "0 0 24 24");
+  assert.equal(icon.querySelector("path")?.getAttribute("d"), "M5 2h12l5 5v12a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3V5a3 3 0 0 1 3-3Zm2 1v7a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2V4.4L16.6 3H7Zm1 13v6h8v-6H8Zm3-13v5h4V3h-4Z");
+  assert.equal(icon.querySelector("path")?.getAttribute("fill-rule"), "evenodd");
+  assert.equal(fieldRow.nextElementSibling?.className, "attachment-field");
   assert.deepEqual(Array.from(actions.children).map((node) => node.textContent), ["Cancel"]);
   assert.equal(actions.previousElementSibling?.getAttribute("data-thread-navigation"), "true", "cancel sits below the navigation row");
-  assert.match(root.querySelector("style")!.textContent!, /\.edit-field-row\{display:grid;grid-template-columns:minmax\(0,1fr\) 34px;gap:8px/);
-  assert.match(root.querySelector("style")!.textContent!, /\.edit-save\{width:34px;height:34px;min-height:34px[^}]*border:2px solid #176b43[^}]*background:#176b43/);
-  assert.match(root.querySelector("style")!.textContent!, /\.edit-cancel\{[^}]*border:2px solid #d73b3d[^}]*background:#d73b3d[^}]*color:#fff/);
-  assert.match(root.querySelector("style")!.textContent!, /\.edit-actions\{display:flex;justify-content:flex-end/);
+  assert.match(root.querySelector("style")!.textContent!, /\.comment-composer-field-row\{display:grid;grid-template-columns:minmax\(0,1fr\) 34px;gap:8px/);
+  assert.match(root.querySelector("style")!.textContent!, /\.comment-composer-save\{[^}]*width:34px;height:34px;min-height:34px[^}]*border:2px solid #176b43[^}]*background:#176b43/);
+  assert.match(root.querySelector("style")!.textContent!, /\.comment-composer-cancel\{[^}]*border:2px solid #d73b3d[^}]*background:#d73b3d[^}]*color:#fff/);
+  assert.match(root.querySelector("style")!.textContent!, /\.comment-composer-actions\{display:flex;justify-content:flex-end/);
+});
+
+test("reply composer mirrors edit controls and ordering", () => {
+  const { document } = setup();
+  const renderer = createCommentRenderer(document, pageUrl, { replyThread: async () => {}, uploadAttachment: async () => {} });
+  renderer.setComments([comment()]);
+  document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")!.click();
+  const root = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!;
+  root.querySelector<HTMLElement>("[data-reply-toggle]")!.click();
+
+  const composer = root.querySelector<HTMLElement>("[data-reply-composer]")!;
+  const row = composer.querySelector<HTMLElement>("[data-composer-field-row]")!;
+  const actions = root.querySelector<HTMLElement>("[data-composer-actions]")!;
+  assert.deepEqual(Array.from(row.children).map((node) => node.tagName), ["TEXTAREA", "BUTTON"]);
+  assert.equal(row.querySelector("[data-save-reply]")?.getAttribute("aria-label"), "Save reply");
+  assert.equal(row.querySelector<HTMLElement>("[data-save-reply]")?.title, "Save reply");
+  assert.equal(row.nextElementSibling?.className, "attachment-field");
+  assert.equal(actions.previousElementSibling?.getAttribute("data-thread-navigation"), "true");
+  assert.deepEqual(Array.from(actions.children).map((node) => node.textContent), ["Cancel"]);
 });
 
 test("replying uploads the selected attachment after saving the reply", async () => {
