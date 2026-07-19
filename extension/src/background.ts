@@ -343,7 +343,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       const command = validateScormMessage({ protocol: 1, type: record.command_type, request_id: record.request_id, worker_instance_id: owner.workerInstanceId, generation: owner.generation, course_id: courseId, page_url: state.page_url, payload: record.payload }) as ScormCommand;
       const acknowledgement = await frameCoordination.sendCommand(tabId, command);
       if (acknowledgement.ok && command.type === "SCORM_SET_COMMENTS") {
-        workerProjections.set(tabId, { pageUrl: command.page_url, commentIds: new Set(command.payload.comments.map((comment) => comment.id)) });
+        workerProjections.set(tabId, { pageUrl: command.page_url, commentIds: new Set(command.payload.comments.filter((comment) => comment.page_url === command.page_url).map((comment) => comment.id)) });
         resumeEmbeddedNavigation(tabId);
       }
       return acknowledgement;
@@ -361,7 +361,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       chrome.tabs.sendMessage(sender.tab.id, { type: "SCORM_WORKER_EVENT", event: message, capability }, { frameId: 0 }, () => void chrome.runtime.lastError);
       return { capability };
     })();
-  } else if (message && typeof message === "object" && ["SCORM_SELECTION_CHANGED", "SCORM_PAGE_IDENTITY_CHANGED", "SCORM_COMMENTS_CHANGED"].includes((message as { type?: string }).type ?? "")) {
+  } else if (message && typeof message === "object" && ["SCORM_SELECTION_CHANGED", "SCORM_PAGE_IDENTITY_CHANGED", "SCORM_COMMENTS_CHANGED", "SCORM_COMMENT_NAVIGATION_REQUESTED"].includes((message as { type?: string }).type ?? "")) {
     operation = (async () => {
       if (typeof sender.tab?.id !== "number" || typeof sender.frameId !== "number") throw new Error("Invalid SCORM event sender");
       const event = validateScormMessage(message) as ScormEvent; rememberWorkerEvent(sender.tab.id, event.request_id); const owner = frameCoordination.currentOwner(sender.tab.id); const courseId = reviewContexts.courseId(sender);

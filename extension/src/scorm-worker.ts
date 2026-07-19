@@ -76,7 +76,7 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
   const mutation = async (type: "edit" | "reply" | "status" | "delete" | "upload", commentId: string, value?: string) => { await options.mutate?.(type, commentId, value); options.emit(envelope("SCORM_COMMENTS_CHANGED", {})); };
   const createRenderer = (pageUrl: string) => options.createRenderer
     ? options.createRenderer(document, pageUrl)
-    : createCommentRenderer(document, pageUrl, { editThread: (id, body) => mutation("edit", id, body), replyThread: (id, body) => mutation("reply", id, body), uploadAttachment: (id, dataUrl) => mutation("upload", id, dataUrl), changeStatus: (id, status) => mutation("status", id, status), deleteThread: (id) => mutation("delete", id) });
+    : createCommentRenderer(document, pageUrl, { editThread: (id, body) => mutation("edit", id, body), replyThread: (id, body) => mutation("reply", id, body), uploadAttachment: (id, dataUrl) => mutation("upload", id, dataUrl), changeStatus: (id, status) => mutation("status", id, status), deleteThread: (id) => mutation("delete", id), navigateToComment: (commentId, targetPageUrl) => { options.emit(envelope("SCORM_COMMENT_NAVIGATION_REQUESTED", { comment_id: commentId, page_url: targetPageUrl })); } });
   renderer = createRenderer(identity.pageUrl);
 
   const onSelectionChange = () => {
@@ -188,8 +188,8 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
         case "SCORM_START_MARKER": startMarker(); return acknowledgement(command, true);
         case "SCORM_CANCEL_MARKER": stopMarker(); return acknowledgement(command, true);
         case "SCORM_SET_COMMENTS": {
-          const comments = command.payload.comments.filter((comment) => comment.page_url === identity.pageUrl);
-          projectedCommentIds = new Set(comments.map((comment) => comment.id));
+          const comments = command.payload.comments;
+          projectedCommentIds = new Set(comments.filter((comment) => comment.page_url === identity.pageUrl).map((comment) => comment.id));
           renderer.setComments(comments);
           return acknowledgement(command, true);
         }

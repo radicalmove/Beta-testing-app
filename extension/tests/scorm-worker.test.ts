@@ -176,7 +176,7 @@ test("a title mutation clears selection and renderer state even before the visib
   worker.destroy();
 });
 
-test("comment projection is limited to the worker's exact page and take-to-context uses the renderer", () => {
+test("comment renderer receives whole-course comments while take-to-context remains exact-page", () => {
   const { window, projections, worker, takenToContext } = createHarness();
   const current = pageIdentity(window).pageUrl;
   const other = "https://rise.example/activity#moodle-review-page=Lesson%202";
@@ -188,12 +188,10 @@ test("comment projection is limited to the worker's exact page and take-to-conte
   });
   const currentId = "00000000-0000-4000-8000-000000000001";
   const otherId = "00000000-0000-4000-8000-000000000002";
-  const mismatched = command(window, "SCORM_SET_COMMENTS", { comments: [makeComment(otherId, other)] });
-  assert.equal(worker.handleCommand(mismatched).ok, false, "a projection for another exact page is rejected at the protocol boundary");
-  assert.equal(projections.length, 0);
-  const set = { ...command(window, "SCORM_SET_COMMENTS", { comments: [makeComment(currentId, current)] }), request_id: "523e4567-e89b-42d3-a456-426614174000" };
+  const set = { ...command(window, "SCORM_SET_COMMENTS", { comments: [makeComment(otherId, other), makeComment(currentId, current)] }), request_id: "523e4567-e89b-42d3-a456-426614174000" };
   assert.equal(worker.handleCommand(set).ok, true);
-  assert.deepEqual(projections.at(-1)?.map(({ id }) => id), [currentId]);
+  assert.deepEqual(projections.at(-1)?.map(({ id }) => id), [otherId, currentId]);
+  assert.equal(worker.handleCommand({ ...command(window, "SCORM_TAKE_TO_CONTEXT", { comment_id: otherId }), request_id: "323e4567-e89b-42d3-a456-426614174000" }).ok, false);
   assert.equal(worker.handleCommand({ ...command(window, "SCORM_TAKE_TO_CONTEXT", { comment_id: currentId }), request_id: "423e4567-e89b-42d3-a456-426614174000" }).ok, true);
   assert.equal(takenToContext(), currentId);
   worker.destroy();

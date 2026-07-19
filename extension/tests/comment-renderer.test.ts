@@ -7,6 +7,7 @@ import type { PageComment } from "../src/background-bridge.ts";
 
 const pageUrl = "https://learn.example/mod/page/view.php?id=2";
 const otherPageUrl = "https://learn.example/mod/page/view.php?id=3";
+const thirdPageUrl = "https://learn.example/mod/page/view.php?id=4";
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 const comment = (overrides: Partial<PageComment> = {}): PageComment => ({
@@ -114,9 +115,9 @@ test("contextual thread controls use the established button styles", () => {
   document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")!.click();
   const root = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!;
 
-  assert.ok(root.querySelector('[aria-label="Edit original comment"]')?.classList.contains("thread-action"));
+  assert.ok(root.querySelector('[aria-label="Edit original comment"]')?.classList.contains("thread-edit"));
   assert.equal(root.querySelector<HTMLElement>('[aria-label="Edit original comment"]')?.title, "Edit comment");
-  assert.ok(root.querySelector("[data-reply-toggle]")?.classList.contains("thread-action"));
+  assert.ok(root.querySelector("[data-reply-toggle]")?.classList.contains("thread-reply"));
   assert.equal(root.querySelector<HTMLElement>('[aria-label="Resolve this comment"]')?.textContent, "");
   assert.ok(root.querySelector('[aria-label="Resolve this comment"] svg'));
   assert.ok(root.querySelector('[aria-label="Delete thread"]')?.classList.contains("thread-delete"));
@@ -124,8 +125,64 @@ test("contextual thread controls use the established button styles", () => {
   assert.ok(root.querySelector('[aria-label="Delete thread"] svg'), "delete uses the same white bin artwork as the course list");
   assert.match(root.querySelector("style")!.textContent!, /\.thread-delete\{[^}]*background:#d73b3d/);
   assert.match(root.querySelector("style")!.textContent!, /\.thread-delete:hover\{border-color:#d73b3d;background:#fff\}/);
-  assert.match(root.querySelector("style")!.textContent!, /\.resolve-toggle\{position:absolute;right:50px;top:8px;float:none;margin:0;width:34px;min-height:34px;height:34px;padding:2px;border:2px solid #111;border-radius:2px;background:#fff\}/);
+  assert.match(root.querySelector("style")!.textContent!, /\.resolve-toggle\{right:50px;margin:0;border:2px solid #111;border-radius:2px;background:#fff\}/);
   assert.match(document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")?.title ?? "", /Open comment/);
+});
+
+test("contextual thread uses whole-course open numbering and the requested action layout", () => {
+  const { document } = setup();
+  const renderer = createCommentRenderer(document, pageUrl, {
+    editThread: async () => {}, replyThread: async () => {},
+    deleteThread: async () => {}, changeStatus: async () => {},
+  });
+  renderer.setComments([
+    comment({ id: "00000000-0000-4000-8000-000000000010", page_url: otherPageUrl, page_title: "Week 1", body: "Earlier" }),
+    comment({ id: "00000000-0000-4000-8000-000000000011", status: "resolved", body: "Resolved" }),
+    comment({ id: "00000000-0000-4000-8000-000000000012", body: "Current" }),
+    comment({ id: "00000000-0000-4000-8000-000000000013", page_url: thirdPageUrl, page_title: "Week 3", body: "Later" }),
+  ]);
+  document.querySelector<HTMLElement>('[data-moodle-review-stored-pin="00000000-0000-4000-8000-000000000012"]')!.click();
+  const root = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!;
+
+  assert.equal(root.querySelector<HTMLElement>("[data-thread-position]")?.textContent, "Comment 2 of 3");
+  assert.deepEqual(
+    Array.from(root.querySelectorAll<HTMLElement>("[data-thread-top-actions] > button")).map((button) => button.getAttribute("aria-label")),
+    ["Edit original comment", "Resolve this comment", "Delete thread"],
+  );
+  assert.deepEqual(
+    Array.from(root.querySelectorAll<HTMLElement>("[data-thread-navigation] > button")).map((button) => button.textContent),
+    ["Previous", "Reply", "Next"],
+  );
+  assert.match(root.querySelector("style")!.textContent!, /\.thread-edit\{[^}]*right:92px[^}]*border:2px solid #a84f12/);
+  assert.match(root.querySelector("style")!.textContent!, /\.thread-navigation\{display:grid;grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
+});
+
+test("previous and next navigate through open comments across the whole course", async () => {
+  const { document } = setup();
+  const navigations: Array<[string, string]> = [];
+  const current = comment({ id: "00000000-0000-4000-8000-000000000022", page_title: "Week 2", body: "Current" });
+  const renderer = createCommentRenderer(document, pageUrl, {
+    replyThread: async () => {},
+    navigateToComment: async (id, url) => { navigations.push([id, url]); },
+  });
+  renderer.setComments([
+    comment({ id: "00000000-0000-4000-8000-000000000021", page_url: otherPageUrl, page_title: "Week 1", body: "Previous" }),
+    current,
+    comment({ id: "00000000-0000-4000-8000-000000000023", status: "resolved", page_title: "Week 2", body: "Skip me" }),
+    comment({ id: "00000000-0000-4000-8000-000000000024", page_url: thirdPageUrl, page_title: "Week 3", body: "Next" }),
+  ]);
+  document.querySelector<HTMLElement>(`[data-moodle-review-stored-pin="${current.id}"]`)!.click();
+  const root = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!;
+
+  root.querySelector<HTMLButtonElement>('[data-thread-navigation] [data-direction="previous"]')!.click();
+  await settle();
+  root.querySelector<HTMLButtonElement>('[data-thread-navigation] [data-direction="next"]')!.click();
+  await settle();
+
+  assert.deepEqual(navigations, [
+    ["00000000-0000-4000-8000-000000000021", otherPageUrl],
+    ["00000000-0000-4000-8000-000000000024", thirdPageUrl],
+  ]);
 });
 
 test("editing uploads the selected attachment after saving the text", async () => {

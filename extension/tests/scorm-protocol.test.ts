@@ -49,13 +49,14 @@ const messages = [
   { ...base, type: "SCORM_PAGE_IDENTITY_CHANGED", payload: { page_title: "Embedded activity · Lesson one", embedded_locator: "#/lessons/one" } },
   { ...base, type: "SCORM_SET_COMMENTS", payload: { comments: [comment] } },
   { ...base, type: "SCORM_COMMENTS_CHANGED", payload: {} },
+  { ...base, type: "SCORM_COMMENT_NAVIGATION_REQUESTED", payload: { comment_id: commentId, page_url: "https://rise.example/activity#moodle-review-page=Lesson%20two" } },
   { ...base, type: "SCORM_APPLY_LOCATOR", payload: { embedded_locator: "#/lessons/two" } },
   { ...base, type: "SCORM_TAKE_TO_CONTEXT", payload: { comment_id: commentId } },
 ] as const;
 
 test("exports separate command and event discriminator families", () => {
   const commands: Array<ScormCommand["type"]> = ["SCORM_START_SELECTION", "SCORM_START_MARKER", "SCORM_CANCEL_MARKER", "SCORM_SET_COMMENTS", "SCORM_APPLY_LOCATOR", "SCORM_TAKE_TO_CONTEXT"];
-  const events: Array<ScormEvent["type"]> = ["SCORM_SELECTION_CHANGED", "SCORM_ANCHOR_CAPTURED", "SCORM_PAGE_IDENTITY_CHANGED", "SCORM_COMMENTS_CHANGED"];
+  const events: Array<ScormEvent["type"]> = ["SCORM_SELECTION_CHANGED", "SCORM_ANCHOR_CAPTURED", "SCORM_PAGE_IDENTITY_CHANGED", "SCORM_COMMENTS_CHANGED", "SCORM_COMMENT_NAVIGATION_REQUESTED"];
   assert.deepEqual([...commands, ...events].sort(), [...new Set(messages.map(({ type }) => type))].sort());
 });
 
@@ -138,12 +139,11 @@ test("validates both anchor variants exactly and within existing anchor bounds",
   ]) assert.throws(() => validateScormMessage({ ...pin, payload }), /Invalid SCORM message/);
 });
 
-test("validates exact, bounded, page-matched comment projections", () => {
+test("validates exact bounded whole-course comment projections", () => {
   const projection = messages[7];
   assert.deepEqual(validateScormMessage({ ...projection, payload: { comments: [] } }).payload, { comments: [] });
   for (const payload of [
     { comments: new Array(501).fill(comment) },
-    { comments: [{ ...comment, page_url: "https://rise.example/other" }] },
     { comments: [{ ...comment, extra: true }] },
     { comments: [{ ...comment, capabilities: { ...comment.capabilities, secret: true } }] },
     { comments: [{ ...comment, body: "x".repeat(10_001) }] },
@@ -151,7 +151,7 @@ test("validates exact, bounded, page-matched comment projections", () => {
 });
 
 test("validates take-to-context comment identifiers", () => {
-  const message = messages[10];
+  const message = messages[11];
   assert.throws(() => validateScormMessage({ ...message, payload: { comment_id: "comment-3" } }), /Invalid SCORM message/);
 });
 

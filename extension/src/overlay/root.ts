@@ -398,6 +398,11 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     changeStatus: options.changeStatus,
     manageSme: options.manageSme,
     deleteThread: options.deleteThread,
+    navigateToComment: async (commentId, pageUrl) => {
+      if (pageUrl === context.page_url) { renderer.takeToContext(commentId); return; }
+      if (options.navigateToComment) await options.navigateToComment(commentId, pageUrl);
+      else ownerDocument.defaultView?.location.assign(pageUrl);
+    },
     onUnresolvedAnchors: renderUnresolvedAnchors,
   });
   renderer = makeRenderer();

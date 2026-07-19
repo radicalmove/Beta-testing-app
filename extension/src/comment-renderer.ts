@@ -1,6 +1,7 @@
 import { recoverPinAnchor } from "./anchors/pin.ts";
 import { recoverTextAnchor, renderTextHighlight } from "./anchors/recover.ts";
 import type { PageComment } from "./background-bridge.ts";
+import { projectCourseComments } from "./course-comment-order.ts";
 
 export type UnresolvedAnchor = { id: string; label: string; quote?: string };
 
@@ -18,10 +19,11 @@ export type CommentRendererOptions = {
   changeStatus?: (commentId: string, status: string) => Promise<void>;
   manageSme?: (commentId: string, userIds?: string[]) => Promise<{ available_recipients: Array<{ id: string; display_name: string }>; selected_user_ids: string[] }>;
   deleteThread?: (commentId: string) => Promise<void>;
+  navigateToComment?: (commentId: string, pageUrl: string) => Promise<void> | void;
   onUnresolvedAnchors?: (anchors: UnresolvedAnchor[]) => void;
 };
 
-const rendererStyles = `:host{all:initial;font:16px/1.5 Poppins,Arial,sans-serif;color:#102f38}button,textarea,input{box-sizing:border-box;font:inherit}button{appearance:none;min-height:36px;border:2px solid #073f3e;border-radius:5px;background:#fff;color:#073f3e;font-weight:650;padding:7px 9px;cursor:pointer}.thread-action:hover,.thread-action[aria-pressed="true"]{background:#073f3e;color:#fff}.thread-delete{position:absolute;right:8px;top:8px;width:34px;min-height:34px;height:34px;padding:2px;border:2px solid #d73b3d;border-radius:5px;background:#d73b3d;color:#fff}.thread-delete svg,.resolve-toggle svg{display:block;width:100%;height:100%}.thread-delete:hover{border-color:#d73b3d;background:#fff}.thread-delete:hover .delete-body{fill:#d73b3d}.thread-delete:hover .delete-lines{stroke:#fff}.resolve-toggle{position:absolute;right:50px;top:8px;float:none;margin:0;width:34px;min-height:34px;height:34px;padding:2px;border:2px solid #111;border-radius:2px;background:#fff}.resolve-toggle:hover{border-color:#111;background:#f4f4f4}.attachment-field{display:block;margin:10px 0;font-size:13px;font-weight:650}.attachment-field input{display:block;width:100%;margin-top:4px;font-size:12px;font-weight:400}`;
+const rendererStyles = `:host{all:initial;font:16px/1.5 Poppins,Arial,sans-serif;color:#102f38}button,textarea,input{box-sizing:border-box;font:inherit}button{appearance:none;min-height:36px;border:2px solid #073f3e;border-radius:5px;background:#fff;color:#073f3e;font-weight:650;padding:7px 9px;cursor:pointer}.thread-action:hover,.thread-action[aria-pressed="true"]{background:#073f3e;color:#fff}.thread-top-actions{display:contents}.thread-edit,.thread-delete,.resolve-toggle{position:absolute;top:8px;width:34px;min-height:34px;height:34px;padding:2px;border-radius:5px}.thread-edit{right:92px;border:2px solid #a84f12;background:#fff;color:#a84f12;font-size:23px;line-height:1}.thread-edit:hover,.thread-edit[aria-pressed="true"]{background:#a84f12;color:#fff}.thread-delete{right:8px;border:2px solid #d73b3d;background:#d73b3d;color:#fff}.thread-delete svg,.resolve-toggle svg{display:block;width:100%;height:100%}.thread-delete:hover{border-color:#d73b3d;background:#fff}.thread-delete:hover .delete-body{fill:#d73b3d}.thread-delete:hover .delete-lines{stroke:#fff}.resolve-toggle{right:50px;margin:0;border:2px solid #111;border-radius:2px;background:#fff}.resolve-toggle:hover{border-color:#111;background:#f4f4f4}.thread-navigation{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}.thread-navigation button{height:34px;min-height:34px;padding:3px 6px;white-space:nowrap}.thread-navigation button:disabled{cursor:default;opacity:.42}.thread-previous,.thread-next{border-color:#356f9f;color:#356f9f}.thread-previous:not(:disabled):hover,.thread-next:not(:disabled):hover{background:#356f9f;color:#fff}.thread-reply{border-color:#073f3e;color:#073f3e}.thread-reply:hover,.thread-reply[aria-expanded="true"]{background:#073f3e;color:#fff}.attachment-field{display:block;margin:10px 0;font-size:13px;font-weight:650}.attachment-field input{display:block;width:100%;margin-top:4px;font-size:12px;font-weight:400}`;
 
 const attachmentAccept = ".pdf,.doc,.docx,.png,.jpg,.jpeg,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg";
 const maxAttachmentBytes = 10 * 1024 * 1024;
@@ -72,6 +74,8 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
     const style = document.createElement("style"); style.dataset.commentRendererStyles = "true"; style.textContent = rendererStyles; root.append(style);
   }
   let comments = new Map<string, PageComment>();
+  let projectedComments: PageComment[] = [];
+  let courseOpenComments: PageComment[] = [];
   let cleanups: Array<() => void> = [];
   let markers = new Map<string, HTMLElement>();
   let activeThreadId: string | undefined;
@@ -122,13 +126,15 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
     closeThread(false);
     activeThreadId = comment.id; marker.setAttribute("aria-expanded", "true");
     const article = document.createElement("article"); article.dataset.threadPopover = "true"; article.tabIndex = -1;
-    const contextLine = document.createElement("p"); contextLine.textContent = `Comment ${index + 1} of ${comments.size}`; contextLine.style.cssText = "margin:0 44px 4px 0;font-size:12px;color:#52666c";
-    const byline = document.createElement("p"); byline.textContent = `${comment.author.display_name} · ${comment.author.role.replaceAll("_", " ")}`; byline.style.cssText = "margin:0 44px 10px 0;font-size:13px;font-weight:650";
+    const courseIndex = courseOpenComments.findIndex((candidate) => candidate.id === comment.id);
+    const contextLine = document.createElement("p"); contextLine.dataset.threadPosition = "true"; contextLine.textContent = courseIndex >= 0 ? `Comment ${courseIndex + 1} of ${courseOpenComments.length}` : "Resolved comment"; contextLine.style.cssText = "margin:0 126px 4px 0;font-size:12px;color:#52666c";
+    const byline = document.createElement("p"); byline.textContent = `${comment.author.display_name} · ${comment.author.role.replaceAll("_", " ")}`; byline.style.cssText = "margin:0 126px 10px 0;font-size:13px;font-weight:650";
     const body = document.createElement("div"); body.textContent = comment.body; body.style.cssText = "padding:12px;border:1px solid #8ad9d8;border-radius:8px;background:#effafa";
-    article.append(contextLine, byline, body);
+    const topActions = document.createElement("div"); topActions.className = "thread-top-actions"; topActions.dataset.threadTopActions = "true";
+    article.append(contextLine, byline, body, topActions);
 
     if (comment.capabilities.can_edit && options.editThread) {
-      const edit = document.createElement("button"); edit.type = "button"; edit.className = "thread-action"; edit.textContent = "✎"; edit.setAttribute("aria-label", "Edit original comment"); edit.title = "Edit comment"; edit.style.cssText = "width:44px;height:44px;padding:0;font-size:24px";
+      const edit = document.createElement("button"); edit.type = "button"; edit.className = "thread-edit"; edit.textContent = "✎"; edit.setAttribute("aria-label", "Edit original comment"); edit.title = "Edit comment";
       edit.addEventListener("click", () => {
         const existing = article.querySelector<HTMLElement>("[data-edit-composer]");
         if (existing) { existing.remove(); edit.setAttribute("aria-pressed", "false"); body.hidden = false; edit.focus(); return; }
@@ -143,13 +149,14 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
         save.addEventListener("click", async () => { if (!input.value.trim()) return; save.disabled = true; try { await runMutation(() => options.editThread!(comment.id, input.value.trim())); const file = attachment.files?.[0]; if (file && options.uploadAttachment) await runMutation(async () => options.uploadAttachment!(comment.id, await readAttachment(document, file))); body.textContent = input.value.trim(); close(); } catch (error) { save.disabled = false; showError(article, error, "Could not save edit"); } });
         editor.append(input, attachmentLabel, save, cancel); body.hidden = true; body.after(editor); edit.setAttribute("aria-pressed", "true"); input.focus();
       });
-      byline.append(" ", edit);
+      topActions.append(edit);
     }
 
     for (const reply of comment.replies) { const node = document.createElement("div"); node.textContent = `${reply.author.display_name} (${reply.author.role.replaceAll("_", " ")}): ${reply.body}`; node.style.cssText = "margin-top:8px;padding:10px;border:1px solid #d7e6e6;border-radius:8px"; article.append(node); }
 
+    let replyToggle: HTMLButtonElement | undefined;
     if (comment.capabilities.can_reply && options.replyThread) {
-      const toggle = document.createElement("button"); toggle.type = "button"; toggle.className = "thread-action"; toggle.dataset.replyToggle = "true"; toggle.textContent = "Reply"; toggle.style.cssText = "margin-top:10px";
+      const toggle = document.createElement("button"); replyToggle = toggle; toggle.type = "button"; toggle.className = "thread-reply"; toggle.dataset.replyToggle = "true"; toggle.textContent = "Reply";
       toggle.addEventListener("click", () => {
         const existing = article.querySelector<HTMLElement>("[data-reply-composer]");
         if (existing) { existing.remove(); toggle.setAttribute("aria-expanded", "false"); toggle.focus(); return; }
@@ -162,9 +169,8 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
         const close = () => { composer.remove(); toggle.setAttribute("aria-expanded", "false"); toggle.focus(); };
         cancel.addEventListener("click", close);
         save.addEventListener("click", async () => { const value = input.value.trim(); if (!value) return; save.disabled = true; try { await runMutation(() => options.replyThread!(comment.id, value)); const file = attachment.files?.[0]; if (file && options.uploadAttachment) await runMutation(async () => options.uploadAttachment!(comment.id, await readAttachment(document, file))); const node = document.createElement("div"); node.textContent = value; node.style.cssText = "margin-top:8px;padding:10px;border:1px solid #d7e6e6;border-radius:8px"; toggle.before(node); close(); } catch (error) { save.disabled = false; showError(article, error, "Could not save reply"); } });
-        composer.append(input, attachmentLabel, save, cancel); toggle.after(composer); toggle.setAttribute("aria-expanded", "true"); input.focus();
+        composer.append(input, attachmentLabel, save, cancel); article.querySelector("[data-thread-navigation]")?.before(composer); toggle.setAttribute("aria-expanded", "true"); input.focus();
       });
-      article.append(toggle);
     }
 
     if (comment.capabilities.can_share_with_sme && options.manageSme) {
@@ -177,14 +183,25 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
       const target = comment.status === "resolved" ? "open" : "resolved";
       const button = document.createElement("button"); button.type = "button"; button.className = `resolve-toggle${comment.status === "resolved" ? " resolved" : ""}`; button.append(statusIcon(document, comment.status === "resolved")); button.setAttribute("aria-label", target === "resolved" ? "Resolve this comment" : "Reopen this resolved comment"); button.title = target === "resolved" ? "Resolve comment" : "Reopen comment";
       button.addEventListener("click", async () => { button.disabled = true; try { await runMutation(() => options.changeStatus!(comment.id, target)); if (target === "resolved") { button.replaceChildren(statusIcon(document, true)); button.classList.add("resolved"); document.defaultView?.setTimeout(() => { if (activeThreadId === comment.id) closeThread(); else article.remove(); }, 3000); } else closeThread(); } catch (error) { button.disabled = false; showError(article, error, "Could not update status"); } });
-      article.append(button);
+      topActions.append(button);
     }
 
     if (comment.capabilities.can_delete && options.deleteThread) {
       const remove = document.createElement("button"); remove.type = "button"; remove.className = "thread-delete"; remove.append(deleteIcon(document)); remove.setAttribute("aria-label", "Delete thread"); remove.title = "Delete comment thread";
       remove.addEventListener("click", async () => { if (document.defaultView?.confirm && !document.defaultView.confirm("Delete this entire thread, including all replies and screenshots?")) return; remove.disabled = true; try { await runMutation(() => options.deleteThread!(comment.id)); closeThread(); } catch (error) { remove.disabled = false; showError(article, error, "Could not delete thread"); } });
-      article.append(remove);
+      topActions.append(remove);
     }
+
+    const navigation = document.createElement("div"); navigation.className = "thread-navigation"; navigation.dataset.threadNavigation = "true";
+    const navigate = async (target: PageComment | undefined) => {
+      if (!target) return;
+      if (target.page_url === pageUrl) { closeThread(); document.defaultView?.setTimeout(() => { (root.host as HTMLElement).isConnected && (markers.get(target.id) ? (() => { const targetMarker = markers.get(target.id)!; targetMarker.focus({ preventScroll: true }); openThread(target, Array.from(comments.keys()).indexOf(target.id), targetMarker); })() : undefined); }, 0); }
+      else await options.navigateToComment?.(target.id, target.page_url);
+    };
+    const previous = document.createElement("button"); previous.type = "button"; previous.className = "thread-previous"; previous.dataset.direction = "previous"; previous.textContent = "Previous"; previous.disabled = courseIndex <= 0; previous.addEventListener("click", () => void navigate(courseOpenComments[courseIndex - 1]));
+    const next = document.createElement("button"); next.type = "button"; next.className = "thread-next"; next.dataset.direction = "next"; next.textContent = "Next"; next.disabled = courseIndex < 0 || courseIndex >= courseOpenComments.length - 1; next.addEventListener("click", () => void navigate(courseOpenComments[courseIndex + 1]));
+    const reply = replyToggle ?? document.createElement("button"); if (!replyToggle) { reply.type = "button"; reply.className = "thread-reply"; reply.textContent = "Reply"; reply.disabled = true; }
+    navigation.append(previous, reply, next); article.append(navigation);
 
     const position = () => { const rect = marker.getBoundingClientRect(); const width = document.defaultView?.innerWidth ?? 800; const height = document.defaultView?.innerHeight ?? 600; article.hidden = rect.top < 0 || rect.left < 0 || rect.bottom > height || rect.right > width; if (article.hidden) return; const popoverWidth = Math.min(360, width - 16); const popoverHeight = Math.min(article.offsetHeight || 300, height - 16); const right = rect.right + 8; article.style.left = `${right + popoverWidth <= width - 8 ? right : Math.max(8, rect.left - popoverWidth - 8)}px`; article.style.top = `${Math.max(8, Math.min(height - popoverHeight - 8, rect.top))}px`; };
     article.style.cssText += ";position:fixed;pointer-events:auto;z-index:2147483647;width:min(360px,calc(100vw - 16px));max-height:min(480px,calc(100vh - 16px));overflow:auto;background:white;border:4px solid #28c4c2;border-radius:10px;padding:14px;box-shadow:0 8px 28px #0006";
@@ -205,6 +222,8 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
 
   applyComments = (next) => {
       clear();
+      projectedComments = [...next];
+      courseOpenComments = projectCourseComments(next.filter((comment) => comment.status !== "resolved")).groups.flatMap((group) => group.comments.map(({ comment }) => comment));
       root.querySelectorAll("[data-recovery-status], [data-recovery-quote]").forEach((node) => node.remove());
       const local = next.filter((comment) => comment.page_url === pageUrl);
       comments = new Map(local.map((comment) => [comment.id, comment]));
@@ -250,7 +269,7 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
       let comment = comments.get(commentId); let marker = markers.get(commentId);
       if (!comment) return false;
       if (!marker) {
-        const snapshot = [...comments.values()];
+        const snapshot = [...projectedComments];
         this.setComments(snapshot);
         comment = comments.get(commentId); marker = markers.get(commentId);
       }
@@ -271,6 +290,6 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
       if (anchorY !== undefined && document.defaultView) document.defaultView.scrollBy({ top: anchorY - document.defaultView.innerHeight / 2, behavior: "auto" });
       marker.focus({ preventScroll: true }); openThread(comment, Array.from(comments.keys()).indexOf(commentId), marker); return true;
     },
-    destroy() { pendingProjection = undefined; deferredThreadId = undefined; clear(); options.onUnresolvedAnchors?.([]); ownedRoot?.dispose(); },
+    destroy() { pendingProjection = undefined; deferredThreadId = undefined; clear(); projectedComments = []; courseOpenComments = []; options.onUnresolvedAnchors?.([]); ownedRoot?.dispose(); },
   };
 }

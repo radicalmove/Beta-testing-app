@@ -9,6 +9,7 @@ export const SCORM_MESSAGE_TYPES = [
   "SCORM_PAGE_IDENTITY_CHANGED",
   "SCORM_SET_COMMENTS",
   "SCORM_COMMENTS_CHANGED",
+  "SCORM_COMMENT_NAVIGATION_REQUESTED",
   "SCORM_APPLY_LOCATOR",
   "SCORM_TAKE_TO_CONTEXT",
 ] as const;
@@ -24,6 +25,7 @@ export const SCORM_ACK_TYPES = {
   SCORM_PAGE_IDENTITY_CHANGED: "SCORM_PAGE_IDENTITY_CHANGED_ACK",
   SCORM_SET_COMMENTS: "SCORM_SET_COMMENTS_ACK",
   SCORM_COMMENTS_CHANGED: "SCORM_COMMENTS_CHANGED_ACK",
+  SCORM_COMMENT_NAVIGATION_REQUESTED: "SCORM_COMMENT_NAVIGATION_REQUESTED_ACK",
   SCORM_APPLY_LOCATOR: "SCORM_APPLY_LOCATOR_ACK",
   SCORM_TAKE_TO_CONTEXT: "SCORM_TAKE_TO_CONTEXT_ACK",
 } as const satisfies Record<ScormMessageType, string>;
@@ -52,6 +54,7 @@ export type ScormPageIdentityPayload = { page_title: string; embedded_locator: s
 export type ScormSetCommentsPayload = { comments: PageComment[] };
 export type ScormApplyLocatorPayload = { embedded_locator: string };
 export type ScormTakeToContextPayload = { comment_id: string };
+export type ScormCommentNavigationPayload = { comment_id: string; page_url: string };
 
 export type ScormEnvelope<T extends ScormMessageType, P> = {
   protocol: 1;
@@ -76,7 +79,8 @@ export type ScormEvent =
   | ScormEnvelope<"SCORM_SELECTION_CHANGED", ScormSelectionChangedPayload>
   | ScormEnvelope<"SCORM_ANCHOR_CAPTURED", ScormAnchorCapturedPayload>
   | ScormEnvelope<"SCORM_PAGE_IDENTITY_CHANGED", ScormPageIdentityPayload>
-  | ScormEnvelope<"SCORM_COMMENTS_CHANGED", EmptyScormPayload>;
+  | ScormEnvelope<"SCORM_COMMENTS_CHANGED", EmptyScormPayload>
+  | ScormEnvelope<"SCORM_COMMENT_NAVIGATION_REQUESTED", ScormCommentNavigationPayload>;
 
 export type ScormMessage = ScormCommand | ScormEvent;
 
@@ -194,10 +198,10 @@ function validAnchor(payload: unknown, pageUrl: string): payload is ScormAnchorC
   return false;
 }
 
-function validProjection(payload: unknown, pageUrl: string): payload is ScormSetCommentsPayload {
+function validProjection(payload: unknown): payload is ScormSetCommentsPayload {
   if (!isRecord(payload) || !exactKeys(payload, ["comments"]) || !Array.isArray(payload.comments)) return false;
   try {
-    validatePageCommentsResponse(payload.comments, pageUrl);
+    validatePageCommentsResponse(payload.comments);
     return payload.comments.every((comment) => {
       if (!isRecord(comment.capabilities)) return false;
       const keys = Object.keys(comment.capabilities);
@@ -220,6 +224,9 @@ export function validateScormMessage(value: unknown): ScormMessage {
     case "SCORM_COMMENTS_CHANGED":
       if (!validEmptyPayload(value.payload)) return invalidMessage();
       break;
+    case "SCORM_COMMENT_NAVIGATION_REQUESTED":
+      if (!isRecord(value.payload) || !exactKeys(value.payload, ["comment_id", "page_url"]) || !validUuid(value.payload.comment_id) || !exactHttpUrl(value.payload.page_url)) return invalidMessage();
+      break;
     case "SCORM_ANCHOR_CAPTURED":
       if (!validAnchor(value.payload, pageUrl)) return invalidMessage();
       break;
@@ -227,7 +234,7 @@ export function validateScormMessage(value: unknown): ScormMessage {
       if (!isRecord(value.payload) || !exactKeys(value.payload, ["page_title", "embedded_locator"]) || !validIdentity(value.payload, pageUrl)) return invalidMessage();
       break;
     case "SCORM_SET_COMMENTS":
-      if (!validProjection(value.payload, pageUrl)) return invalidMessage();
+      if (!validProjection(value.payload)) return invalidMessage();
       break;
     case "SCORM_APPLY_LOCATOR":
       if (!isRecord(value.payload) || !exactKeys(value.payload, ["embedded_locator"]) || !validEmbeddedLocator(value.payload.embedded_locator, pageUrl)) return invalidMessage();
