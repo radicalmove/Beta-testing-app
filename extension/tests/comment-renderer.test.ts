@@ -223,9 +223,12 @@ test("edit composer presents an icon save beside the editor and red cancel at bo
   assert.equal(fieldRow.querySelector("[data-save-edit]")?.getAttribute("aria-label"), "Save edited comment");
   assert.equal(fieldRow.querySelector<HTMLElement>("[data-save-edit]")?.title, "Save edited comment");
   const icon = fieldRow.querySelector("[data-save-edit] svg")!;
-  assert.equal(icon.getAttribute("viewBox"), "0 0 256 256");
-  assert.equal(icon.querySelector("path")?.getAttribute("d"), "M48 10H208L246 48V215c0 18-13 31-31 31H48c-21 0-38-17-38-38V48c0-21 17-38 38-38ZM70 32h24v166c0 8-6 14-14 14H70V32Zm24 0h24v42h52V32h38v59c0 8-6 14-14 14h-86c-8 0-14-6-14-14V32Zm114 18h24v148c0 8-6 14-14 14h-10V50ZM94 151c0-8 6-14 14-14h86c8 0 14 6 14 14v61H94v-61Z");
-  assert.equal(icon.querySelector("path")?.getAttribute("fill-rule"), "evenodd");
+  assert.equal(icon.getAttribute("viewBox"), "0 0 220 220");
+  const source = icon.querySelector("mask image")?.getAttribute("href") ?? "";
+  assert.match(source, /^data:image\/png;base64,/);
+  assert.ok(source.length > 13_000, "save icon embeds the supplied source silhouette");
+  assert.equal(icon.querySelector("mask image")?.getAttribute("x"), "-47");
+  assert.equal(icon.querySelector("mask image")?.getAttribute("y"), "-10");
   assert.equal(fieldRow.nextElementSibling?.className, "attachment-field");
   assert.deepEqual(Array.from(actions.children).map((node) => node.textContent), ["Cancel"]);
   assert.equal(actions.previousElementSibling?.getAttribute("data-thread-navigation"), "true", "cancel sits below the navigation row");
@@ -254,6 +257,7 @@ test("reply composer mirrors edit controls and ordering", () => {
   assert.equal(row.nextElementSibling?.className, "attachment-field");
   assert.equal(actions.previousElementSibling?.getAttribute("data-thread-navigation"), "true");
   assert.deepEqual(Array.from(actions.children).map((node) => node.textContent), ["Cancel"]);
+  assert.match(root.querySelector("style")!.textContent!, /\.comment-composer\[data-reply-composer\]\{margin-top:12px\}/);
 });
 
 test("replying uploads the selected attachment after saving the reply", async () => {

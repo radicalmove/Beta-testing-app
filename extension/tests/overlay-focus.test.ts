@@ -79,8 +79,10 @@ test("initial comment creation uses the shared composer controls", () => {
   assert.deepEqual(Array.from(row.children).map((node) => node.tagName), ["TEXTAREA", "BUTTON"]);
   assert.equal(save.getAttribute("aria-label"), "Save comment");
   assert.equal(save.title, "Save comment");
-  assert.equal(save.querySelector("svg")?.getAttribute("viewBox"), "0 0 256 256");
-  assert.equal(save.querySelector("path")?.getAttribute("d"), "M48 10H208L246 48V215c0 18-13 31-31 31H48c-21 0-38-17-38-38V48c0-21 17-38 38-38ZM70 32h24v166c0 8-6 14-14 14H70V32Zm24 0h24v42h52V32h38v59c0 8-6 14-14 14h-86c-8 0-14-6-14-14V32Zm114 18h24v148c0 8-6 14-14 14h-10V50ZM94 151c0-8 6-14 14-14h86c8 0 14 6 14 14v61H94v-61Z");
+  assert.equal(save.querySelector("svg")?.getAttribute("viewBox"), "0 0 220 220");
+  const source = save.querySelector("mask image")?.getAttribute("href") ?? "";
+  assert.match(source, /^data:image\/png;base64,/);
+  assert.ok(source.length > 13_000);
   assert.equal(row.nextElementSibling?.classList.contains("field"), true);
   assert.equal(composer.lastElementChild, actions);
   assert.deepEqual(Array.from(actions.children).map((node) => node.textContent), ["Cancel"]);
