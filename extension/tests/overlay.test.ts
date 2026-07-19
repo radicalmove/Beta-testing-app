@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Window } from "happy-dom";
 
-import { approvedControlStyles, commentListLayoutStyles, controlAlignmentStyles, createOverlayMarkup, mountReviewOverlay, OVERLAY_HOST_ID, overlayStyles, semanticFilterHoverStyles, tealOverlayOverrides } from "../src/overlay/root.ts";
+import { approvedControlStyles, commentListLayoutStyles, controlAlignmentStyles, createOverlayMarkup, helpButtonStyles, mountReviewOverlay, OVERLAY_HOST_ID, overlayStyles, semanticFilterHoverStyles, tealOverlayOverrides } from "../src/overlay/root.ts";
 
 const context = { course_url: "https://learn.example/course/view.php?id=1", page_url: "https://learn.example/mod/page/view.php?id=2", title: "Law", pageTitle: "Week 2", moodle_course_id: 1, identityConfidence: "confirmed" as const };
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -322,7 +322,7 @@ test("Help dialog provides complete instructions and metadata", () => {
   const trigger = shadow.querySelector<HTMLElement>('[data-action="help"]')!; trigger.click();
   const dialog = shadow.querySelector<HTMLElement>('[role="dialog"]')!;
   assert.equal(dialog.getAttribute("aria-modal"), "true"); assert.equal(dialog.getAttribute("aria-labelledby"), "review-help-title"); assert.equal(dialog.getAttribute("aria-describedby"), "review-help-intro");
-  for (const text of ["Comment on text", "Comment on an area", "Embedded activities", "Comments", "Conversations and status", "Pilot 0.3.2 · build abc1234"]) assert.match(dialog.textContent!, new RegExp(text));
+  for (const text of ["Highlight exact text", "Place a comment marker", "Moodle and SCORM", "Open comments in context", "Filter and jump", "Reply, edit, and attach", "Resolve or delete", "Who can see feedback", "Pilot 0.3.2 · build abc1234"]) assert.match(dialog.textContent!, new RegExp(text));
   assert.equal(shadow.activeElement, dialog.querySelector("h2"));
   dialog.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }) as unknown as Event);
   assert.equal(shadow.querySelector('[role="dialog"]'), null); assert.equal(shadow.activeElement, trigger);
@@ -528,6 +528,11 @@ test("toolbar and semantic comment controls expose approved states", () => {
   assert.match(controlAlignmentStyles, /\[data-action="help"\]\{[^}]*width:44px[^}]*height:44px/);
   assert.match(controlAlignmentStyles, /\.comment-control\{[^}]*display:inline-flex[^}]*align-items:center[^}]*justify-content:center/);
   overlay.destroy();
+});
+
+test("Help uses a distinct blue button treatment", () => {
+  assert.match(helpButtonStyles, /\.toolbar-actions \[data-action="help"\]\{background:#fff;border-color:var\(--review-jump\);color:var\(--review-jump\)\}/);
+  assert.match(helpButtonStyles, /\.toolbar-actions \[data-action="help"\]:hover,\.toolbar-actions \[data-action="help"\]:focus-visible\{background:var\(--review-jump\);border-color:var\(--review-jump\);color:#fff\}/);
 });
 
 test("marker and delete controls follow the approved button states", () => {
