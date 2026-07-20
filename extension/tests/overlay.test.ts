@@ -529,6 +529,57 @@ test("closing animation collapses the panel's complete outer height", () => {
   assert.match(panelTransitionStyles, /@media\(prefers-reduced-motion:reduce\)\{\.panel\[data-panel-animate="true"\]\{transition:none\}\}/);
 });
 
+test("offline collapse moves panel focus to the replacement retry control", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected", { panelStateStorage: createPanelStorage() });
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  overlay.setCommentList([]);
+  shadow.querySelector<HTMLButtonElement>('[data-action="panel"]')!.click();
+  shadow.querySelector<HTMLButtonElement>('[data-comment-scope="course"]')!.focus();
+
+  overlay.update(context, "offline");
+
+  const retry = shadow.querySelector<HTMLButtonElement>('[data-action="authenticate"]')!;
+  assert.equal(shadow.activeElement, retry);
+  assert.equal(retry.textContent, "Retry");
+  assert.equal(shadow.querySelector<HTMLElement>(".panel")!.inert, true);
+  assert.equal(shadow.querySelector<HTMLElement>(".panel")!.hidden, true);
+});
+
+test("course collapse moves panel focus to the restored visible toolbar control", () => {
+  const storage = createPanelStorage();
+  const otherCourse = { ...context, course_url: "https://learn.example/course/view.php?id=99", moodle_course_id: 99 };
+  storage.values.set(`moodle-course-review:panel:${context.course_url}`, "open");
+  storage.values.set(`moodle-course-review:panel:${otherCourse.course_url}`, "closed");
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected", { panelStateStorage: storage });
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  overlay.setCommentList([]);
+  shadow.querySelector<HTMLButtonElement>('[data-comment-scope="course"]')!.focus();
+
+  overlay.update(otherCourse, "connected");
+
+  const toggle = shadow.querySelector<HTMLButtonElement>('[data-action="panel"]')!;
+  assert.equal(shadow.activeElement, toggle);
+  assert.equal(toggle.getAttribute("aria-expanded"), "false");
+  assert.equal(shadow.querySelector<HTMLElement>(".panel")!.hidden, true);
+});
+
+test("user collapse moves lingering panel focus to the comments toggle", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected", { panelStateStorage: createPanelStorage() });
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  overlay.setCommentList([]);
+  const toggle = shadow.querySelector<HTMLButtonElement>('[data-action="panel"]')!;
+  toggle.click();
+  shadow.querySelector<HTMLButtonElement>('[data-comment-scope="course"]')!.focus();
+
+  toggle.click();
+
+  assert.equal(shadow.activeElement, toggle);
+  assert.equal(shadow.querySelector<HTMLElement>(".panel")!.inert, true);
+});
+
 test("a disconnected state closes an open review panel when its toggle is removed", () => {
   for (const status of ["signed-out", "pending", "offline"] as const) {
     const window = new Window(); const document = window.document as unknown as Document;

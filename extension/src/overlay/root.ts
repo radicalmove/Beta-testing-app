@@ -150,6 +150,13 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
       }, 180);
       return;
     }
+    const activeElement = shadow.activeElement;
+    if (activeElement && panel.contains(activeElement)) {
+      const focusTarget = shadow.querySelector<HTMLElement>('[data-action="authenticate"]')
+        ?? shadow.querySelector<HTMLElement>('[data-action="panel"]')
+        ?? shadow.querySelector<HTMLElement>(".shell");
+      focusTarget?.focus();
+    }
     panel.inert = true;
     if (!animate || panel.hidden) {
       panel.hidden = true;
@@ -477,8 +484,8 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
       const courseChanged = context.course_url !== next.course_url;
       stateVersion += 1; authenticating = false; context = next; status = nextStatus; closeChoice(false);
       if (pageChanged) { renderer.destroy(); renderer = makeRenderer(); }
-      if (courseChanged) setPanelOpen((nextStatus === "connected" || nextStatus === "connecting") && readCoursePanelState(panelStateStorage, next.course_url), { animate: false, persist: false });
       updateLabels();
+      if (courseChanged) setPanelOpen((nextStatus === "connected" || nextStatus === "connecting") && readCoursePanelState(panelStateStorage, next.course_url), { animate: false, persist: false });
       if (nextStatus !== "connected") { shadow.querySelectorAll<HTMLElement>("[data-comment-count],[data-comment-count-short]").forEach((node) => { node.textContent = "0"; }); }
       const dialog = shadow.querySelector<HTMLElement>(".dialog");
       if (dialog && composerContext && (composerContext.page_url !== next.page_url || composerContext.course_url !== next.course_url) && !dialog.querySelector("[data-context-warning]")) {
