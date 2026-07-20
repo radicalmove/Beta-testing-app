@@ -1,7 +1,7 @@
 import { recoverPinAnchor } from "./anchors/pin.ts";
 import { recoverTextAnchor, renderTextHighlight } from "./anchors/recover.ts";
 import type { PageComment } from "./background-bridge.ts";
-import { createSaveIcon } from "./ui/save-icon.ts";
+import { createReviewIcon } from "./ui/icon-family.ts";
 import { projectCourseComments } from "./course-comment-order.ts";
 
 export type UnresolvedAnchor = { id: string; label: string; quote?: string };
@@ -24,7 +24,7 @@ export type CommentRendererOptions = {
   onUnresolvedAnchors?: (anchors: UnresolvedAnchor[]) => void;
 };
 
-const rendererStyles = `:host{all:initial;font:16px/1.5 Poppins,Arial,sans-serif;color:#102f38}button,textarea,input{box-sizing:border-box;font:inherit}button{appearance:none;min-height:36px;border:2px solid #073f3e;border-radius:5px;background:#fff;color:#073f3e;font-weight:650;padding:7px 9px;cursor:pointer}.thread-action:hover,.thread-action[aria-pressed="true"]{background:#073f3e;color:#fff}.thread-top-actions{display:contents}.thread-edit,.thread-delete,.resolve-toggle{position:absolute;top:8px;width:34px;min-height:34px;height:34px;padding:2px;border-radius:5px}.thread-edit{right:92px;border:2px solid #a84f12;background:#fff;color:#a84f12;font-size:23px;line-height:1}.thread-edit:hover,.thread-edit[aria-pressed="true"]{background:#a84f12;color:#fff}.thread-delete{right:8px;border:2px solid #d73b3d;background:#d73b3d;color:#fff}.thread-delete svg,.resolve-toggle svg{display:block;width:100%;height:100%}.thread-delete:hover{border-color:#d73b3d;background:#fff}.thread-delete:hover .delete-body{fill:#d73b3d}.thread-delete:hover .delete-lines{stroke:#fff}.resolve-toggle{right:50px;margin:0;border:2px solid #111;border-radius:2px;background:#fff}.resolve-toggle:hover{border-color:#111;background:#f4f4f4}.status-hover-tick{opacity:0;transition:opacity .15s ease}.resolve-toggle:hover .status-hover-tick{opacity:.28}.status-resolved-tick{opacity:1}.thread-navigation{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}.thread-navigation button{height:34px;min-height:34px;padding:3px 6px;white-space:nowrap}.thread-navigation button:disabled{cursor:default;opacity:.42}.thread-previous,.thread-next{border-color:#356f9f;color:#356f9f}.thread-previous:not(:disabled):hover,.thread-next:not(:disabled):hover{background:#356f9f;color:#fff}.thread-reply{border-color:#073f3e;color:#073f3e}.thread-reply:hover,.thread-reply[aria-expanded="true"]{background:#073f3e;color:#fff}.comment-composer[data-reply-composer]{margin-top:12px}.comment-composer-field-row{display:grid;grid-template-columns:minmax(0,1fr) 34px;gap:8px;align-items:start;margin-right:-6px}.comment-composer-field-row textarea{min-width:0;width:100%;min-height:72px}.comment-composer-save{box-sizing:border-box;width:34px;height:34px;min-height:34px;padding:2px;border:2px solid #176b43;border-radius:5px;background:#176b43;color:#fff}.comment-composer-save svg{display:block;width:100%;height:100%}.comment-composer-save:hover{background:#fff;color:#176b43}.comment-composer-actions{display:flex;justify-content:flex-end;margin-top:8px}.comment-composer-cancel{box-sizing:border-box;width:calc((100% - 16px)/3);height:34px;min-height:34px;padding:3px 9px;border:2px solid #d73b3d;border-radius:5px;background:#d73b3d;color:#fff;font:inherit;font-weight:650;line-height:1}.comment-composer-cancel:hover{background:#fff;color:#d73b3d}.attachment-field{display:block;margin:10px 0;font-size:13px;font-weight:650}.attachment-field input{display:block;width:100%;margin-top:4px;font-size:12px;font-weight:400}`;
+const rendererStyles = `:host{all:initial;font:16px/1.5 Poppins,Arial,sans-serif;color:#102f38}button,textarea,input{box-sizing:border-box;font:inherit}button{appearance:none;min-height:36px;border:2px solid #073f3e;border-radius:5px;background:#fff;color:#073f3e;font-weight:650;padding:7px 9px;cursor:pointer}.thread-action:hover,.thread-action[aria-pressed="true"]{background:#073f3e;color:#fff}.thread-top-actions{display:contents}.thread-edit,.thread-delete,.resolve-toggle{position:absolute;top:8px;width:34px;min-height:34px;height:34px;padding:2px;border-radius:5px}.thread-edit{right:92px;border:2px solid #a84f12;background:#fff;color:#a84f12;font-size:23px;line-height:1}.thread-edit:hover,.thread-edit[aria-pressed="true"]{background:#a84f12;color:#fff}.thread-delete{right:8px;border:2px solid #d73b3d;background:#d73b3d;color:#fff}.thread-edit svg,.thread-delete svg,.resolve-toggle svg{display:block;width:100%;height:100%}.thread-delete:hover{border-color:#d73b3d;background:#fff;color:#d73b3d}.resolve-toggle{right:50px;margin:0;border:2px solid #111;border-radius:2px;background:#fff}.resolve-toggle:hover{border-color:#111;background:#f4f4f4}.status-hover-tick{opacity:0;transition:opacity .15s ease}.resolve-toggle:hover .status-hover-tick{opacity:.28}.status-resolved-tick{opacity:1}.thread-navigation{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}.thread-navigation button{height:34px;min-height:34px;padding:3px 6px;white-space:nowrap}.thread-navigation button:disabled{cursor:default;opacity:.42}.thread-previous,.thread-next{border-color:#356f9f;color:#356f9f}.thread-previous:not(:disabled):hover,.thread-next:not(:disabled):hover{background:#356f9f;color:#fff}.thread-reply{border-color:#073f3e;color:#073f3e}.thread-reply:hover,.thread-reply[aria-expanded="true"]{background:#073f3e;color:#fff}.comment-composer[data-reply-composer]{margin-top:12px}.comment-composer-field-row{display:grid;grid-template-columns:minmax(0,1fr) 34px;gap:8px;align-items:start;margin-right:-6px}.comment-composer-field-row textarea{min-width:0;width:100%;min-height:72px}.comment-composer-save{box-sizing:border-box;width:34px;height:34px;min-height:34px;padding:2px;border:2px solid #176b43;border-radius:5px;background:#176b43;color:#fff}.comment-composer-save svg{display:block;width:100%;height:100%}.comment-composer-save:hover{background:#fff;color:#176b43}.comment-composer-actions{display:flex;justify-content:flex-end;margin-top:8px}.comment-composer-cancel{box-sizing:border-box;width:calc((100% - 16px)/3);height:34px;min-height:34px;padding:3px 9px;border:2px solid #d73b3d;border-radius:5px;background:#d73b3d;color:#fff;font:inherit;font-weight:650;line-height:1}.comment-composer-cancel:hover{background:#fff;color:#d73b3d}.attachment-field{display:block;margin:10px 0;font-size:13px;font-weight:650}.attachment-field input{display:block;width:100%;margin-top:4px;font-size:12px;font-weight:400}`;
 
 const attachmentAccept = ".pdf,.doc,.docx,.png,.jpg,.jpeg,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg";
 const maxAttachmentBytes = 10 * 1024 * 1024;
@@ -39,7 +39,7 @@ function createComposerControls(document: Document, kind: "edit" | "reply", save
   const composer = document.createElement("div"); composer.className = "comment-composer"; composer.dataset[kind === "edit" ? "editComposer" : "replyComposer"] = "true";
   const textarea = document.createElement("textarea");
   const { label: attachmentLabel, input: attachment } = attachmentField(document); attachmentLabel.hidden = !attachmentEnabled;
-  const save = document.createElement("button"); save.type = "button"; save.className = "comment-composer-save"; save.dataset[kind === "edit" ? "saveEdit" : "saveReply"] = "true"; save.setAttribute("aria-label", saveLabel); save.title = saveLabel; save.append(createSaveIcon(document));
+  const save = document.createElement("button"); save.type = "button"; save.className = "comment-composer-save"; save.dataset[kind === "edit" ? "saveEdit" : "saveReply"] = "true"; save.setAttribute("aria-label", saveLabel); save.title = saveLabel; save.append(createReviewIcon(document, "save"));
   const fieldRow = document.createElement("div"); fieldRow.className = "comment-composer-field-row"; fieldRow.dataset.composerFieldRow = "true"; fieldRow.append(textarea, save);
   const cancel = document.createElement("button"); cancel.type = "button"; cancel.className = "comment-composer-cancel"; cancel.textContent = "Cancel";
   const actions = document.createElement("div"); actions.className = "comment-composer-actions"; actions.dataset.composerActions = "true"; actions.append(cancel);
@@ -55,12 +55,6 @@ function readAttachment(document: Document, file: File): Promise<string> {
     const reader = new Reader(); reader.addEventListener("load", () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("Could not read attachment")));
     reader.addEventListener("error", () => reject(new Error("Could not read attachment"))); reader.readAsDataURL(file);
   });
-}
-
-function deleteIcon(document: Document): SVGSVGElement {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true");
-  svg.innerHTML = '<path class="delete-body" d="M4 6h16l-1.4 15H5.4L4 6Z" fill="white"/><path class="delete-body" d="M8 3h8l1 2H7l1-2ZM3 5h18v2H3V5Z" fill="white"/><path class="delete-lines" d="M8.5 9v8M12 9v8M15.5 9v8" stroke="#d73b3d" stroke-width="1.8" stroke-linecap="round"/>';
-  return svg;
 }
 
 function statusIcon(document: Document, resolved: boolean): SVGSVGElement {
@@ -147,7 +141,7 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
     article.append(contextLine, byline, body, topActions);
 
     if (comment.capabilities.can_edit && options.editThread) {
-      const edit = document.createElement("button"); edit.type = "button"; edit.className = "thread-edit"; edit.textContent = "✎"; edit.setAttribute("aria-label", "Edit original comment"); edit.title = "Edit comment";
+      const edit = document.createElement("button"); edit.type = "button"; edit.className = "thread-edit"; edit.append(createReviewIcon(document, "edit")); edit.setAttribute("aria-label", "Edit original comment"); edit.title = "Edit comment";
       edit.addEventListener("click", () => {
         const existing = article.querySelector<HTMLElement>("[data-edit-composer]");
         if (existing) { existing.remove(); article.querySelector("[data-composer-actions]")?.remove(); edit.setAttribute("aria-pressed", "false"); body.hidden = false; edit.focus(); return; }
@@ -201,7 +195,7 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
     }
 
     if (comment.capabilities.can_delete && options.deleteThread) {
-      const remove = document.createElement("button"); remove.type = "button"; remove.className = "thread-delete"; remove.append(deleteIcon(document)); remove.setAttribute("aria-label", "Delete thread"); remove.title = "Delete comment thread";
+      const remove = document.createElement("button"); remove.type = "button"; remove.className = "thread-delete"; remove.append(createReviewIcon(document, "delete")); remove.setAttribute("aria-label", "Delete thread"); remove.title = "Delete comment thread";
       remove.addEventListener("click", async () => { if (document.defaultView?.confirm && !document.defaultView.confirm("Delete this entire thread, including all replies and screenshots?")) return; remove.disabled = true; try { await runMutation(() => options.deleteThread!(comment.id)); closeThread(); } catch (error) { remove.disabled = false; showError(article, error, "Could not delete thread"); } });
       topActions.append(remove);
     }

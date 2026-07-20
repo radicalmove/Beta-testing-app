@@ -115,17 +115,28 @@ test("contextual thread controls use the established button styles", () => {
   document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")!.click();
   const root = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!;
 
-  assert.ok(root.querySelector('[aria-label="Edit original comment"]')?.classList.contains("thread-edit"));
-  assert.equal(root.querySelector<HTMLElement>('[aria-label="Edit original comment"]')?.title, "Edit comment");
+  const edit = root.querySelector<HTMLElement>('[aria-label="Edit original comment"]')!;
+  assert.ok(edit.classList.contains("thread-edit"));
+  assert.equal(edit.title, "Edit comment");
+  assert.ok(edit.querySelector('[data-review-icon="edit"]'));
+  assert.equal(edit.textContent?.includes("✎"), false);
+  assert.equal(edit.getAttribute("aria-pressed"), null);
+  edit.click();
+  assert.equal(edit.getAttribute("aria-pressed"), "true");
+  edit.click();
+  assert.equal(edit.getAttribute("aria-pressed"), "false");
   assert.ok(root.querySelector("[data-reply-toggle]")?.classList.contains("thread-reply"));
-  assert.equal(root.querySelector<HTMLElement>('[aria-label="Resolve this comment"]')?.textContent, "");
-  assert.ok(root.querySelector('[aria-label="Resolve this comment"] svg'));
-  assert.ok(root.querySelector('[aria-label="Resolve this comment"] .status-hover-tick'));
-  assert.ok(root.querySelector('[aria-label="Delete thread"]')?.classList.contains("thread-delete"));
-  assert.equal(root.querySelector<HTMLElement>('[aria-label="Delete thread"]')?.title, "Delete comment thread");
-  assert.ok(root.querySelector('[aria-label="Delete thread"] svg'), "delete uses the same white bin artwork as the course list");
+  const resolve = root.querySelector<HTMLElement>('[aria-label="Resolve this comment"]')!;
+  assert.equal(resolve.textContent, "");
+  assert.ok(resolve.querySelector("svg"));
+  assert.ok(resolve.querySelector(".status-hover-tick"));
+  assert.equal(resolve.querySelector("[data-review-icon]"), null);
+  const remove = root.querySelector<HTMLElement>('[aria-label="Delete thread"]')!;
+  assert.ok(remove.classList.contains("thread-delete"));
+  assert.equal(remove.title, "Delete comment thread");
+  assert.ok(remove.querySelector('[data-review-icon="delete"]'));
   assert.match(root.querySelector("style")!.textContent!, /\.thread-delete\{[^}]*background:#d73b3d/);
-  assert.match(root.querySelector("style")!.textContent!, /\.thread-delete:hover\{border-color:#d73b3d;background:#fff\}/);
+  assert.match(root.querySelector("style")!.textContent!, /\.thread-delete:hover\{border-color:#d73b3d;background:#fff;color:#d73b3d\}/);
   assert.match(root.querySelector("style")!.textContent!, /\.resolve-toggle\{right:50px;margin:0;border:2px solid #111;border-radius:2px;background:#fff\}/);
   assert.match(root.querySelector("style")!.textContent!, /\.resolve-toggle:hover \.status-hover-tick\{opacity:\.28\}/);
   assert.match(document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")?.title ?? "", /Open comment/);
@@ -155,6 +166,9 @@ test("contextual thread uses whole-course open numbering and the requested actio
     Array.from(root.querySelectorAll<HTMLElement>("[data-thread-navigation] > button")).map((button) => button.textContent),
     ["Previous", "Reply", "Next"],
   );
+  for (const control of Array.from(root.querySelectorAll<HTMLElement>(".thread-previous, .thread-reply, .thread-next"))) {
+    assert.equal(control.querySelector("svg"), null);
+  }
   assert.match(root.querySelector("style")!.textContent!, /\.thread-edit\{[^}]*right:92px[^}]*border:2px solid #a84f12/);
   assert.match(root.querySelector("style")!.textContent!, /\.thread-navigation\{display:grid;grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
 });
@@ -220,13 +234,11 @@ test("edit composer presents an icon save beside the editor and red cancel at bo
   const fieldRow = composer.querySelector<HTMLElement>("[data-composer-field-row]")!;
   const actions = root.querySelector<HTMLElement>("[data-composer-actions]")!;
   assert.deepEqual(Array.from(fieldRow.children).map((node) => node.tagName), ["TEXTAREA", "BUTTON"]);
-  assert.equal(fieldRow.querySelector("[data-save-edit]")?.getAttribute("aria-label"), "Save edited comment");
-  assert.equal(fieldRow.querySelector<HTMLElement>("[data-save-edit]")?.title, "Save edited comment");
-  const icon = fieldRow.querySelector("[data-save-edit] svg")!;
-  assert.equal(icon.getAttribute("viewBox"), "0 0 220 220");
-  const suppliedSilhouette = icon.querySelector("path")?.getAttribute("d") ?? "";
-  assert.ok(suppliedSilhouette.length > 1_900, "save icon embeds a self-contained vector trace of the supplied silhouette");
-  assert.equal(icon.querySelector("image, mask"), null, "save icon must not depend on Chrome rendering an image inside an SVG mask");
+  const save = fieldRow.querySelector<HTMLElement>("[data-save-edit]")!;
+  assert.equal(save.getAttribute("data-save-edit"), "true");
+  assert.equal(save.getAttribute("aria-label"), "Save edited comment");
+  assert.equal(save.title, "Save edited comment");
+  assert.ok(save.querySelector('[data-review-icon="save"]'));
   assert.equal(fieldRow.nextElementSibling?.className, "attachment-field");
   assert.deepEqual(Array.from(actions.children).map((node) => node.textContent), ["Cancel"]);
   assert.equal(actions.previousElementSibling?.getAttribute("data-thread-navigation"), "true", "cancel sits below the navigation row");
@@ -250,8 +262,11 @@ test("reply composer mirrors edit controls and ordering", () => {
   const row = composer.querySelector<HTMLElement>("[data-composer-field-row]")!;
   const actions = root.querySelector<HTMLElement>("[data-composer-actions]")!;
   assert.deepEqual(Array.from(row.children).map((node) => node.tagName), ["TEXTAREA", "BUTTON"]);
-  assert.equal(row.querySelector("[data-save-reply]")?.getAttribute("aria-label"), "Save reply");
-  assert.equal(row.querySelector<HTMLElement>("[data-save-reply]")?.title, "Save reply");
+  const save = row.querySelector<HTMLElement>("[data-save-reply]")!;
+  assert.equal(save.getAttribute("data-save-reply"), "true");
+  assert.equal(save.getAttribute("aria-label"), "Save reply");
+  assert.equal(save.title, "Save reply");
+  assert.ok(save.querySelector('[data-review-icon="save"]'));
   assert.equal(row.nextElementSibling?.className, "attachment-field");
   assert.equal(actions.previousElementSibling?.getAttribute("data-thread-navigation"), "true");
   assert.deepEqual(Array.from(actions.children).map((node) => node.textContent), ["Cancel"]);
