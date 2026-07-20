@@ -904,6 +904,11 @@ test("course group headings remove the embedded activity prefix and use the larg
   overlay.destroy();
 });
 
+test("comment rows stay compact while course-page headings remain prominent", () => {
+  assert.match(approvedControlStyles, /\.comment-group-heading\{[^}]*font-size:13px/);
+  assert.match(tealOverlayOverrides + approvedControlStyles, /\.comment-index-link\{[^}]*font-size:12px[^}]*line-height:1\.3/);
+});
+
 test("large course comment lists are viewport bounded and scroll in a dedicated results region", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;

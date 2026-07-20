@@ -57,15 +57,16 @@ test("renders and restores only comments for the renderer's exact page URL", () 
   assert.equal(document.querySelector("[data-moodle-review-stored-pin]"), null);
 });
 
-test("embedded composer controls use the Poppins-first review font stack", () => {
+test("standalone SCORM threads use the established Poppins typography and button weight", () => {
   const { document } = setup();
-  const renderer = createCommentRenderer(document, pageUrl, { editThread: async () => {} });
-  renderer.setComments([comment()]);
-  document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")!.click();
-  const root = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!;
-  root.querySelector<HTMLElement>('[aria-label="Edit original comment"]')!.click();
-  const styles = root.querySelector<HTMLStyleElement>("style[data-comment-renderer-styles]")!.textContent!;
-  assert.match(styles, /button,textarea,input\{[^}]*font:16px\/1\.5 Poppins,Arial,sans-serif/);
+  const renderer = createCommentRenderer(document, pageUrl);
+  const host = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!;
+  const css = host.shadowRoot!.querySelector<HTMLStyleElement>("style[data-comment-renderer-styles]")!.textContent!;
+  assert.match(host.style.cssText, /font:\s*16px\s*\/\s*1\.5\s+Poppins,\s*Arial,\s*sans-serif/);
+  assert.match(css, /button,textarea,input\{box-sizing:border-box;font:inherit\}/);
+  assert.match(css, /button\{[^}]*font-weight:650/);
+  assert.doesNotMatch(css, /button,textarea,input\{font:16px\/1\.5 Poppins,Arial,sans-serif\}/);
+  renderer.destroy();
 });
 
 test("nested SCORM scrolling hides offscreen markers and their open threads", async () => {
