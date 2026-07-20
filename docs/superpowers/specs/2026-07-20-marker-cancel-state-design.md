@@ -11,11 +11,12 @@ Marker mode currently writes its instruction directly into `[data-panel-content]
 ## Design
 
 - Marker instructions are a separate temporary panel child identified by a dedicated data attribute and live region semantics.
-- Entering marker mode hides, but does not replace or mutate, `[data-panel-content]` and then exposes the temporary instruction.
+- If the Comments panel is already expanded, entering marker mode keeps `[data-panel-content]` fully visible and places a compact temporary instruction banner above the existing filters and comment list.
+- If the Comments panel was collapsed, entering marker mode opens only the compact instruction state; the comment list remains rendered but hidden until the reviewer explicitly opens Comments or marker mode ends.
 - The overlay records whether the Comments panel was expanded immediately before marker mode began.
 - Every marker-mode exit path uses one cleanup operation: clicking Cancel marker, pressing Escape, placing a marker, restarting marker mode, or destroying the overlay.
-- Cleanup removes the temporary instruction, reveals the preserved comments content, clears cursor/candidate outlines/listeners, and restores the panel's pre-marker expanded state without changing the saved per-course preference.
-- Comment refreshes that occur during marker mode may update the hidden `[data-panel-content]`; those refreshed nodes become visible when marker mode ends.
+- Cleanup removes the temporary instruction, clears cursor/candidate outlines/listeners, and restores the panel's pre-marker expanded state without changing the saved per-course preference.
+- Comment refreshes that occur during marker mode update the existing list without changing its intended visibility.
 - A missing or already-removed temporary instruction is harmless, making repeated cleanup idempotent.
 
 ## Focus behaviour
@@ -28,11 +29,11 @@ Marker mode currently writes its instruction directly into `[data-panel-content]
 
 Regression tests must demonstrate:
 
-1. Entering marker mode preserves the original comment-list DOM while showing separate instructions.
-2. Clicking Cancel marker restores the original list and its prior expanded/collapsed panel state.
-3. Escape performs the same restoration.
-4. Successful marker placement and overlay destruction remove the temporary instruction cleanly.
-5. A comment-list refresh during marker mode is visible after cancellation.
-6. Mounting with a saved open panel restores it without automatically focusing Comments.
-7. Existing keyboard focus outlines and explicit focus-restoration paths remain intact.
-
+1. Entering marker mode from an expanded Comments panel preserves and keeps the original comment-list DOM visible beneath a separate instruction banner.
+2. Entering marker mode from a collapsed panel shows only the instruction state and returns to collapsed on cancellation.
+3. Clicking Cancel marker restores the original list and its prior expanded/collapsed panel state.
+4. Escape performs the same restoration.
+5. Successful marker placement and overlay destruction remove the temporary instruction cleanly.
+6. A comment-list refresh during marker mode remains available without collapsing an already-open list.
+7. Mounting with a saved open panel restores it without automatically focusing Comments.
+8. Existing keyboard focus outlines and explicit focus-restoration paths remain intact.
