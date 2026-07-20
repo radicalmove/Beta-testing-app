@@ -786,10 +786,13 @@ test("course scope and status filters share one compact row", () => {
   assert.match(approvedControlStyles, /--review-status:#176b43/);
 });
 
-test("comment panel does not repeat the current page heading above its filters", () => {
-  const markup = createOverlayMarkup({ courseTitle: "Law", pageTitle: "Week 2", status: "connected" });
-  assert.doesNotMatch(markup, /panel-title/);
-  assert.doesNotMatch(markup, />Week 2</);
+test("comment panel identifies the current page above its filters", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, { ...context, pageTitle: "Week 2" }, "connected");
+  overlay.setCommentList([]);
+  const heading = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!.querySelector<HTMLElement>("[data-current-page-heading]")!;
+  assert.equal(heading.textContent, "Current page: Week 2");
+  overlay.destroy();
 });
 
 test("toolbar and semantic comment controls expose approved states", () => {

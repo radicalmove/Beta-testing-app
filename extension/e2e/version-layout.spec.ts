@@ -37,7 +37,7 @@ test("version remains accessible without overlapping review controls at 320 CSS 
   expect(intersects(boxes[0], boxes[1])).toBe(false);
 
   await host.locator('[data-action="help"]').click();
-  await expect(host.getByText("Pilot 0.4.67 · build 0000000")).toBeVisible();
+  await expect(host.getByText("Pilot 0.4.68 · build 0000000")).toBeVisible();
 });
 
 test("course comment controls remain equal height on one row", async ({ page }) => {
