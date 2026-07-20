@@ -386,6 +386,7 @@ test("a user panel choice persists across remounts for only that course", () => 
   const secondShadow = secondDocument.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   assert.equal(secondShadow.querySelector<HTMLElement>(".panel")!.hidden, false);
   assert.equal(secondShadow.querySelector('[data-action="panel"]')!.getAttribute("aria-expanded"), "true");
+  assert.notEqual(secondShadow.activeElement, secondShadow.querySelector('[data-action="panel"]'));
 
   const otherWindow = new Window(); const otherDocument = otherWindow.document as unknown as Document;
   const otherCourse = { ...context, course_url: "https://learn.example/course/view.php?id=99", moodle_course_id: 99 };

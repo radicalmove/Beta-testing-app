@@ -105,6 +105,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   let jumpOutsideListener: EventListener | undefined;
   let renderer: CommentRenderer;
   let panelOpen = false;
+  let panelOpenBeforeMarker: boolean | undefined;
   let panelTransitionTimer: number | undefined;
   const panelStateStorage = options.panelStateStorage ?? (() => {
     try { return ownerDocument.defaultView?.localStorage; }
@@ -181,6 +182,12 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     ownerDocument.documentElement.style.removeProperty("cursor");
     const action = shadow.querySelector<HTMLElement>('[data-action="add-comment"]');
     if (action) { action.setAttribute("aria-pressed", "false"); action.textContent = "Add comment marker"; }
+    shadow.querySelector("[data-marker-instruction]")?.remove();
+    const panelContent = shadow.querySelector<HTMLElement>("[data-panel-content]");
+    if (panelContent) panelContent.hidden = false;
+    const restorePanelOpen = panelOpenBeforeMarker;
+    panelOpenBeforeMarker = undefined;
+    if (restorePanelOpen !== undefined) setPanelOpen(restorePanelOpen, { animate: false, persist: false });
     for (const candidate of areaCandidates) { candidate.style.removeProperty("outline"); candidate.style.removeProperty("outline-offset"); }
     areaCandidates = []; areaCandidateIndex = -1;
   };
@@ -193,7 +200,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     const label = (direct.length >= 2 && direct.length <= 120 ? direct : clean(heading?.getAttribute("aria-label")) || clean(heading?.textContent)).slice(0, 120);
     return label ? `Commenting near: ${label}` : "Commenting on this part of the page";
   };
-  const cancelPin = (event: KeyboardEvent) => { if (event.key === "Escape" && pinListener) { clearAreaSelection(); fallbackPin = false; setPanelOpen(false, { animate: false, persist: false }); returnFocus?.focus(); } };
+  const cancelPin = (event: KeyboardEvent) => { if (event.key === "Escape" && pinListener) { clearAreaSelection(); fallbackPin = false; returnFocus?.focus(); } };
   const mount = () => {
     const style = shadow.querySelector("style");
     shadow.innerHTML = "";
@@ -294,13 +301,21 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     closeChoice(false);
     if (pinListener) clearAreaSelection();
     returnFocus = trigger;
+    panelOpenBeforeMarker = panelOpen;
     trigger.setAttribute("aria-pressed", "true");
     trigger.textContent = "💬 Cancel marker";
     ownerDocument.documentElement.style.cursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Cpath fill='%2328c4c2' stroke='%230b6261' stroke-width='2' d='M3 3h24v18H13l-7 6v-6H3z'/%3E%3C/svg%3E") 4 4, crosshair`;
     setPanelOpen(true, { animate: false, persist: false });
-    const instruction = shadow.querySelector<HTMLElement>("[data-panel-content]")!;
+    const panel = shadow.querySelector<HTMLElement>(".panel")!;
+    const panelContent = panel.querySelector<HTMLElement>("[data-panel-content]")!;
+    panelContent.hidden = true;
+    const instruction = ownerDocument.createElement("div");
+    instruction.dataset.markerInstruction = "true";
+    instruction.setAttribute("role", "status");
+    instruction.setAttribute("aria-live", "polite");
     instruction.tabIndex = -1;
     instruction.textContent = "Click an area, or use the arrow keys to choose one. Press Escape to cancel.";
+    panel.append(instruction);
     const finish = (element: HTMLElement, x: number, y: number) => { const anchor = capturePinAnchor(element, x, y); if (!anchor) return; clearAreaSelection(); previewCleanup = renderPin(ownerDocument, anchor); openDialog(trigger, frameUnavailable ? "Comment on embedded content" : "Comment on an area", { anchor_type: "visual_pin", ...anchor }); };
     pinListener = (pointer) => {
       const pointed = ownerDocument.elementFromPoint(pointer.clientX, pointer.clientY) as HTMLElement | null;
@@ -425,7 +440,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
       if (interactionTarget === "reload-required") { options.onReloadRequired?.(); return; }
       if (interactionTarget === "loading") { loadingMarkerQueued = !loadingMarkerQueued; options.onRequestInteraction?.("marker"); updateAdaptiveAction(); return; }
       if (interactionTarget === "embedded") { options.onRequestInteraction?.(embeddedSelection ? "selection" : "marker"); return; }
-      if (pinListener) { event.preventDefault(); event.stopPropagation(); clearAreaSelection(); fallbackPin = false; setPanelOpen(false, { animate: false, persist: false }); trigger.focus(); return; }
+      if (pinListener) { event.preventDefault(); event.stopPropagation(); clearAreaSelection(); fallbackPin = false; trigger.focus(); return; }
       const selected = selectedTextDraft();
       if (selected) { returnFocus = trigger; previewCleanup = renderTextHighlight(ownerDocument, selected.range); openDialog(trigger, "Comment on highlighted text", { anchor_type: "text_highlight", ...selected.anchor }); }
       else startAreaSelection(trigger);

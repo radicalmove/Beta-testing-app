@@ -94,10 +94,42 @@ test("marker placement cancels with Escape and restores Add comment focus", () =
   const window = new Window(); const document = window.document as unknown as Document;
   const overlay = mountReviewOverlay(document, context, "connected");
   const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  overlay.setCommentList([storedHighlight]);
+  const panelContent = shadow.querySelector<HTMLElement>("[data-panel-content]")!;
+  const originalComment = panelContent.querySelector<HTMLElement>("[data-comment-item]");
   const trigger = shadow.querySelector<HTMLElement>('[data-action="add-comment"]')!;
   trigger.click();
+  assert.ok(shadow.querySelector("[data-marker-instruction]"));
+  assert.equal(panelContent.hidden, true);
+  assert.equal(panelContent.querySelector("[data-comment-item]"), originalComment);
   document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }) as unknown as Event);
+  assert.equal(shadow.querySelector("[data-marker-instruction]"), null);
+  assert.equal(panelContent.hidden, false);
+  assert.equal(panelContent.querySelector("[data-comment-item]"), originalComment);
+  assert.equal(shadow.querySelector<HTMLElement>(".panel")!.hidden, true);
   assert.equal(shadow.activeElement, trigger);
+  overlay.destroy();
+});
+
+test("Cancel marker restores an already-open comments panel and its rendered list", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected");
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  overlay.setCommentList([storedHighlight]);
+  shadow.querySelector<HTMLElement>('[data-action="panel"]')!.click();
+  const panel = shadow.querySelector<HTMLElement>(".panel")!;
+  const panelContent = shadow.querySelector<HTMLElement>("[data-panel-content]")!;
+  const originalComment = panelContent.querySelector<HTMLElement>("[data-comment-item]");
+
+  const marker = shadow.querySelector<HTMLElement>('[data-action="add-comment"]')!;
+  marker.click();
+  marker.click();
+
+  assert.equal(shadow.querySelector("[data-marker-instruction]"), null);
+  assert.equal(panelContent.hidden, false);
+  assert.equal(panelContent.querySelector("[data-comment-item]"), originalComment);
+  assert.equal(panel.hidden, false);
+  assert.equal(marker.getAttribute("aria-pressed"), "false");
   overlay.destroy();
 });
 
@@ -112,6 +144,27 @@ test("marker placement uses the pointer target when Rise element lookup is unava
   shadow.querySelector<HTMLElement>('[data-action="add-comment"]')!.click();
   target.dispatchEvent(new window.PointerEvent("pointerdown", { clientX: 60, clientY: 50, bubbles: true, composed: true }) as unknown as Event);
   assert.ok(shadow.querySelector(".dialog"));
+  assert.equal(shadow.querySelector("[data-marker-instruction]"), null);
+  assert.equal(shadow.querySelector<HTMLElement>("[data-panel-content]")!.hidden, false);
+  overlay.destroy();
+});
+
+test("comment refreshes during marker placement are revealed after cancellation", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected");
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const trigger = shadow.querySelector<HTMLElement>('[data-action="add-comment"]')!;
+  trigger.click();
+  overlay.setCommentList([storedHighlight]);
+  const panelContent = shadow.querySelector<HTMLElement>("[data-panel-content]")!;
+  assert.equal(panelContent.hidden, true);
+  assert.match(panelContent.textContent!, /Clarify this/);
+
+  trigger.click();
+
+  assert.equal(panelContent.hidden, false);
+  assert.match(panelContent.textContent!, /Clarify this/);
+  assert.equal(shadow.querySelector("[data-marker-instruction]"), null);
   overlay.destroy();
 });
 
@@ -124,7 +177,7 @@ test("keyboard area selection starts from the last focused eligible page target"
   pageAction.focus();
   const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   shadow.querySelector<HTMLElement>('[data-action="add-comment"]')!.click();
-  assert.match(shadow.querySelector("[data-panel-content]")!.textContent!, /arrow keys/);
+  assert.match(shadow.querySelector("[data-marker-instruction]")!.textContent!, /arrow keys/);
   assert.match(pageAction.style.outline, /4px/);
   assert.match(pageAction.style.outline, /#d73b3d/);
   document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }) as unknown as Event);
@@ -138,7 +191,7 @@ test("area selection announces when no eligible page targets exist", () => {
   const overlay = mountReviewOverlay(document, context, "connected");
   const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   shadow.querySelector<HTMLElement>('[data-action="add-comment"]')!.click();
-  assert.equal(shadow.querySelector("[data-panel-content]")!.textContent, "No selectable areas found; use Comment on text instead.");
+  assert.equal(shadow.querySelector("[data-marker-instruction]")!.textContent, "No selectable areas found; use Comment on text instead.");
   overlay.destroy();
 });
 
