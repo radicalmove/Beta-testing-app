@@ -3,6 +3,7 @@ import { captureTextAnchor, type TextAnchor } from "./anchors/text.ts";
 import type { PageComment } from "./background-bridge.ts";
 import { createCommentRenderer, type CommentRenderer } from "./comment-renderer.ts";
 import { SCORM_ACK_TYPES, type ScormAck, type ScormCommand, type ScormEvent, validateScormMessage } from "./scorm-protocol.ts";
+import { COMMENT_MARKER_CURSOR } from "./ui/comment-cursor.ts";
 
 type LifecycleController = { teardown(): void; flush(): void };
 type LifecycleFactory = (window: Window & typeof globalThis, document: Document, refresh: () => void) => LifecycleController;
@@ -110,7 +111,7 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
     markerActive = true;
     previousCursor = document.documentElement.style.getPropertyValue("cursor");
     previousCursorPriority = document.documentElement.style.getPropertyPriority("cursor");
-    document.documentElement.style.setProperty("cursor", "crosshair", "important");
+    document.documentElement.style.setProperty("cursor", COMMENT_MARKER_CURSOR, "important");
     document.addEventListener("click", onMarkerClick, true);
   };
 

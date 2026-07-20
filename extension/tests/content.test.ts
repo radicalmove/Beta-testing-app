@@ -282,10 +282,11 @@ test("interaction target queues one intent while loading and replays it to an em
   let deadline!: () => void;
   const states: string[] = [];
   const intents: string[] = [];
+  const desiredStates: Array<string | undefined> = [];
   let cancellations = 0;
   const controller = createInteractionTargetController({ scorm: true, requestablePermission: false, loadingTimeoutMs: 100,
     setTimeout: (handler) => { deadline = handler; return 1; }, clearTimeout: () => undefined,
-    onState: (state) => states.push(state), onReplay: (intent) => intents.push(intent), onCancel: () => { cancellations += 1; } });
+    onState: (state) => states.push(state), onReplay: (intent) => intents.push(intent), onCancel: () => { cancellations += 1; }, onIntentChange: (intent) => desiredStates.push(intent) });
   controller.request("marker"); controller.request("selection");
   assert.equal(controller.queuedIntent(), "selection");
   controller.workerReady();
@@ -296,9 +297,12 @@ test("interaction target queues one intent while loading and replays it to an em
   controller.request("marker"); controller.request("marker");
   assert.equal(cancellations, 1);
   assert.equal(controller.queuedIntent(), undefined);
+  assert.deepEqual(desiredStates.slice(-2), ["marker", undefined]);
   controller.request("marker");
   controller.workerLost(); controller.workerReady();
-  assert.deepEqual(intents.slice(-2), ["marker", "marker"], "replacement worker replays the one retained marker intent");
+  assert.equal(controller.queuedIntent(), undefined, "a lost worker clears active marker mode");
+  assert.equal(desiredStates.at(-1), undefined);
+  assert.equal(intents.at(-1), "marker", "the original worker received the marker request once");
 });
 
 test("requestable permission never falls through to parent fallback", () => {

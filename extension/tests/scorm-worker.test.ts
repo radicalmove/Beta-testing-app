@@ -6,6 +6,7 @@ import type { PageComment } from "../src/background-bridge.ts";
 import type { CommentRenderer } from "../src/comment-renderer.ts";
 import { createScormWorker } from "../src/scorm-worker.ts";
 import { validateScormAckFor, type ScormCommand, type ScormEvent } from "../src/scorm-protocol.ts";
+import { COMMENT_MARKER_CURSOR } from "../src/ui/comment-cursor.ts";
 
 const workerInstanceId = "223e4567-e89b-42d3-a456-426614174000";
 const courseId = "123e4567-e89b-12d3-a456-426614174000";
@@ -131,14 +132,14 @@ test("marker mode changes the cursor, captures one stable pin, and cancel remove
   area.getBoundingClientRect = () => ({ x: 10, y: 20, left: 10, top: 20, right: 110, bottom: 60, width: 100, height: 40, toJSON: () => ({}) });
 
   assert.equal(worker.handleCommand(command(window, "SCORM_START_MARKER", {})).ok, true);
-  assert.match(window.document.documentElement.style.cursor, /crosshair/);
+  assert.equal(window.document.documentElement.style.cursor, COMMENT_MARKER_CURSOR);
   area.dispatchEvent(new window.MouseEvent("click", { bubbles: true, clientX: 60, clientY: 30 }) as any);
   const captured = events.find((event) => event.type === "SCORM_ANCHOR_CAPTURED");
   assert.deepEqual(captured?.payload, { page_title: "Embedded activity · Lesson 1", embedded_locator: "#/lesson/1", anchor_type: "visual_pin", css_selector: "#area", relative_x: 0.5, relative_y: 0.25 });
   assert.equal(window.document.documentElement.style.cursor, "");
 
   worker.handleCommand({ ...command(window, "SCORM_START_MARKER", {}), request_id: "423e4567-e89b-42d3-a456-426614174000" });
-  assert.match(window.document.documentElement.style.cursor, /crosshair/);
+  assert.equal(window.document.documentElement.style.cursor, COMMENT_MARKER_CURSOR);
   worker.handleCommand({ ...command(window, "SCORM_CANCEL_MARKER", {}), request_id: "523e4567-e89b-42d3-a456-426614174000" });
   assert.equal(window.document.documentElement.style.cursor, "");
   area.dispatchEvent(new window.MouseEvent("click", { bubbles: true, clientX: 20, clientY: 20 }) as any);

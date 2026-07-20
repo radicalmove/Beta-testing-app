@@ -57,6 +57,45 @@ test("renders and restores only comments for the renderer's exact page URL", () 
   assert.equal(document.querySelector("[data-moodle-review-stored-pin]"), null);
 });
 
+test("embedded composer controls use the Poppins-first review font stack", () => {
+  const { document } = setup();
+  const renderer = createCommentRenderer(document, pageUrl, { editThread: async () => {} });
+  renderer.setComments([comment()]);
+  document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")!.click();
+  const root = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!;
+  root.querySelector<HTMLElement>('[aria-label="Edit original comment"]')!.click();
+  const styles = root.querySelector<HTMLStyleElement>("style[data-comment-renderer-styles]")!.textContent!;
+  assert.match(styles, /button,textarea,input\{[^}]*font:16px\/1\.5 Poppins,Arial,sans-serif/);
+});
+
+test("nested SCORM scrolling hides offscreen markers and their open threads", async () => {
+  const { window, document } = setup();
+  const target = document.querySelector<HTMLElement>("#target")!;
+  const scroller = document.createElement("div"); scroller.append(target); document.body.append(scroller);
+  let top = 20;
+  target.getBoundingClientRect = () => ({ x: 10, y: top, left: 10, top, right: 210, bottom: top + 100, width: 200, height: 100, toJSON() {} });
+  const renderer = createCommentRenderer(document, pageUrl);
+  renderer.setComments([comment()]);
+  const marker = document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")!;
+  marker.click();
+  const root = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!;
+  const popover = root.querySelector<HTMLElement>("[data-thread-popover]")!;
+  assert.equal(marker.hidden, false);
+  assert.equal(popover.hidden, false);
+
+  top = -160;
+  scroller.dispatchEvent(new window.Event("scroll") as unknown as Event);
+  await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+  assert.equal(marker.hidden, true);
+  assert.equal(popover.hidden, true);
+
+  top = 20;
+  scroller.dispatchEvent(new window.Event("scroll") as unknown as Event);
+  await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+  assert.equal(marker.hidden, false);
+  assert.equal(popover.hidden, false);
+});
+
 test("opens a contextual thread beside its marker and toggles it closed", () => {
   const { document } = setup();
   const renderer = createCommentRenderer(document, pageUrl);
