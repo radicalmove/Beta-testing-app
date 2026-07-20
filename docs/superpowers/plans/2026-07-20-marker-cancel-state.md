@@ -94,4 +94,3 @@ Run the extension, browser, server, deployment, packaging, and release checks re
 - [ ] **Step 3: Commit release metadata and merge to main**
 
 Fast-forward the verified branch into `main`, preserving the user's untracked root `package-lock.json`, then rebuild the pilot folder used by Chrome.
-
