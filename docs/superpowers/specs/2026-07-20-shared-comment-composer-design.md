@@ -12,6 +12,7 @@ Make initial comment creation, editing, and replying use the same visual composi
 - The attachment field sits immediately below the editing row in Create, Edit, and Reply modes.
 - Cancel uses the established red outlined/solid interaction style and sits on its own bottom row at the right.
 - The exact active-mode sequence is: textarea + Save row → attachment → contextual navigation slot → Cancel row. Edit and Reply populate the navigation slot with Previous, Reply, and Next. Create omits that slot. Initial creation retains its heading and context preview around this sequence.
+- In initial creation only, the context preview and composer are separated by 10px of white space. This spacing is scoped to a composer immediately following `.preview` so Edit and Reply layouts do not change.
 
 ## Implementation Boundary
 
@@ -30,5 +31,6 @@ The composer has a single 34px right-hand action column. Save occupies this colu
 
 - Renderer tests verify Edit and Reply child order, shared classes, 34px dimensions, button ordering, tooltip labels, and use of the approved icon path.
 - Overlay tests verify that initial creation uses the same child order/classes and approved icon helper.
+- Overlay style tests verify the targeted 10px gap between the creation context preview and composer.
 - Structural assertions verify the shared 34px action column and common right-alignment boundary for Save and Cancel, including the existing narrow responsive layout.
 - Existing attachment, save, cancel, focus, Moodle, and SCORM tests must remain green.
