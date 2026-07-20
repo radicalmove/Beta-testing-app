@@ -123,6 +123,10 @@ test("Cancel marker restores an already-open comments panel and its rendered lis
 
   const marker = shadow.querySelector<HTMLElement>('[data-action="add-comment"]')!;
   marker.click();
+  const instruction = shadow.querySelector<HTMLElement>("[data-marker-instruction]")!;
+  assert.equal(panelContent.hidden, false);
+  assert.equal(panelContent.querySelector("[data-comment-item]"), originalComment);
+  assert.equal(instruction.nextElementSibling, panelContent);
   marker.click();
 
   assert.equal(shadow.querySelector("[data-marker-instruction]"), null);

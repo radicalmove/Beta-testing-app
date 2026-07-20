@@ -308,14 +308,14 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     setPanelOpen(true, { animate: false, persist: false });
     const panel = shadow.querySelector<HTMLElement>(".panel")!;
     const panelContent = panel.querySelector<HTMLElement>("[data-panel-content]")!;
-    panelContent.hidden = true;
+    panelContent.hidden = panelOpenBeforeMarker !== true;
     const instruction = ownerDocument.createElement("div");
     instruction.dataset.markerInstruction = "true";
     instruction.setAttribute("role", "status");
     instruction.setAttribute("aria-live", "polite");
     instruction.tabIndex = -1;
     instruction.textContent = "Click an area, or use the arrow keys to choose one. Press Escape to cancel.";
-    panel.append(instruction);
+    panel.insertBefore(instruction, panelContent);
     const finish = (element: HTMLElement, x: number, y: number) => { const anchor = capturePinAnchor(element, x, y); if (!anchor) return; clearAreaSelection(); previewCleanup = renderPin(ownerDocument, anchor); openDialog(trigger, frameUnavailable ? "Comment on embedded content" : "Comment on an area", { anchor_type: "visual_pin", ...anchor }); };
     pinListener = (pointer) => {
       const pointed = ownerDocument.elementFromPoint(pointer.clientX, pointer.clientY) as HTMLElement | null;
