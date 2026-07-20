@@ -50,10 +50,10 @@ The exact replacement sites and preserved button contracts are:
 | Initial comment creation | Save | `aria-label="Save comment"`, `title="Save comment"`, existing `data-save` selector |
 | Edit composer | Save | `aria-label="Save edited comment"`, `title="Save edited comment"`, existing `data-save-edit` selector |
 | Reply composer | Save | `aria-label="Save reply"`, `title="Save reply"`, existing `data-save-reply` selector |
-| Contextual thread | Edit | `aria-label="Edit original comment"`, `title="Edit comment"`, existing `aria-pressed` false/true editing state |
-| Contextual thread | Delete | `aria-label="Delete thread"`, `title="Delete comment thread"` |
-| Whole-course comment row | Delete | dynamic `aria-label` and `title` of `Delete comment {course index}` |
-| Toolbar | Help | `aria-label="Help and instructions"`, `title="Help and instructions"`, existing `aria-expanded` false/true dialog state |
+| Contextual thread | Edit | `.thread-edit`; `aria-label="Edit original comment"`; `title="Edit comment"`; preserve the existing `aria-pressed` transition of absent initially, `"true"` when editing opens, then `"false"` when editing closes |
+| Contextual thread | Delete | `.thread-delete`; `aria-label="Delete thread"`; `title="Delete comment thread"` |
+| Whole-course comment row | Delete | `[data-comment-action="delete"].delete-action`; dynamic `aria-label` and `title` of `Delete comment {course index}` |
+| Toolbar | Help | `[data-action="help"]`; `aria-label="Help and instructions"`; `title="Help and instructions"`; existing `aria-expanded` false/true dialog state |
 
 Resolve controls are deliberately excluded from replacement and keep their current hand-drawn tick geometry and labels.
 
@@ -68,7 +68,8 @@ Tests will verify:
 - no icon uses an image, mask, external URL, or icon font;
 - Resolve retains its existing hand-drawn tick;
 - accessible names and tooltip text remain present;
-- Edit and Help retain their existing `aria-pressed` and `aria-expanded` state transitions;
+- `.thread-edit` retains its absent → `"true"` → `"false"` `aria-pressed` transition and `[data-action="help"]` retains its `"false"` → `"true"` → `"false"` `aria-expanded` transition;
+- `.thread-edit`, `.thread-delete`, `[data-comment-action="delete"].delete-action`, and `[data-action="help"]` remain stable selectors after their icons change;
 - Comments, Reply, Previous, Next, filters, Jump to, and other text-only controls do not gain SVG children;
 - existing hover, focus, creation, editing, reply, deletion, Help, Moodle, and SCORM behaviours remain intact.
 
