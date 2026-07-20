@@ -227,6 +227,29 @@ test("previous and next follow anchor order on the current page and scroll into 
   assert.ok(scrolls.length > 0);
 });
 
+test("next from the final anchor-ordered comment navigates to the following course page", async () => {
+  const { document } = setup();
+  const positions = [["first-on-page", 20], ["last-on-page", 220]] as const;
+  for (const [id, top] of positions) {
+    const target = document.createElement("div"); target.id = id;
+    target.getBoundingClientRect = () => ({ x: 10, y: top, left: 10, top, right: 110, bottom: top + 40, width: 100, height: 40, toJSON() {} });
+    document.body.append(target);
+  }
+  const navigations: Array<[string, string]> = [];
+  const first = comment({ id: "00000000-0000-4000-8000-000000000041", body: "First here", page_title: "2 Current page", css_selector: "#first-on-page" });
+  const last = comment({ id: "00000000-0000-4000-8000-000000000042", body: "Last here", page_title: "2 Current page", css_selector: "#last-on-page" });
+  const following = comment({ id: "00000000-0000-4000-8000-000000000043", body: "First there", page_url: otherPageUrl, page_title: "3 Following page" });
+  const renderer = createCommentRenderer(document, pageUrl, { navigateToComment: async (id, url) => { navigations.push([id, url]); } });
+  renderer.setComments([last, following, first]);
+  document.querySelector<HTMLElement>(`[data-moodle-review-stored-pin="${last.id}"]`)!.click();
+  const root = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!;
+
+  root.querySelector<HTMLButtonElement>('[data-thread-navigation] [data-direction="next"]')!.click();
+  await settle();
+
+  assert.deepEqual(navigations, [[following.id, following.page_url]]);
+});
+
 test("editing uploads the selected attachment after saving the text", async () => {
   const { window, document } = setup();
   const calls: string[] = [];

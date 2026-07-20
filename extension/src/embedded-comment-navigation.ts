@@ -240,11 +240,12 @@ export async function handleCommentNavigationMessage(message: unknown, sender: N
   const isRawScorm = rawScormPackageUrl(new URL(comment.page_url));
   if ((comment.parent_activity_url === null) !== (comment.embedded_locator === null) && !isRawScorm) throw new Error("Invalid embedded comment navigation metadata");
   let parentActivityUrl = comment.parent_activity_url;
+  const embeddedLocator = comment.embedded_locator ?? (isRawScorm ? `${requestedPage.pathname}${requestedPage.search}` : null);
   if (isRawScorm && (!parentActivityUrl || !validScormParent(parentActivityUrl, senderOrigin) || !new URL(parentActivityUrl).searchParams.get("scoid"))) parentActivityUrl = await dependencies.recoverScormParent?.(courseId, comment.page_url) ?? null;
   if (isRawScorm && parentActivityUrl === null) throw new Error("This SCORM comment cannot be opened because its Moodle activity location is missing.");
   if (parentActivityUrl !== null) {
-    if (!validScormParent(parentActivityUrl, senderOrigin) || comment.embedded_locator === null) throw new Error("Invalid embedded parent activity");
-    await dependencies.navigation.prepare(tabId, { id: comment.id, courseId, pageUrl: comment.page_url, parentActivityUrl, embeddedLocator: comment.embedded_locator });
+    if (!validScormParent(parentActivityUrl, senderOrigin) || embeddedLocator === null) throw new Error("Invalid embedded parent activity");
+    await dependencies.navigation.prepare(tabId, { id: comment.id, courseId, pageUrl: comment.page_url, parentActivityUrl, embeddedLocator });
     return dependencies.navigation.advance(tabId);
   }
   if (new URL(comment.page_url).origin === senderOrigin) {

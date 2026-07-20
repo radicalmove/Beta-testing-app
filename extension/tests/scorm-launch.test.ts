@@ -60,6 +60,15 @@ test("cache binds course, origin, cmid and exact package root and survives recon
   assert.equal(await restarted.get({ courseId, configuredOrigin: "https://my.uconline.ac.nz", packageUrl: packageUrl.replace("/27/", "/28/"), cmid: 146308 }), undefined);
 });
 
+test("cache recovers a unique launch from the exact package root without the current page cmid", async () => {
+  const storage = new MemoryStorage();
+  const cache = new ScormLaunchCache(storage, () => 1_000);
+  await cache.put({ courseId, configuredOrigin: "https://my.uconline.ac.nz", cmid: 146308, packageRoot: packageRootFromScormUrl(packageUrl), playerUrl });
+
+  assert.equal(await cache.get({ courseId, configuredOrigin: "https://my.uconline.ac.nz", packageUrl }), playerUrl);
+  assert.equal(await cache.get({ courseId, configuredOrigin: "https://my.uconline.ac.nz", packageUrl: packageUrl.replace("/27/", "/28/") }), undefined);
+});
+
 test("cache expires records, purges malformed data, and evicts oldest records above its bound", async () => {
   const storage = new MemoryStorage(); let now = 0;
   const cache = new ScormLaunchCache(storage, () => now, 100, 2);

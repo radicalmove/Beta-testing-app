@@ -4,7 +4,7 @@
 
 **Goal:** Make Next and Previous cross course-page boundaries using the visible open-comment order and automatically open the destination in context.
 
-**Architecture:** Keep ordering in the renderer and reuse its existing `navigateToComment` boundary. Strengthen the regression test at the exact anchor-ordered page boundary; make the smallest production correction identified by that failure. The existing background navigation record remains responsible for Moodle/SCORM arrival and restoration.
+**Architecture:** Keep ordering in the renderer and reuse its existing `navigateToComment` boundary. Strengthen the regression test at the exact anchor-ordered page boundary. For legacy SCORM records, recover the cached Moodle launch by package root and derive only the safe package entry locator; the existing background navigation record remains responsible for arrival and restoration.
 
 **Tech Stack:** TypeScript, Node test runner, Happy DOM, Chrome MV3, Playwright.
 
@@ -32,7 +32,21 @@
 - [ ] Run the focused test and confirm it passes.
 - [ ] Run all extension unit tests and type checking.
 
-### Task 3: Release a testable pilot
+### Task 3: Recover legacy SCORM destinations
+
+**Files:**
+- Modify: `extension/src/scorm-launch.ts`
+- Modify: `extension/src/background.ts`
+- Modify: `extension/src/embedded-comment-navigation.ts`
+- Test: `extension/tests/scorm-launch.test.ts`
+- Test: `extension/tests/background.test.ts`
+
+- [ ] Add failing tests for package-root launch lookup without relying on the current page's cmid and for a legacy SCORM comment missing both navigation fields.
+- [ ] Recover a unique cached player URL from the exact course, origin, and package root.
+- [ ] Derive the package entry path as the legacy embedded locator while retaining the normal strict validation.
+- [ ] Verify that raw SCORM content is never returned as a top-level destination.
+
+### Task 4: Release a testable pilot
 
 **Files:**
 - Modify the canonical version references in the established release files.

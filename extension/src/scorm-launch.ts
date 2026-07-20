@@ -103,9 +103,9 @@ export class ScormLaunchCache {
     await this.storage.set({ [CACHE_KEY]: records.slice(-this.maximum) });
   }
 
-  async get(input: { courseId: string; configuredOrigin: string; packageUrl: string; cmid: number }): Promise<string | undefined> {
+  async get(input: { courseId: string; configuredOrigin: string; packageUrl: string; cmid?: number }): Promise<string | undefined> {
     let packageRoot: string; try { packageRoot = packageRootFromScormUrl(input.packageUrl); } catch { return undefined; }
-    const match = (await this.records()).find((record) => record.courseId === input.courseId && record.configuredOrigin === input.configuredOrigin && record.cmid === input.cmid && record.packageRoot === packageRoot);
+    const match = (await this.records()).find((record) => record.courseId === input.courseId && record.configuredOrigin === input.configuredOrigin && (input.cmid === undefined || record.cmid === input.cmid) && record.packageRoot === packageRoot);
     return match?.playerUrl;
   }
 }

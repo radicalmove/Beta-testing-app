@@ -429,9 +429,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       recoverScormParent: async (courseId, pageUrl) => {
         const context = typeof sender.tab?.id === "number" ? reviewContexts.exportTab(sender.tab.id) : undefined;
         if (!context || context.id !== courseId) return undefined;
-        let cmid: number; try { cmid = Number(new URL(context.parent_activity_url).searchParams.get("cm")); } catch { return undefined; }
-        if (!Number.isSafeInteger(cmid) || cmid <= 0) return undefined;
-        return scormLaunchCache.get({ courseId, configuredOrigin: new URL(context.course_url).origin, packageUrl: pageUrl, cmid });
+        return scormLaunchCache.get({ courseId, configuredOrigin: new URL(context.course_url).origin, packageUrl: pageUrl });
       },
     });
   } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "GET_CURRENT_VIEWER") {

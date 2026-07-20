@@ -234,16 +234,21 @@ test("raw SCORM and metadata pair errors never become top-level destinations", a
   const message = { type: "PREPARE_COMMENT_NAVIGATION", comment_id: base.id, page_url: rawUrl };
   await assert.rejects(() => handleCommentNavigationMessage(message, trusted, dependencies), /Moodle activity location is missing/);
   const completePlayer = "https://my.uconline.ac.nz/mod/scorm/player.php?mode=normal&scoid=15621&cm=146308&currentorg=rise";
+  const recoveredLegacy = { ...dependencies, recoverScormParent: async () => completePlayer };
+  assert.equal((await handleCommentNavigationMessage(message, trusted, recoveredLegacy) as { state: string }).state, "parent-loading");
+  const legacyRecord = (await storage.get("commentNavigation:7"))["commentNavigation:7"] as { embeddedLocator: string };
+  assert.equal(legacyRecord.embeddedLocator, "/pluginfile.php/165226/mod_scorm/content/27/scormcontent/index.html");
+  navigation.cancel(7);
   listed = { ...base, parent_activity_url: "https://my.uconline.ac.nz/mod/scorm/player.php", embedded_locator: "#/lesson" };
   const recovered = { ...dependencies, recoverScormParent: async () => completePlayer };
   assert.equal((await handleCommentNavigationMessage(message, trusted, recovered) as { state: string }).state, "parent-loading");
-  assert.equal(parentNavigations, 1);
+  assert.equal(parentNavigations, 2);
   navigation.cancel(7);
   listed = { ...base, page_url: "https://my.uconline.ac.nz/mod/page/view.php?id=1", parent_activity_url: context.parent_activity_url };
   await assert.rejects(() => handleCommentNavigationMessage({ ...message, page_url: listed.page_url }, trusted, dependencies), /metadata/);
   listed = { ...base, page_url: "https://my.uconline.ac.nz/mod/page/view.php?id=1", embedded_locator: "#/lesson" };
   await assert.rejects(() => handleCommentNavigationMessage({ ...message, page_url: listed.page_url }, trusted, dependencies), /metadata/);
-  assert.equal(parentNavigations, 1);
+  assert.equal(parentNavigations, 2);
 });
 
 test("embedded parent navigation requires the exact Moodle SCORM player path", async () => {
