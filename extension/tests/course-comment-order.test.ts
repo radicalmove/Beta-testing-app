@@ -44,6 +44,17 @@ test("groups identical pages, preserves server order within a page, and uses sta
   assert.deepEqual(projected.groups[0]!.comments.map((entry) => entry.comment.id), ["a-first", "a-second"]);
 });
 
+test("sorts unnumbered destinations by their visible Jump-to labels", () => {
+  const input = [
+    comment("beta", "Beta"),
+    comment("aardvark", "Embedded activity · Aardvark"),
+  ];
+
+  const projected = projectCourseComments(input);
+
+  assert.deepEqual(projected.groups.map((group) => group.title), ["Embedded activity · Aardvark", "Beta"]);
+});
+
 test("orders shuffled Jump-to destinations by visible label while preserving duplicate labels at separate URLs", () => {
   const input = [
     comment("one-two", "Embedded activity · 1.1.2", "https://learn.example/page/1.1.2"),

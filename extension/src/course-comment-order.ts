@@ -53,7 +53,7 @@ export function projectCourseComments<T extends CourseCommentIdentity>(comments:
       const numeric = compareNumbers(leftNumber, rightNumber);
       if (numeric) return numeric;
     }
-    const title = left.title.localeCompare(right.title, undefined, { numeric: true, sensitivity: "base" });
+    const title = coursePageJumpLabel(left.title).localeCompare(coursePageJumpLabel(right.title), undefined, { numeric: true, sensitivity: "base" });
     if (title) return title;
     const url = left.pageUrl.localeCompare(right.pageUrl);
     return url || left.firstSeen - right.firstSeen;
