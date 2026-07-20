@@ -26,7 +26,6 @@ export type CommentRendererOptions = {
 
 const rendererStyles = `:host{all:initial;font:16px/1.5 Poppins,Arial,sans-serif;color:#102f38}button,textarea,input{box-sizing:border-box;font:inherit}button{appearance:none;min-height:36px;border:2px solid #073f3e;border-radius:5px;background:#fff;color:#073f3e;font-weight:650;padding:7px 9px;cursor:pointer}.thread-action:hover,.thread-action[aria-pressed="true"]{background:#073f3e;color:#fff}.thread-top-actions{display:contents}.thread-edit,.thread-delete,.resolve-toggle{position:absolute;top:8px;width:34px;min-height:34px;height:34px;padding:2px;border-radius:5px}.thread-edit{right:92px;border:2px solid #a84f12;background:#fff;color:#a84f12;font-size:23px;line-height:1}.thread-edit:hover,.thread-edit[aria-pressed="true"]{background:#a84f12;color:#fff}.thread-delete{right:8px;border:2px solid #d73b3d;background:#d73b3d;color:#fff}.thread-edit svg,.thread-delete svg,.resolve-toggle svg{display:block;width:100%;height:100%}.thread-delete:hover{border-color:#d73b3d;background:#fff;color:#d73b3d}.resolve-toggle{right:50px;margin:0;border:2px solid #111;border-radius:2px;background:#fff}.resolve-toggle:hover{border-color:#111;background:#f4f4f4}.status-hover-tick{opacity:0;transition:opacity .15s ease}.resolve-toggle:hover .status-hover-tick{opacity:.28}.status-resolved-tick{opacity:1}.thread-navigation{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}.thread-navigation button{height:34px;min-height:34px;padding:3px 6px;white-space:nowrap}.thread-navigation button:disabled{cursor:default;opacity:.42}.thread-previous,.thread-next{border-color:#356f9f;color:#356f9f}.thread-previous:not(:disabled):hover,.thread-next:not(:disabled):hover{background:#356f9f;color:#fff}.thread-reply{border-color:#073f3e;color:#073f3e}.thread-reply:hover,.thread-reply[aria-expanded="true"]{background:#073f3e;color:#fff}.comment-composer[data-reply-composer]{margin-top:12px}.comment-composer-field-row{display:grid;grid-template-columns:minmax(0,1fr) 34px;gap:8px;align-items:start;margin-right:-6px}.comment-composer-field-row textarea{min-width:0;width:100%;min-height:72px}.comment-composer-save{box-sizing:border-box;width:34px;height:34px;min-height:34px;padding:2px;border:2px solid #176b43;border-radius:5px;background:#176b43;color:#fff}.comment-composer-save svg{display:block;width:100%;height:100%}.comment-composer-save:hover{background:#fff;color:#176b43}.comment-composer-actions{display:flex;justify-content:flex-end;margin-top:8px}.comment-composer-cancel{box-sizing:border-box;width:calc((100% - 16px)/3);height:34px;min-height:34px;padding:3px 9px;border:2px solid #d73b3d;border-radius:5px;background:#d73b3d;color:#fff;font:inherit;font-weight:650;line-height:1}.comment-composer-cancel:hover{background:#fff;color:#d73b3d}.attachment-field{display:block;margin:10px 0;font-size:13px;font-weight:650}.attachment-field input{display:block;width:100%;margin-top:4px;font-size:12px;font-weight:400}`;
 
-const rendererControlFontStyles = `button,textarea,input{font:16px/1.5 Poppins,Arial,sans-serif}`;
 const attachmentAccept = ".pdf,.doc,.docx,.png,.jpg,.jpeg,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg";
 const maxAttachmentBytes = 10 * 1024 * 1024;
 
@@ -68,9 +67,9 @@ function createThreadRoot(document: Document): { root: ShadowRoot; dispose: () =
   const host = document.createElement("div");
   host.dataset.moodleReviewRendererRoot = "true";
   host.setAttribute("data-moodle-review-ui", "true");
-  host.style.cssText = "all:initial;position:fixed;inset:0;z-index:2147483646;pointer-events:none";
+  host.style.cssText = "all:initial;position:fixed;inset:0;z-index:2147483646;pointer-events:none;font:16px/1.5 Poppins,Arial,sans-serif;color:#102f38";
   const root = host.attachShadow({ mode: "open" });
-  const style = document.createElement("style"); style.dataset.commentRendererStyles = "true"; style.textContent = `${rendererStyles}${rendererControlFontStyles}`; root.append(style);
+  const style = document.createElement("style"); style.dataset.commentRendererStyles = "true"; style.textContent = rendererStyles; root.append(style);
   document.documentElement.append(host);
   return { root, dispose: () => host.remove() };
 }
@@ -79,7 +78,7 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
   const ownedRoot = options.root ? undefined : createThreadRoot(document);
   const root = options.root ?? ownedRoot!.root;
   if (options.root && !root.querySelector("style[data-comment-renderer-styles]")) {
-    const style = document.createElement("style"); style.dataset.commentRendererStyles = "true"; style.textContent = `${rendererStyles}${rendererControlFontStyles}`; root.append(style);
+    const style = document.createElement("style"); style.dataset.commentRendererStyles = "true"; style.textContent = rendererStyles; root.append(style);
   }
   let comments = new Map<string, PageComment>();
   let projectedComments: PageComment[] = [];
