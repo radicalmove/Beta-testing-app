@@ -222,8 +222,12 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
     const navigation = document.createElement("div"); navigation.className = "thread-navigation"; navigation.dataset.threadNavigation = "true";
     const navigate = async (target: PageComment | undefined) => {
       if (!target) return;
+      article.querySelector("[data-navigation-error]")?.remove();
       if (target.page_url === pageUrl) { closeThread(); document.defaultView?.setTimeout(() => { (root.host as HTMLElement).isConnected && (markers.get(target.id) ? (() => { scrollCommentIntoView(target); const targetMarker = markers.get(target.id)!; targetMarker.focus({ preventScroll: true }); openThread(target, Array.from(comments.keys()).indexOf(target.id), targetMarker); })() : undefined); }, 0); }
-      else await options.navigateToComment?.(target.id, target.page_url);
+      else {
+        try { await options.navigateToComment?.(target.id, target.page_url); }
+        catch (error) { const message = document.createElement("p"); message.dataset.navigationError = "true"; message.className = "error"; message.setAttribute("role", "status"); message.textContent = error instanceof Error && error.message ? error.message : "Unable to open the next course page."; navigation.before(message); }
+      }
     };
     const previous = document.createElement("button"); previous.type = "button"; previous.className = "thread-previous"; previous.dataset.direction = "previous"; previous.textContent = "Previous"; previous.disabled = courseIndex <= 0; previous.addEventListener("click", () => void navigate(courseOpenComments[courseIndex - 1]));
     const next = document.createElement("button"); next.type = "button"; next.className = "thread-next"; next.dataset.direction = "next"; next.textContent = "Next"; next.disabled = courseIndex < 0 || courseIndex >= courseOpenComments.length - 1; next.addEventListener("click", () => void navigate(courseOpenComments[courseIndex + 1]));

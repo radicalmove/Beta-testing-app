@@ -79,6 +79,22 @@ export async function refreshCourseBindingBeforeComment(
   if (resolved?.id !== expectedCourseId) throw new Error("The course connection changed. Close this comment and try again.");
 }
 
+export async function prepareCommentNavigationWithRetry(
+  send: (message: unknown) => Promise<{ id?: unknown; destination_url?: string }>,
+  context: Pick<CourseContext, "course_url" | "title" | "moodle_course_id">,
+  expectedCourseId: string,
+  commentId: string,
+  pageUrl: string,
+): Promise<{ destination_url?: string }> {
+  const prepare = () => send({ type: "PREPARE_COMMENT_NAVIGATION", comment_id: commentId, page_url: pageUrl });
+  try { return await prepare(); }
+  catch (error) {
+    if (!(error instanceof Error) || !["Review service unavailable", "Extension context invalidated"].includes(error.message)) throw error;
+    await refreshCourseBindingBeforeComment(send, context, expectedCourseId);
+    return prepare();
+  }
+}
+
 function matchPattern(url: string, pattern: string): boolean {
   const match = /^(\*|http|https|file|ftp):\/\/([^/]+)(\/.*)$/.exec(pattern);
   if (!match) return false;
@@ -286,7 +302,7 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
   overlay = mountReviewOverlay(targetDocument, context, "connecting", { onRequestInteraction: (intent) => { interactionController.request(intent); }, onRequestPermission: () => new Promise<boolean>((resolve) => {
     if (!permissionOrigin) { resolve(false); return; }
     sendRuntimeMessage(runtime, { type: "REQUEST_SCORM_PERMISSION", origin: permissionOrigin }, (response) => { const outcome = response?.data as { granted?: boolean; reload_required?: boolean } | undefined; const granted = Boolean(response?.ok && outcome?.granted); if (granted) interactionController.permissionGranted(outcome?.reload_required === true); resolve(granted); });
-  }), onReloadRequired: () => targetWindow.location.reload(), submitEmbedded: async ({ capability, body, category, screenshot }: { capability: string; body: string; category: string; screenshot: boolean }) => { const saved = await send<{ id?: string; screenshot_available?: boolean }>({ type: "CREATE_EMBEDDED_COMMENT", capability, body, category, ...(screenshot ? { screenshot_requested: true } : {}) }); void loadPageComments(context.page_url); return saved; }, navigateToComment: async (commentId, pageUrl) => { const navigation = await send<{ destination_url?: string }>({ type: "PREPARE_COMMENT_NAVIGATION", comment_id: commentId, page_url: pageUrl }); if (navigation.destination_url) targetWindow.location.assign(navigation.destination_url); }, useAccessForm: () => Boolean(courseHandle), onAccessSubmit: async (input) => {
+  }), onReloadRequired: () => targetWindow.location.reload(), submitEmbedded: async ({ capability, body, category, screenshot }: { capability: string; body: string; category: string; screenshot: boolean }) => { const saved = await send<{ id?: string; screenshot_available?: boolean }>({ type: "CREATE_EMBEDDED_COMMENT", capability, body, category, ...(screenshot ? { screenshot_requested: true } : {}) }); void loadPageComments(context.page_url); return saved; }, navigateToComment: async (commentId, pageUrl) => { if (!courseId) throw new Error("Course connection unavailable"); const navigation = await prepareCommentNavigationWithRetry(send, context, courseId, commentId, pageUrl); if (navigation.destination_url) targetWindow.location.assign(navigation.destination_url); }, useAccessForm: () => Boolean(courseHandle), onAccessSubmit: async (input) => {
     if (!courseHandle) throw new Error("Course not enabled for review");
     const response = await send<{ state: string }>({ type: "REDEEM_REVIEW_ACCESS", course_handle: courseHandle, display_name: input.displayName, email: input.email, role: input.role, invitation_code: input.code });
     if (response.state === "pending") { scheduleApprovalCheck(); return { status: "pending", message: waitingForApproval }; }

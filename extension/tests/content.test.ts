@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Window } from "happy-dom";
 
-import { bootstrapContentScript, countInaccessibleFrames, createInteractionTargetController, createLifecycleController, isConfiguredFrame, refreshCourseBindingBeforeComment, sendRuntimeMessage, startCourseReview, startEmbeddedReview } from "../src/content.ts";
+import { bootstrapContentScript, countInaccessibleFrames, createInteractionTargetController, createLifecycleController, isConfiguredFrame, prepareCommentNavigationWithRetry, refreshCourseBindingBeforeComment, sendRuntimeMessage, startCourseReview, startEmbeddedReview } from "../src/content.ts";
 
 test("invalidated extension contexts fail quietly instead of throwing from a stale page timer", () => {
   let response: unknown;
@@ -19,6 +19,30 @@ test("comment submission refreshes the trusted course binding after a worker res
   }, { course_url: "https://moodle.example.invalid/course/view.php?id=7", title: "Law", moodle_course_id: 7 }, "course-1");
   assert.deepEqual(messages, [{ type: "RESOLVE_COURSE", payload: { course_url: "https://moodle.example.invalid/course/view.php?id=7", title: "Law", moodle_course_id: 7 } }]);
   await assert.rejects(() => refreshCourseBindingBeforeComment(async () => ({ id: "course-2" }), { course_url: "https://moodle.example.invalid/course/view.php?id=7", title: "Law" }, "course-1"), /connection changed/);
+});
+
+test("comment navigation refreshes its course binding and retries one closed response channel", async () => {
+  const messages: unknown[] = [];
+  let prepares = 0;
+  const result = await prepareCommentNavigationWithRetry(async (message) => {
+    messages.push(message);
+    if ((message as { type?: string }).type === "RESOLVE_COURSE") return { id: "course-1" };
+    prepares += 1;
+    if (prepares === 1) throw new Error("Review service unavailable");
+    return { destination_url: "https://moodle.example.invalid/mod/scorm/player.php?cm=10&scoid=20" };
+  }, { course_url: "https://moodle.example.invalid/course/view.php?id=7", title: "Law", moodle_course_id: 7 }, "course-1", "comment-1", "https://rise.example.invalid/lesson");
+
+  assert.equal(result.destination_url, "https://moodle.example.invalid/mod/scorm/player.php?cm=10&scoid=20");
+  assert.deepEqual(messages.map((message) => (message as { type: string }).type), ["PREPARE_COMMENT_NAVIGATION", "RESOLVE_COURSE", "PREPARE_COMMENT_NAVIGATION"]);
+});
+
+test("comment navigation does not retry a substantive destination failure", async () => {
+  let calls = 0;
+  await assert.rejects(() => prepareCommentNavigationWithRetry(async () => {
+    calls += 1;
+    throw new Error("This SCORM comment cannot be opened because its Moodle activity location is missing.");
+  }, { course_url: "https://moodle.example.invalid/course/view.php?id=7", title: "Law" }, "course-1", "comment-1", "https://rise.example.invalid/lesson"), /Moodle activity location is missing/);
+  assert.equal(calls, 1);
 });
 
 test("content activates on configured Moodle patterns", () => {

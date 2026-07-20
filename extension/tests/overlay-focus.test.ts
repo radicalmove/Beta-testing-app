@@ -12,7 +12,7 @@ test("overlay markup is a compact accessible toolbar with course and connection 
   assert.match(markup, /Comments \(/); assert.match(markup, /data-comment-count>0/);
   assert.match(markup, /Help and instructions/);
   assert.match(markup, /Criminal Law/);
-  assert.match(markup, /Week 2/);
+  assert.doesNotMatch(markup, /Week 2/);
   assert.match(markup, /Connected/);
   assert.doesNotMatch(markup, />Course:<\/span>/);
   assert.doesNotMatch(markup, />Page:<\/span>/);

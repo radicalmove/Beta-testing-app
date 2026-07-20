@@ -250,6 +250,23 @@ test("next from the final anchor-ordered comment navigates to the following cour
   assert.deepEqual(navigations, [[following.id, following.page_url]]);
 });
 
+test("failed cross-page navigation keeps the thread open and reports the error", async () => {
+  const { document } = setup();
+  const current = comment({ id: "00000000-0000-4000-8000-000000000044", body: "Current" });
+  const following = comment({ id: "00000000-0000-4000-8000-000000000045", body: "Following", page_url: otherPageUrl, page_title: "3 Following page" });
+  const renderer = createCommentRenderer(document, pageUrl, { navigateToComment: async () => { throw new Error("Could not reach the next course page"); } });
+  renderer.setComments([current, following]);
+  document.querySelector<HTMLElement>(`[data-moodle-review-stored-pin="${current.id}"]`)!.click();
+  const root = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!;
+
+  root.querySelector<HTMLButtonElement>('[data-thread-navigation] [data-direction="next"]')!.click();
+  await settle();
+
+  assert.ok(root.querySelector("[data-thread-popover]"));
+  assert.equal(root.querySelector<HTMLElement>("[data-navigation-error]")?.textContent, "Could not reach the next course page");
+  assert.equal(root.querySelector<HTMLElement>("[data-navigation-error]")?.getAttribute("role"), "status");
+});
+
 test("editing uploads the selected attachment after saving the text", async () => {
   const { window, document } = setup();
   const calls: string[] = [];

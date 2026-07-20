@@ -772,8 +772,10 @@ test("course scope and status filters share one compact row", () => {
   assert.match(approvedControlStyles, /--review-status:#176b43/);
 });
 
-test("current page heading cannot shrink behind the comment filters", () => {
-  assert.match(commentListLayoutStyles, /\.panel-title\{[^}]*flex:0 0 auto/);
+test("comment panel does not repeat the current page heading above its filters", () => {
+  const markup = createOverlayMarkup({ courseTitle: "Law", pageTitle: "Week 2", status: "connected" });
+  assert.doesNotMatch(markup, /panel-title/);
+  assert.doesNotMatch(markup, />Week 2</);
 });
 
 test("toolbar and semantic comment controls expose approved states", () => {
@@ -873,6 +875,15 @@ test("whole-course list groups and canonically numbers comments in course order"
   assert.deepEqual(Array.from(shadow.querySelectorAll<HTMLElement>(".comment-group-heading")).map((node) => node.textContent), ["Course information", "1 Introduction", "1.3 Case law", "1.10 Later"]);
   assert.deepEqual(Array.from(shadow.querySelectorAll<HTMLElement>("[data-comment-item]")).map((node) => node.dataset.commentIndex), ["1", "2", "3", "4"]);
   const results = shadow.querySelector<HTMLElement>(".comment-results")!; results.scrollTop = 100; overlay.setCommentList([]); assert.equal(shadow.querySelector<HTMLElement>(".comment-results")!.scrollTop, 0);
+  overlay.destroy();
+});
+
+test("course group headings remove the embedded activity prefix and use the larger approved size", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  overlay.setCommentList([{ id: "00000000-0000-4000-8000-000000000119", body: "Feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: "https://learn.example/scorm/1", page_title: "Embedded activity · 1.1.1 Foundations", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight", selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } }]);
+  assert.equal(shadow.querySelector<HTMLElement>("[data-comment-group-heading]")!.textContent, "1.1.1 Foundations");
+  assert.match(approvedControlStyles, /\.comment-group-heading\{[^}]*font-size:13px/);
   overlay.destroy();
 });
 
@@ -1110,7 +1121,7 @@ test("Jump to closes when the reviewer clicks elsewhere in the review panel", ()
   const jump = shadow.querySelector<HTMLButtonElement>("[data-comment-jump]")!;
   jump.click();
   assert.equal(jump.getAttribute("aria-expanded"), "true");
-  shadow.querySelector<HTMLElement>(".panel-title")!.dispatchEvent(new window.MouseEvent("pointerdown", { bubbles: true, composed: true }) as unknown as Event);
+  shadow.querySelector<HTMLElement>(".comment-filter-row")!.dispatchEvent(new window.MouseEvent("pointerdown", { bubbles: true, composed: true }) as unknown as Event);
   assert.equal(jump.getAttribute("aria-expanded"), "false");
   assert.equal(shadow.querySelector<HTMLElement>("[role=listbox]")!.hidden, true);
 });
