@@ -542,6 +542,7 @@ test("toolbar and semantic comment controls expose approved states", () => {
   assert.ok(shadow.querySelector('[data-comment-jump][aria-controls]'));
   assert.ok(shadow.querySelector('[role="listbox"]'));
   assert.match(controlAlignmentStyles, /\[data-action="help"\]\{[^}]*width:44px[^}]*height:44px/);
+  assert.match(controlAlignmentStyles, /\.toolbar-actions \[data-action="help"\] svg\{display:block;width:24px;height:24px\}/);
   assert.match(controlAlignmentStyles, /\.comment-control\{[^}]*display:inline-flex[^}]*align-items:center[^}]*justify-content:center/);
   overlay.destroy();
 });
