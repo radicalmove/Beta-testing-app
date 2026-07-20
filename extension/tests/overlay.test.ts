@@ -546,6 +546,19 @@ test("offline collapse moves panel focus to the replacement retry control", () =
   assert.equal(shadow.querySelector<HTMLElement>(".panel")!.hidden, true);
 });
 
+test("offline toolbar replacement moves comments-toggle focus to Retry", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected", { panelStateStorage: createPanelStorage() });
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  shadow.querySelector<HTMLButtonElement>('[data-action="panel"]')!.focus();
+
+  overlay.update(context, "offline");
+
+  const retry = shadow.querySelector<HTMLButtonElement>('[data-action="authenticate"]')!;
+  assert.equal(shadow.activeElement, retry);
+  assert.equal(retry.textContent, "Retry");
+});
+
 test("course collapse moves panel focus to the restored visible toolbar control", () => {
   const storage = createPanelStorage();
   const otherCourse = { ...context, course_url: "https://learn.example/course/view.php?id=99", moodle_course_id: 99 };
@@ -563,6 +576,23 @@ test("course collapse moves panel focus to the restored visible toolbar control"
   assert.equal(shadow.activeElement, toggle);
   assert.equal(toggle.getAttribute("aria-expanded"), "false");
   assert.equal(shadow.querySelector<HTMLElement>(".panel")!.hidden, true);
+});
+
+test("course toolbar replacement restores comments-toggle focus", () => {
+  const storage = createPanelStorage();
+  const otherCourse = { ...context, course_url: "https://learn.example/course/view.php?id=99", moodle_course_id: 99 };
+  storage.values.set(`moodle-course-review:panel:${context.course_url}`, "open");
+  storage.values.set(`moodle-course-review:panel:${otherCourse.course_url}`, "closed");
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected", { panelStateStorage: storage });
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  shadow.querySelector<HTMLButtonElement>('[data-action="panel"]')!.focus();
+
+  overlay.update(otherCourse, "connected");
+
+  const replacement = shadow.querySelector<HTMLButtonElement>('[data-action="panel"]')!;
+  assert.equal(shadow.activeElement, replacement);
+  assert.equal(replacement.getAttribute("aria-expanded"), "false");
 });
 
 test("user collapse moves lingering panel focus to the comments toggle", () => {

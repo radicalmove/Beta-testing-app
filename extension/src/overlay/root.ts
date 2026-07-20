@@ -216,7 +216,9 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     const toolbar = shadow.querySelector<HTMLElement>(".toolbar");
     if (!toolbar) return;
     const panel = shadow.querySelector<HTMLElement>(".panel");
-    const hadPanelToggle = Boolean(toolbar.querySelector('[data-action="panel"]'));
+    const existingPanelToggle = toolbar.querySelector<HTMLElement>('[data-action="panel"]');
+    const hadPanelToggle = Boolean(existingPanelToggle);
+    const panelToggleHadFocus = shadow.activeElement === existingPanelToggle;
     const statusNode = toolbar.querySelector<HTMLElement>("[data-auth-status]");
     if (statusNode) { statusNode.className = `status ${status}`; const messageNode = statusNode.querySelector<HTMLElement>("[data-status-message]"); if (messageNode) messageNode.textContent = message; }
     toolbar.querySelector("[data-auth-action]")?.remove(); toolbar.querySelector("[data-review-controls]")?.remove();
@@ -226,6 +228,12 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     if (panelToggle && !hadPanelToggle) setPanelOpen(readCoursePanelState(panelStateStorage, context.course_url), { animate: false, persist: false });
     else if (panelToggle) { panelToggle.setAttribute("aria-expanded", String(panelOpen)); panelToggle.setAttribute("aria-label", panelOpen ? "Close review panel" : "Open review panel"); }
     else if (panel) setPanelOpen(false, { animate: false, persist: false });
+    if (panelToggleHadFocus) {
+      const focusTarget = panelToggle
+        ?? toolbar.querySelector<HTMLElement>('[data-action="authenticate"]')
+        ?? shadow.querySelector<HTMLElement>(".shell");
+      focusTarget?.focus();
+    }
   };
   const bindStateControls = () => {
     shadow.querySelector<HTMLButtonElement>('[data-action="authenticate"]')?.addEventListener("click", async (event) => {
