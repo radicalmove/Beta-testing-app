@@ -2,12 +2,19 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Window } from "happy-dom";
 
-import { approvedControlStyles, commentListLayoutStyles, commentsButtonStyles, controlAlignmentStyles, createOverlayMarkup, helpButtonStyles, mountReviewOverlay, OVERLAY_HOST_ID, overlayStyles, semanticFilterHoverStyles, tealOverlayOverrides } from "../src/overlay/root.ts";
+import { approvedControlStyles, commentListLayoutStyles, commentsButtonStyles, controlAlignmentStyles, createOverlayMarkup, helpButtonStyles, mountReviewOverlay, OVERLAY_HOST_ID, overlayStyles, panelTransitionStyles, semanticFilterHoverStyles, tealOverlayOverrides } from "../src/overlay/root.ts";
+import type { PanelStateStorage } from "../src/ui/panel-state.ts";
 
 const context = { course_url: "https://learn.example/course/view.php?id=1", page_url: "https://learn.example/mod/page/view.php?id=2", title: "Law", pageTitle: "Week 2", moodle_course_id: 1, identityConfidence: "confirmed" as const };
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+const waitForPanelTransition = () => new Promise((resolve) => setTimeout(resolve, 200));
 const choosePage = (shadow: ShadowRoot, pageUrl: string) => shadow.querySelector<HTMLButtonElement>(`[data-comment-page-option="${pageUrl}"]`)!.click();
 const acceptConfirmation = async (shadow: ShadowRoot) => { shadow.querySelector<HTMLButtonElement>("[data-confirm-action]")!.click(); await tick(); };
+
+function createPanelStorage(): PanelStateStorage & { values: Map<string, string> } {
+  const values = new Map<string, string>();
+  return { values, getItem: (key) => values.get(key) ?? null, setItem: (key, value) => { values.set(key, value); } };
+}
 
 const contrastRatio = (foreground: string, background: string): number => {
   const luminance = (hex: string) => {
@@ -362,6 +369,123 @@ test("identity and status updates preserve an open review panel toggle state", (
   assert.equal(shadow.querySelector<HTMLElement>(".panel")!.hidden, false);
   assert.equal(toggle.getAttribute("aria-expanded"), "true");
   assert.equal(toggle.getAttribute("aria-label"), "Close review panel");
+});
+
+test("a user panel choice persists across remounts for only that course", () => {
+  const storage = createPanelStorage();
+  const firstWindow = new Window(); const firstDocument = firstWindow.document as unknown as Document;
+  const first = mountReviewOverlay(firstDocument, context, "connected", { panelStateStorage: storage });
+  const firstShadow = firstDocument.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+
+  firstShadow.querySelector<HTMLButtonElement>('[data-action="panel"]')!.click();
+  assert.equal(storage.values.get(`moodle-course-review:panel:${context.course_url}`), "open");
+  first.destroy();
+
+  const secondWindow = new Window(); const secondDocument = secondWindow.document as unknown as Document;
+  mountReviewOverlay(secondDocument, context, "connected", { panelStateStorage: storage });
+  const secondShadow = secondDocument.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  assert.equal(secondShadow.querySelector<HTMLElement>(".panel")!.hidden, false);
+  assert.equal(secondShadow.querySelector('[data-action="panel"]')!.getAttribute("aria-expanded"), "true");
+
+  const otherWindow = new Window(); const otherDocument = otherWindow.document as unknown as Document;
+  const otherCourse = { ...context, course_url: "https://learn.example/course/view.php?id=99", moodle_course_id: 99 };
+  mountReviewOverlay(otherDocument, otherCourse, "connected", { panelStateStorage: storage });
+  assert.equal(otherDocument.getElementById(OVERLAY_HOST_ID)!.shadowRoot!.querySelector<HTMLElement>(".panel")!.hidden, true);
+});
+
+test("changing course restores that course's independent panel choice", () => {
+  const storage = createPanelStorage();
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected", { panelStateStorage: storage });
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const otherCourse = { ...context, course_url: "https://learn.example/course/view.php?id=99", moodle_course_id: 99 };
+
+  shadow.querySelector<HTMLButtonElement>('[data-action="panel"]')!.click();
+  overlay.update(otherCourse, "connected");
+  assert.equal(shadow.querySelector<HTMLElement>(".panel")!.hidden, true);
+  shadow.querySelector<HTMLButtonElement>('[data-action="panel"]')!.click();
+  overlay.update(context, "connected");
+  assert.equal(shadow.querySelector<HTMLElement>(".panel")!.hidden, false);
+  overlay.update(otherCourse, "connected");
+  assert.equal(shadow.querySelector<HTMLElement>(".panel")!.hidden, false);
+});
+
+test("unavailable panel storage never prevents mounting or toggling", () => {
+  const storage: PanelStateStorage = {
+    getItem: () => { throw new Error("blocked"); },
+    setItem: () => { throw new Error("quota"); },
+  };
+  const window = new Window(); const document = window.document as unknown as Document;
+
+  assert.doesNotThrow(() => mountReviewOverlay(document, context, "connected", { panelStateStorage: storage }));
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  assert.equal(shadow.querySelector<HTMLElement>(".panel")!.hidden, true);
+  assert.doesNotThrow(() => shadow.querySelector<HTMLButtonElement>('[data-action="panel"]')!.click());
+  assert.equal(shadow.querySelector('[data-action="panel"]')!.getAttribute("aria-expanded"), "true");
+});
+
+test("panel transitions synchronize accessibility state and finish closed", async () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const shadow = (mountReviewOverlay(document, context, "connected", { panelStateStorage: createPanelStorage() }), document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!);
+  const panel = shadow.querySelector<HTMLElement>(".panel")!;
+  const toggle = shadow.querySelector<HTMLButtonElement>('[data-action="panel"]')!;
+
+  assert.equal(panel.hidden, true);
+  assert.equal(panel.inert, true);
+  assert.equal(panel.dataset.panelState, "closed");
+  toggle.click();
+  assert.equal(panel.hidden, false);
+  assert.equal(panel.inert, false);
+  assert.equal(panel.dataset.panelState, "opening");
+  assert.equal(toggle.getAttribute("aria-expanded"), "true");
+  assert.equal(toggle.getAttribute("aria-label"), "Close review panel");
+  await waitForPanelTransition();
+  assert.equal(panel.dataset.panelState, "open");
+
+  toggle.click();
+  assert.equal(panel.hidden, false);
+  assert.equal(panel.inert, true);
+  assert.equal(panel.dataset.panelState, "closing");
+  assert.equal(toggle.getAttribute("aria-expanded"), "false");
+  assert.equal(toggle.getAttribute("aria-label"), "Open review panel");
+  await waitForPanelTransition();
+  assert.equal(panel.hidden, true);
+  assert.equal(panel.dataset.panelState, "closed");
+});
+
+test("reopening cancels a pending animated panel close", async () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const shadow = (mountReviewOverlay(document, context, "connected", { panelStateStorage: createPanelStorage() }), document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!);
+  const panel = shadow.querySelector<HTMLElement>(".panel")!;
+  const toggle = shadow.querySelector<HTMLButtonElement>('[data-action="panel"]')!;
+
+  toggle.click(); await waitForPanelTransition();
+  toggle.click();
+  toggle.click();
+  assert.equal(panel.dataset.panelState, "opening");
+  await waitForPanelTransition();
+  assert.equal(panel.hidden, false);
+  assert.equal(panel.inert, false);
+  assert.equal(panel.dataset.panelState, "open");
+  assert.equal(toggle.getAttribute("aria-expanded"), "true");
+});
+
+test("reduced-motion panel changes are immediate and CSS disables transitions", () => {
+  const window = new Window();
+  Object.defineProperty(window, "matchMedia", { configurable: true, value: (query: string) => ({ matches: query === "(prefers-reduced-motion: reduce)", media: query }) });
+  const document = window.document as unknown as Document;
+  const shadow = (mountReviewOverlay(document, context, "connected", { panelStateStorage: createPanelStorage() }), document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!);
+  const panel = shadow.querySelector<HTMLElement>(".panel")!;
+
+  shadow.querySelector<HTMLButtonElement>('[data-action="panel"]')!.click();
+  assert.equal(panel.dataset.panelState, "open");
+  shadow.querySelector<HTMLButtonElement>('[data-action="panel"]')!.click();
+  assert.equal(panel.hidden, true);
+  assert.equal(panel.inert, true);
+  assert.equal(panel.dataset.panelState, "closed");
+  assert.match(panelTransitionStyles, /transition:max-height 180ms ease,opacity 180ms ease/);
+  assert.match(panelTransitionStyles, /@media\(prefers-reduced-motion:reduce\)/);
+  assert.match(panelTransitionStyles, /transition:none/);
 });
 
 test("a disconnected state closes an open review panel when its toggle is removed", () => {

@@ -6,6 +6,7 @@ import type { PageComment } from "../background-bridge.ts";
 import { createCommentRenderer, type CommentRenderer, type UnresolvedAnchor } from "../comment-renderer.ts";
 import { projectCourseComments } from "../course-comment-order.ts";
 import { createReviewIcon, reviewIconMarkup } from "../ui/icon-family.ts";
+import { readCoursePanelState, writeCoursePanelState, type PanelStateStorage } from "../ui/panel-state.ts";
 
 export type { UnresolvedAnchor } from "../comment-renderer.ts";
 
@@ -20,6 +21,7 @@ export const controlAlignmentStyles = `.toolbar-actions button{display:inline-fl
 export const semanticFilterHoverStyles = `.comment-filters .comment-scope:hover{background:var(--review-scope);border-color:var(--review-scope);color:#fff}.comment-filters .comment-status:hover{background:var(--review-status);border-color:var(--review-status);color:#fff}.comment-filters .comment-scope[aria-pressed="true"]:hover{background:#fff;border-color:var(--review-scope);color:var(--review-scope)}.comment-filters .comment-status[aria-pressed="true"]:hover{background:#fff;border-color:var(--review-status);color:var(--review-status)}.comment-jump[aria-expanded="true"]{background:var(--review-jump);border-color:var(--review-jump);color:#fff}.comment-page-field .comment-jump[aria-expanded="true"]:hover{background:#fff;border-color:var(--review-jump);color:var(--review-jump)}.toolbar-actions [data-action="add-comment"]{background:#fff;border-color:var(--review-dark-teal);color:var(--review-dark-teal)}.toolbar-actions [data-action="add-comment"]:hover{background:var(--review-dark-teal);border-color:var(--review-dark-teal);color:#fff}.toolbar-actions [data-action="add-comment"][aria-pressed="true"]{background:var(--review-red);border-color:var(--review-red);color:#fff}.toolbar-actions [data-action="add-comment"][aria-pressed="true"]:hover{background:#fff;border-color:var(--review-red);color:var(--review-red)}.comment-row-action.delete-action{border-radius:5px}.comment-page-list{top:auto;bottom:42px;width:min(380px,calc(100vw - 32px))}.comment-page-option{min-height:34px!important;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:500}.comment-page-option[aria-selected="true"]{font-weight:650}.shell:has(.comment-jump[aria-expanded="true"]),.panel:has(.comment-jump[aria-expanded="true"]){overflow:visible}`;
 export const helpButtonStyles = `.toolbar-actions [data-action="help"]{background:#fff;border-color:var(--review-jump);color:var(--review-jump)}.toolbar-actions [data-action="help"]:hover,.toolbar-actions [data-action="help"]:focus-visible{background:var(--review-jump);border-color:var(--review-jump);color:#fff}`;
 export const commentsButtonStyles = `.toolbar-actions [data-action="panel"]{background:#fff;border-color:var(--review-teal-dark);color:var(--review-teal-dark)}.toolbar-actions [data-action="panel"]:hover{background:var(--review-teal-dark);border-color:var(--review-teal-dark);color:#fff}.toolbar-actions [data-action="panel"][aria-expanded="true"]{background:var(--review-teal-dark);border-color:var(--review-teal-dark);color:#fff}.toolbar-actions [data-action="panel"][aria-expanded="true"]:hover{background:#fff;border-color:var(--review-teal-dark);color:var(--review-teal-dark)}`;
+export const panelTransitionStyles = `.panel{max-height:calc(100vh - 96px);opacity:1}.panel[data-panel-animate="true"]{transition:max-height 180ms ease,opacity 180ms ease}.panel[data-panel-state="closed"],.panel[data-panel-state="closing"]{max-height:0;opacity:0}@media(prefers-reduced-motion:reduce){.panel[data-panel-animate="true"]{transition:none}}`;
 export const commentComposerStyles = `.comment-composer-field-row{display:grid;grid-template-columns:minmax(0,1fr) 34px;gap:8px;align-items:start}.comment-composer-field-row textarea{min-width:0;width:100%;min-height:110px}.comment-composer-save{box-sizing:border-box;width:34px;height:34px;min-height:34px!important;padding:2px;border:2px solid #176b43;border-radius:5px;background:#176b43;color:#fff}.comment-composer-save svg{display:block;width:100%;height:100%}.comment-composer-save:hover{background:#fff;color:#176b43}.comment-composer-actions{display:flex;justify-content:flex-end;margin-top:8px}.comment-composer-cancel{box-sizing:border-box;width:calc((100% - 16px)/3);height:34px;min-height:34px!important;padding:3px 9px;border:2px solid #d73b3d;border-radius:5px;background:#d73b3d;color:#fff;font:inherit;font-weight:650;line-height:1}.comment-composer-cancel:hover{background:#fff;color:#d73b3d}@media(max-width:420px){.comment-composer-actions button{flex:0 0 auto}}`;
 
 export type ConnectionStatus = "connecting" | "connected" | "pending" | "signed-out" | "offline";
@@ -51,7 +53,7 @@ export function handleDialogKey(input: { key: string; shiftKey: boolean; activeI
 export type CommentAnchor = ({ anchor_type: "text_highlight" } & TextAnchor) | ({ anchor_type: "visual_pin" } & PinAnchor);
 export type AuthenticationOutcome = { status: ConnectionStatus; message?: string };
 export type ReviewerAccessInput = { displayName: string; email: string; role: string; code: string };
-export type ReviewOverlayOptions = { onRequestInteraction?: (intent: "marker" | "selection") => void; onRequestPermission?: () => Promise<boolean>; onReloadRequired?: () => void; submitEmbedded?: (input: { capability: string; body: string; category: string; screenshot: boolean }) => Promise<{ id?: string; screenshot_available?: boolean } | void>; onAuthenticate?: () => Promise<AuthenticationOutcome>; onCheckApproval?: () => Promise<AuthenticationOutcome>; onAccessSubmit?: (input: ReviewerAccessInput) => Promise<AuthenticationOutcome>; getSavedReviewers?: () => Promise<Array<{ email: string; label: string }>>; onUseSavedReviewer?: (email: string) => Promise<AuthenticationOutcome>; useAccessForm?: () => boolean; navigateToComment?: (commentId: string, pageUrl: string) => Promise<void>; submit?: (input: { body: string; category: string; anchor: CommentAnchor; screenshot: boolean; embeddedFrameUnavailable: boolean; contextSnapshot: CourseContext }) => Promise<{ id?: string; screenshot_available?: boolean } | void>; editThread?: (commentId: string, body: string) => Promise<void>; replyThread?: (commentId: string, body: string) => Promise<void>; changeStatus?: (commentId: string, status: string) => Promise<void>; refreshComments?: () => Promise<void>; manageSme?: (commentId: string, userIds?: string[]) => Promise<{ available_recipients: Array<{ id: string; display_name: string }>; selected_user_ids: string[] }>; deleteThread?: (commentId: string) => Promise<void>; uploadScreenshot?: (commentId: string, dataUrl: string) => Promise<void>; cancelScreenshot?: (commentId: string) => Promise<void>; captureScreenshot?: () => Promise<string>; onFrameFallback?: () => void; onTakeToContext?: (id: string) => void };
+export type ReviewOverlayOptions = { panelStateStorage?: PanelStateStorage; onRequestInteraction?: (intent: "marker" | "selection") => void; onRequestPermission?: () => Promise<boolean>; onReloadRequired?: () => void; submitEmbedded?: (input: { capability: string; body: string; category: string; screenshot: boolean }) => Promise<{ id?: string; screenshot_available?: boolean } | void>; onAuthenticate?: () => Promise<AuthenticationOutcome>; onCheckApproval?: () => Promise<AuthenticationOutcome>; onAccessSubmit?: (input: ReviewerAccessInput) => Promise<AuthenticationOutcome>; getSavedReviewers?: () => Promise<Array<{ email: string; label: string }>>; onUseSavedReviewer?: (email: string) => Promise<AuthenticationOutcome>; useAccessForm?: () => boolean; navigateToComment?: (commentId: string, pageUrl: string) => Promise<void>; submit?: (input: { body: string; category: string; anchor: CommentAnchor; screenshot: boolean; embeddedFrameUnavailable: boolean; contextSnapshot: CourseContext }) => Promise<{ id?: string; screenshot_available?: boolean } | void>; editThread?: (commentId: string, body: string) => Promise<void>; replyThread?: (commentId: string, body: string) => Promise<void>; changeStatus?: (commentId: string, status: string) => Promise<void>; refreshComments?: () => Promise<void>; manageSme?: (commentId: string, userIds?: string[]) => Promise<{ available_recipients: Array<{ id: string; display_name: string }>; selected_user_ids: string[] }>; deleteThread?: (commentId: string) => Promise<void>; uploadScreenshot?: (commentId: string, dataUrl: string) => Promise<void>; cancelScreenshot?: (commentId: string) => Promise<void>; captureScreenshot?: () => Promise<string>; onFrameFallback?: () => void; onTakeToContext?: (id: string) => void };
 export type ReviewOverlay = { update(context: CourseContext, status: ConnectionStatus): void; setInteractionState(state: "local" | "loading" | "embedded" | "permission-required" | "reload-required" | "unavailable", hasSelection?: boolean): void; setViewer(viewer?: { display_name: string | null; email: string; role: string }): void; setCommentList(comments: PageComment[]): void; setRendererComments(comments: PageComment[]): void; setPageComments(comments: PageComment[]): void; takeToContext(id: string): boolean; showFrameFallback(): void; hideFrameFallback(): void; setPresentationVisible(visible: boolean): void; setPresentationPosition(position?: { left: number; top: number }): void; presentationSize(): { width: number; height: number }; setUnresolvedAnchors(anchors: UnresolvedAnchor[]): void; destroy(): void };
 
 export function mountReviewOverlay(document: Document, context: CourseContext, status: ConnectionStatus = "connecting", options: ReviewOverlayOptions = {}, buildDiagnostics: BuildDiagnostics = defaultBuildDiagnostics): ReviewOverlay {
@@ -65,7 +67,7 @@ export function mountReviewOverlay(document: Document, context: CourseContext, s
   const shadow = host.attachShadow({ mode: "open" });
   const style = document.createElement("style");
   style.textContent = overlayStyles + tealOverlayOverrides + `.viewer{display:block;font-size:13px;font-weight:650;color:#082f2f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.viewer[hidden]{display:none}.comments-short{display:none}@media(max-width:360px){.comments-wide{display:none}.comments-short{display:inline}}.comment-choice{padding:16px;background:var(--review-pale);border-top:1px solid var(--review-line)}.comment-choice h2{margin:0 0 10px;font-size:18px}.comment-choice button{display:grid;width:100%;margin-top:8px;text-align:left}.comment-choice button span{font-size:14px;font-weight:400}.help-dialog ol{display:grid;gap:12px;padding-left:22px}.help-dialog li span{display:block;font-size:14px}.help-version{font-size:14px;color:#52666c}`;
-  style.textContent += commentListLayoutStyles + approvedControlStyles + controlAlignmentStyles + semanticFilterHoverStyles + helpButtonStyles + commentsButtonStyles + commentComposerStyles;
+  style.textContent += commentListLayoutStyles + approvedControlStyles + controlAlignmentStyles + semanticFilterHoverStyles + helpButtonStyles + commentsButtonStyles + panelTransitionStyles + commentComposerStyles;
   shadow.append(style);
   return createController(host, shadow, context, status, options, buildDiagnostics);
 }
@@ -102,6 +104,68 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   let commentListPage = "";
   let jumpOutsideListener: EventListener | undefined;
   let renderer: CommentRenderer;
+  let panelOpen = false;
+  let panelTransitionTimer: number | undefined;
+  const panelStateStorage = options.panelStateStorage ?? (() => {
+    try { return ownerDocument.defaultView?.localStorage; }
+    catch { return undefined; }
+  })();
+  const clearPanelTransition = () => {
+    if (panelTransitionTimer === undefined) return;
+    ownerDocument.defaultView?.clearTimeout(panelTransitionTimer);
+    panelTransitionTimer = undefined;
+  };
+  const setPanelOpen = (open: boolean, behavior: { animate: boolean; persist: boolean }) => {
+    const panel = shadow.querySelector<HTMLElement>(".panel");
+    if (!panel) return;
+    clearPanelTransition();
+    panelOpen = open;
+    if (behavior.persist) writeCoursePanelState(panelStateStorage, context.course_url, open);
+    const toggle = shadow.querySelector<HTMLElement>('[data-action="panel"]');
+    toggle?.setAttribute("aria-expanded", String(open));
+    toggle?.setAttribute("aria-label", open ? "Close review panel" : "Open review panel");
+    let reducedMotion = false;
+    try { reducedMotion = ownerDocument.defaultView?.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false; }
+    catch { reducedMotion = true; }
+    const animate = behavior.animate && !reducedMotion;
+    if (open) {
+      const wasHidden = panel.hidden;
+      panel.hidden = false;
+      panel.inert = false;
+      if (!animate) {
+        panel.dataset.panelState = "open";
+        delete panel.dataset.panelAnimate;
+        return;
+      }
+      panel.dataset.panelAnimate = "true";
+      if (wasHidden) {
+        panel.dataset.panelState = "closed";
+        void panel.offsetHeight;
+      }
+      panel.dataset.panelState = "opening";
+      panelTransitionTimer = ownerDocument.defaultView?.setTimeout(() => {
+        panelTransitionTimer = undefined;
+        panel.dataset.panelState = "open";
+        delete panel.dataset.panelAnimate;
+      }, 180);
+      return;
+    }
+    panel.inert = true;
+    if (!animate || panel.hidden) {
+      panel.hidden = true;
+      panel.dataset.panelState = "closed";
+      delete panel.dataset.panelAnimate;
+      return;
+    }
+    panel.dataset.panelAnimate = "true";
+    panel.dataset.panelState = "closing";
+    panelTransitionTimer = ownerDocument.defaultView?.setTimeout(() => {
+      panelTransitionTimer = undefined;
+      panel.hidden = true;
+      panel.dataset.panelState = "closed";
+      delete panel.dataset.panelAnimate;
+    }, 180);
+  };
   const clearAreaSelection = () => {
     ownerDocument.removeEventListener("pointerdown", pinListener!, true);
     ownerDocument.removeEventListener("keydown", cancelPin, true);
@@ -122,7 +186,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     const label = (direct.length >= 2 && direct.length <= 120 ? direct : clean(heading?.getAttribute("aria-label")) || clean(heading?.textContent)).slice(0, 120);
     return label ? `Commenting near: ${label}` : "Commenting on this part of the page";
   };
-  const cancelPin = (event: KeyboardEvent) => { if (event.key === "Escape" && pinListener) { clearAreaSelection(); fallbackPin = false; shadow.querySelector<HTMLElement>(".panel")!.hidden = true; returnFocus?.focus(); } };
+  const cancelPin = (event: KeyboardEvent) => { if (event.key === "Escape" && pinListener) { clearAreaSelection(); fallbackPin = false; setPanelOpen(false, { animate: false, persist: false }); returnFocus?.focus(); } };
   const mount = () => {
     const style = shadow.querySelector("style");
     shadow.innerHTML = "";
@@ -145,7 +209,6 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     const toolbar = shadow.querySelector<HTMLElement>(".toolbar");
     if (!toolbar) return;
     const panel = shadow.querySelector<HTMLElement>(".panel");
-    const panelOpen = panel?.hidden === false;
     const statusNode = toolbar.querySelector<HTMLElement>("[data-auth-status]");
     if (statusNode) { statusNode.className = `status ${status}`; const messageNode = statusNode.querySelector<HTMLElement>("[data-status-message]"); if (messageNode) messageNode.textContent = message; }
     toolbar.querySelector("[data-auth-action]")?.remove(); toolbar.querySelector("[data-review-controls]")?.remove();
@@ -153,7 +216,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     bind();
     const panelToggle = toolbar.querySelector<HTMLElement>('[data-action="panel"]');
     if (panelToggle) { panelToggle.setAttribute("aria-expanded", String(panelOpen)); panelToggle.setAttribute("aria-label", panelOpen ? "Close review panel" : "Open review panel"); }
-    else if (panel) panel.hidden = true;
+    else if (panel) setPanelOpen(false, { animate: false, persist: false });
   };
   const bindStateControls = () => {
     shadow.querySelector<HTMLButtonElement>('[data-action="authenticate"]')?.addEventListener("click", async (event) => {
@@ -217,7 +280,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     trigger.setAttribute("aria-pressed", "true");
     trigger.textContent = "💬 Cancel marker";
     ownerDocument.documentElement.style.cursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Cpath fill='%2328c4c2' stroke='%230b6261' stroke-width='2' d='M3 3h24v18H13l-7 6v-6H3z'/%3E%3C/svg%3E") 4 4, crosshair`;
-    const panel = shadow.querySelector<HTMLElement>(".panel")!; panel.hidden = false;
+    setPanelOpen(true, { animate: false, persist: false });
     const instruction = shadow.querySelector<HTMLElement>("[data-panel-content]")!;
     instruction.tabIndex = -1;
     instruction.textContent = "Click an area, or use the arrow keys to choose one. Press Escape to cancel.";
@@ -248,7 +311,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     choice.innerHTML = `<h2>Add a comment</h2><button type="button" data-choice="text"><strong>Comment on text</strong><span>Select words on the course page, then choose this option.</span></button><button type="button" data-choice="area"><strong>${frameUnavailable ? "Comment on embedded content" : "Comment on an area"}</strong><span>${frameUnavailable ? "Mark the area of the embedded activity your feedback relates to." : "Click the part of the page your feedback relates to."}</span></button><button type="button" data-choice="cancel">Cancel</button>`;
     choice.addEventListener("keydown", (event) => { if (event.key === "Escape") { event.preventDefault(); closeChoice(); } });
     choice.querySelector('[data-choice="cancel"]')?.addEventListener("click", () => closeChoice());
-    choice.querySelector('[data-choice="text"]')?.addEventListener("click", () => { if (!textAnchor || !selectedRange) { closeChoice(false); const panel = shadow.querySelector<HTMLElement>(".panel")!; panel.hidden = false; shadow.querySelector<HTMLElement>("[data-panel-content]")!.textContent = "Select text on the page first."; ownerDocument.body?.focus?.(); return; } closeChoice(false); previewCleanup = renderTextHighlight(ownerDocument, selectedRange); openDialog(trigger, "Comment on text", { anchor_type: "text_highlight", ...textAnchor }); });
+    choice.querySelector('[data-choice="text"]')?.addEventListener("click", () => { if (!textAnchor || !selectedRange) { closeChoice(false); setPanelOpen(true, { animate: false, persist: false }); shadow.querySelector<HTMLElement>("[data-panel-content]")!.textContent = "Select text on the page first."; ownerDocument.body?.focus?.(); return; } closeChoice(false); previewCleanup = renderTextHighlight(ownerDocument, selectedRange); openDialog(trigger, "Comment on text", { anchor_type: "text_highlight", ...textAnchor }); });
     choice.querySelector('[data-choice="area"]')?.addEventListener("click", () => { fallbackPin = frameUnavailable; startAreaSelection(trigger); });
     shadow.querySelector(".shell")?.append(choice);
     choiceOutsideListener = (event) => { if (event.target !== host) closeChoice(); };
@@ -345,7 +408,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
       if (interactionTarget === "reload-required") { options.onReloadRequired?.(); return; }
       if (interactionTarget === "loading") { loadingMarkerQueued = !loadingMarkerQueued; options.onRequestInteraction?.("marker"); updateAdaptiveAction(); return; }
       if (interactionTarget === "embedded") { options.onRequestInteraction?.(embeddedSelection ? "selection" : "marker"); return; }
-      if (pinListener) { event.preventDefault(); event.stopPropagation(); clearAreaSelection(); fallbackPin = false; shadow.querySelector<HTMLElement>(".panel")!.hidden = true; trigger.focus(); return; }
+      if (pinListener) { event.preventDefault(); event.stopPropagation(); clearAreaSelection(); fallbackPin = false; setPanelOpen(false, { animate: false, persist: false }); trigger.focus(); return; }
       const selected = selectedTextDraft();
       if (selected) { returnFocus = trigger; previewCleanup = renderTextHighlight(ownerDocument, selected.range); openDialog(trigger, "Comment on highlighted text", { anchor_type: "text_highlight", ...selected.anchor }); }
       else startAreaSelection(trigger);
@@ -353,14 +416,12 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     updateAdaptiveAction();
     shadow.querySelector<HTMLElement>('[data-action="help"]')?.addEventListener("click", (event) => openHelp(event.currentTarget as HTMLElement));
     shadow.querySelector<HTMLElement>('[data-action="panel"]')?.addEventListener("click", (event) => {
-      const button = event.currentTarget as HTMLElement;
-      const panel = shadow.querySelector<HTMLElement>(".panel")!;
-      panel.hidden = !panel.hidden;
-      button.setAttribute("aria-expanded", String(!panel.hidden));
-      button.setAttribute("aria-label", panel.hidden ? "Open review panel" : "Close review panel");
+      event.preventDefault();
+      setPanelOpen(!panelOpen, { animate: true, persist: true });
     });
   };
   mount();
+  setPanelOpen((status === "connected" || status === "connecting") && readCoursePanelState(panelStateStorage, context.course_url), { animate: false, persist: false });
   updateLabels();
   const embeddedAnchorListener = (event: Event) => {
     const detail = (event as CustomEvent).detail as { capability?: unknown; anchor?: unknown } | undefined;
@@ -411,8 +472,10 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     setInteractionState(next, hasSelection = false) { interactionTarget = next; embeddedSelection = hasSelection; if (next !== "loading") loadingMarkerQueued = false; frameUnavailable = next === "unavailable"; updateAdaptiveAction(); },
     update(next, nextStatus) {
       const pageChanged = context.page_url !== next.page_url;
+      const courseChanged = context.course_url !== next.course_url;
       stateVersion += 1; authenticating = false; context = next; status = nextStatus; closeChoice(false);
       if (pageChanged) { renderer.destroy(); renderer = makeRenderer(); }
+      if (courseChanged) setPanelOpen((nextStatus === "connected" || nextStatus === "connecting") && readCoursePanelState(panelStateStorage, next.course_url), { animate: false, persist: false });
       updateLabels();
       if (nextStatus !== "connected") { shadow.querySelectorAll<HTMLElement>("[data-comment-count],[data-comment-count-short]").forEach((node) => { node.textContent = "0"; }); }
       const dialog = shadow.querySelector<HTMLElement>(".dialog");
@@ -533,6 +596,6 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     },
     presentationSize() { const shell = shadow.querySelector<HTMLElement>(".shell"); const rect = shell?.getBoundingClientRect(); return { width: rect?.width || shell?.offsetWidth || 600, height: rect?.height || shell?.offsetHeight || 150 }; },
     setUnresolvedAnchors(anchors) { renderUnresolvedAnchors(anchors); },
-    destroy() { clearAreaSelection(); closeChoice(false); if (jumpOutsideListener) shadow.removeEventListener("pointerdown", jumpOutsideListener); for (const transient of transientStatuses.values()) ownerDocument.defaultView?.clearTimeout(transient.timer); transientStatuses.clear(); ownerDocument.removeEventListener("focusin", rememberPageFocus, true); ownerDocument.removeEventListener("selectionchange", selectionListener); ownerDocument.documentElement.removeEventListener("moodle-review:embedded-anchor", embeddedAnchorListener); cleanupPreview(); renderer.destroy(); host.remove(); },
+    destroy() { clearPanelTransition(); clearAreaSelection(); closeChoice(false); if (jumpOutsideListener) shadow.removeEventListener("pointerdown", jumpOutsideListener); for (const transient of transientStatuses.values()) ownerDocument.defaultView?.clearTimeout(transient.timer); transientStatuses.clear(); ownerDocument.removeEventListener("focusin", rememberPageFocus, true); ownerDocument.removeEventListener("selectionchange", selectionListener); ownerDocument.documentElement.removeEventListener("moodle-review:embedded-anchor", embeddedAnchorListener); cleanupPreview(); renderer.destroy(); host.remove(); },
   };
 }
