@@ -1064,6 +1064,21 @@ test("page selector uses URLs, preserves duplicate titles, filters rows, and hid
   assert.equal(shadow.querySelector<HTMLElement>(".comment-page-field")!.hidden, true);
 });
 
+test("Jump to navigates to the selected page through its first visible comment", async () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const navigations: Array<[string, string]> = [];
+  const overlay = mountReviewOverlay(document, context, "connected", { navigateToComment: async (id, url) => { navigations.push([id, url]); } });
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const targetPage = "https://learn.example/mod/page/view.php?id=3";
+  const base = { id: "00000000-0000-4000-8000-000000000250", body: "First on target", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: targetPage, page_title: "3 Target page", parent_activity_url: null, embedded_locator: null, anchor_type: "visual_pin" as const, selected_quote: null, prefix: null, suffix: null, css_selector: "body", dom_selector: null, relative_x: 0.5, relative_y: 0.5, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } };
+  overlay.setCommentList([{ ...base, id: "00000000-0000-4000-8000-000000000251" }, { ...base, id: "00000000-0000-4000-8000-000000000252", body: "Second on target" }]);
+
+  choosePage(shadow, targetPage);
+  await tick();
+
+  assert.deepEqual(navigations, [["00000000-0000-4000-8000-000000000251", targetPage]]);
+});
+
 test("Jump options use normalized visible labels in projected order without changing URLs", () => {
   assert.match(approvedControlStyles, /\.comment-page-option\{[^}]*text-decoration:none/);
   assert.match(approvedControlStyles, /\.comment-page-option:hover,\.comment-page-option:focus-visible\{text-decoration:underline\}/);

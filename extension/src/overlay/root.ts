@@ -527,8 +527,9 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
       panelContent.replaceChildren();
       const projection = projectCourseComments(comments);
       const pages = new Map<string, string>();
+      const pageDestinations = new Map<string, PageComment>();
       const pageLabels = new Map<string, string>();
-      for (const group of projection.groups) for (const { comment } of group.comments) { pageLabels.set(comment.id, group.title); if (!pages.has(group.pageUrl)) pages.set(group.pageUrl, group.title); }
+      for (const group of projection.groups) for (const { comment } of group.comments) { pageLabels.set(comment.id, group.title); if (!pages.has(group.pageUrl)) pages.set(group.pageUrl, group.title); if (!pageDestinations.has(group.pageUrl)) pageDestinations.set(group.pageUrl, comment); }
       if (commentListPage && !pages.has(commentListPage)) commentListPage = "";
       const filters = ownerDocument.createElement("div"); filters.className = "comment-filters"; filters.setAttribute("role", "group"); filters.setAttribute("aria-label", "Comment status filter");
       const scopes = ownerDocument.createElement("div"); scopes.className = "comment-filters"; scopes.setAttribute("role", "group"); scopes.setAttribute("aria-label", "Comment page scope");
@@ -576,7 +577,20 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
       jumpButton.addEventListener("click", () => pageList.hidden ? openJump() : closeJump());
       jumpButton.addEventListener("keydown", (event) => { if (["ArrowDown", "Enter", " "].includes(event.key)) { event.preventDefault(); openJump(); } });
       pageList.addEventListener("keydown", (event) => { const optionsList = Array.from(pageList.querySelectorAll<HTMLElement>("[role=option]")); const active = optionsList.indexOf(shadow.activeElement as HTMLElement); if (["ArrowDown", "ArrowUp"].includes(event.key)) { event.preventDefault(); optionsList[(active + (event.key === "ArrowDown" ? 1 : -1) + optionsList.length) % optionsList.length]?.focus(); } else if (event.key === "Escape") { event.preventDefault(); closeJump(true); } else if (event.key === "Tab") closeJump(); });
-      pageList.addEventListener("click", (event) => { const option = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-comment-page-option]"); if (!option) return; commentListPage = option.dataset.commentPageOption ?? ""; pageList.querySelectorAll("[role=option]").forEach((candidate) => candidate.setAttribute("aria-selected", String(candidate === option))); closeJump(true); applyFilter(); });
+      pageList.addEventListener("click", (event) => { void (async () => {
+        const option = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-comment-page-option]"); if (!option) return;
+        commentListPage = option.dataset.commentPageOption ?? ""; pageList.querySelectorAll("[role=option]").forEach((candidate) => candidate.setAttribute("aria-selected", String(candidate === option))); closeJump(true); applyFilter();
+        if (!commentListPage) return;
+        const destination = pageDestinations.get(commentListPage); if (!destination) return;
+        panelContent.querySelector("[data-comment-navigation-status]")?.remove();
+        try {
+          if (destination.page_url === context.page_url) renderer.takeToContext(destination.id);
+          else if (options.navigateToComment) await options.navigateToComment(destination.id, destination.page_url);
+          else ownerDocument.defaultView?.location.assign(destination.page_url);
+        } catch (error) {
+          const message = ownerDocument.createElement("p"); message.dataset.commentNavigationStatus = "true"; message.setAttribute("role", "status"); message.textContent = error instanceof Error && error.message ? error.message : "Unable to open this course page."; filterRow.after(message);
+        }
+      })(); });
       pageField.append(jumpButton, pageList);
       const results = ownerDocument.createElement("div"); results.className = "comment-results"; results.setAttribute("role", "list");
       const empty = ownerDocument.createElement("p"); empty.dataset.commentEmpty = "true"; empty.textContent = "No comments match these filters.";

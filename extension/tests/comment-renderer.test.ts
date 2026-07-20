@@ -201,6 +201,32 @@ test("previous and next navigate through open comments across the whole course",
   ]);
 });
 
+test("previous and next follow anchor order on the current page and scroll into context", async () => {
+  const { window, document } = setup();
+  const positions = [["early", 20], ["middle", 120], ["late", 220]] as const;
+  for (const [id, top] of positions) {
+    const target = document.createElement("div"); target.id = id;
+    target.getBoundingClientRect = () => ({ x: 10, y: top, left: 10, top, right: 110, bottom: top + 40, width: 100, height: 40, toJSON() {} });
+    document.body.append(target);
+  }
+  const scrolls: number[] = [];
+  window.scrollBy = ((options: ScrollToOptions) => { scrolls.push(Number(options.top)); }) as typeof window.scrollBy;
+  const early = comment({ id: "00000000-0000-4000-8000-000000000031", body: "Early", css_selector: "#early" });
+  const middle = comment({ id: "00000000-0000-4000-8000-000000000032", body: "Middle", css_selector: "#middle" });
+  const late = comment({ id: "00000000-0000-4000-8000-000000000033", body: "Late", css_selector: "#late" });
+  const renderer = createCommentRenderer(document, pageUrl, { replyThread: async () => {} });
+  renderer.setComments([late, middle, early]);
+  document.querySelector<HTMLElement>(`[data-moodle-review-stored-pin="${middle.id}"]`)!.click();
+  const root = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!;
+
+  root.querySelector<HTMLButtonElement>('[data-thread-navigation] [data-direction="previous"]')!.click();
+  await settle();
+
+  assert.equal(root.querySelector<HTMLElement>("[data-thread-popover] div")?.textContent, "Early");
+  assert.equal(root.querySelector<HTMLElement>("[data-thread-position]")?.textContent, "Comment 1 of 3");
+  assert.ok(scrolls.length > 0);
+});
+
 test("editing uploads the selected attachment after saving the text", async () => {
   const { window, document } = setup();
   const calls: string[] = [];

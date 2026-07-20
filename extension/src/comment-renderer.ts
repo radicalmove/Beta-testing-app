@@ -98,6 +98,25 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
   const scheduleReposition = () => { if (repositionFrame === undefined) repositionFrame = document.defaultView?.requestAnimationFrame(repositionAll); };
   const startRepositioning = () => { if (repositionListening) return; repositionListening = true; document.defaultView?.addEventListener("resize", scheduleReposition); document.defaultView?.addEventListener("scroll", scheduleReposition, true); };
   const stopRepositioning = () => { if (!repositionListening) return; repositionListening = false; document.defaultView?.removeEventListener("resize", scheduleReposition); document.defaultView?.removeEventListener("scroll", scheduleReposition, true); if (repositionFrame !== undefined) document.defaultView?.cancelAnimationFrame(repositionFrame); repositionFrame = undefined; repositioners.clear(); };
+  const anchorPosition = (comment: PageComment): { top: number; left: number } | undefined => {
+    if (comment.anchor_type === "text_highlight" && comment.selected_quote) {
+      const recovered = recoverTextAnchor(document, { selected_quote: comment.selected_quote, prefix: comment.prefix ?? "", suffix: comment.suffix ?? "" });
+      if (recovered.status === "resolved") { const rect = recovered.range.getBoundingClientRect(); return { top: rect.top, left: rect.left }; }
+    } else if (comment.css_selector && comment.relative_x !== null && comment.relative_y !== null) {
+      const recovered = recoverPinAnchor(document, { css_selector: comment.css_selector, relative_x: comment.relative_x, relative_y: comment.relative_y });
+      if (recovered.status === "resolved") return { top: recovered.y, left: recovered.x };
+    }
+    return undefined;
+  };
+  const scrollCommentIntoView = (comment: PageComment) => {
+    if (comment.anchor_type === "text_highlight" && comment.selected_quote) {
+      const recovered = recoverTextAnchor(document, { selected_quote: comment.selected_quote, prefix: comment.prefix ?? "", suffix: comment.suffix ?? "" });
+      if (recovered.status === "resolved") (recovered.range.commonAncestorContainer.nodeType === 1 ? recovered.range.commonAncestorContainer as HTMLElement : recovered.range.commonAncestorContainer.parentElement)?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+      return;
+    }
+    const position = anchorPosition(comment);
+    if (position && document.defaultView) document.defaultView.scrollBy({ top: position.top - document.defaultView.innerHeight / 2, behavior: "auto" });
+  };
 
   const closeThread = (flushProjection = true) => {
     popoverCleanup?.(); popoverCleanup = undefined;
@@ -203,7 +222,7 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
     const navigation = document.createElement("div"); navigation.className = "thread-navigation"; navigation.dataset.threadNavigation = "true";
     const navigate = async (target: PageComment | undefined) => {
       if (!target) return;
-      if (target.page_url === pageUrl) { closeThread(); document.defaultView?.setTimeout(() => { (root.host as HTMLElement).isConnected && (markers.get(target.id) ? (() => { const targetMarker = markers.get(target.id)!; targetMarker.focus({ preventScroll: true }); openThread(target, Array.from(comments.keys()).indexOf(target.id), targetMarker); })() : undefined); }, 0); }
+      if (target.page_url === pageUrl) { closeThread(); document.defaultView?.setTimeout(() => { (root.host as HTMLElement).isConnected && (markers.get(target.id) ? (() => { scrollCommentIntoView(target); const targetMarker = markers.get(target.id)!; targetMarker.focus({ preventScroll: true }); openThread(target, Array.from(comments.keys()).indexOf(target.id), targetMarker); })() : undefined); }, 0); }
       else await options.navigateToComment?.(target.id, target.page_url);
     };
     const previous = document.createElement("button"); previous.type = "button"; previous.className = "thread-previous"; previous.dataset.direction = "previous"; previous.textContent = "Previous"; previous.disabled = courseIndex <= 0; previous.addEventListener("click", () => void navigate(courseOpenComments[courseIndex - 1]));
@@ -231,9 +250,17 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
   applyComments = (next) => {
       clear();
       projectedComments = [...next];
-      courseOpenComments = projectCourseComments(next.filter((comment) => comment.status !== "resolved")).groups.flatMap((group) => group.comments.map(({ comment }) => comment));
       root.querySelectorAll("[data-recovery-status], [data-recovery-quote]").forEach((node) => node.remove());
       const local = next.filter((comment) => comment.page_url === pageUrl);
+      const localOrder = new Map(local.map((comment, index) => ({ comment, index, position: anchorPosition(comment) })).sort((left, right) => {
+        if (left.position && right.position) return left.position.top - right.position.top || left.position.left - right.position.left || left.index - right.index;
+        if (Boolean(left.position) !== Boolean(right.position)) return left.position ? -1 : 1;
+        return left.index - right.index;
+      }).map((entry, index) => [entry.comment.id, index]));
+      courseOpenComments = projectCourseComments(next.filter((comment) => comment.status !== "resolved")).groups.flatMap((group) => {
+        const grouped = group.comments.map(({ comment }) => comment);
+        return group.pageUrl === pageUrl ? grouped.sort((left, right) => (localOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (localOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER)) : grouped;
+      });
       comments = new Map(local.map((comment) => [comment.id, comment]));
       const unresolved: UnresolvedAnchor[] = [];
       for (const [index, comment] of local.entries()) {
@@ -287,15 +314,7 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
         const quote = document.createElement("blockquote"); quote.dataset.recoveryQuote = commentId; quote.textContent = comment?.selected_quote || (comment ? `${comment.page_title} · ${comment.body}` : "Comment context unavailable"); root.append(status, quote);
         return false;
       }
-      let anchorY: number | undefined;
-      if (comment.anchor_type === "text_highlight" && comment.selected_quote) {
-        const recovered = recoverTextAnchor(document, { selected_quote: comment.selected_quote, prefix: comment.prefix ?? "", suffix: comment.suffix ?? "" });
-        if (recovered.status === "resolved") (recovered.range.commonAncestorContainer.nodeType === 1 ? recovered.range.commonAncestorContainer as HTMLElement : recovered.range.commonAncestorContainer.parentElement)?.scrollIntoView?.({ block: "center", behavior: "smooth" });
-      } else if (comment.css_selector && comment.relative_x !== null && comment.relative_y !== null) {
-        const recovered = recoverPinAnchor(document, { css_selector: comment.css_selector, relative_x: comment.relative_x, relative_y: comment.relative_y });
-        if (recovered.status === "resolved") anchorY = recovered.y;
-      }
-      if (anchorY !== undefined && document.defaultView) document.defaultView.scrollBy({ top: anchorY - document.defaultView.innerHeight / 2, behavior: "auto" });
+      scrollCommentIntoView(comment);
       marker.focus({ preventScroll: true }); openThread(comment, Array.from(comments.keys()).indexOf(commentId), marker); return true;
     },
     destroy() { pendingProjection = undefined; deferredThreadId = undefined; clear(); projectedComments = []; courseOpenComments = []; options.onUnresolvedAnchors?.([]); ownedRoot?.dispose(); },
