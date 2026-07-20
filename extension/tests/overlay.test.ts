@@ -3,6 +3,7 @@ import test from "node:test";
 import { Window } from "happy-dom";
 
 import { approvedControlStyles, commentListLayoutStyles, commentsButtonStyles, controlAlignmentStyles, createOverlayMarkup, helpButtonStyles, mountReviewOverlay, OVERLAY_HOST_ID, overlayStyles, panelTransitionStyles, semanticFilterHoverStyles, tealOverlayOverrides } from "../src/overlay/root.ts";
+import { COMMENT_MARKER_CURSOR } from "../src/ui/comment-cursor.ts";
 import type { PanelStateStorage } from "../src/ui/panel-state.ts";
 
 const context = { course_url: "https://learn.example/course/view.php?id=1", page_url: "https://learn.example/mod/page/view.php?id=2", title: "Law", pageTitle: "Week 2", moodle_course_id: 1, identityConfidence: "confirmed" as const };
@@ -667,7 +668,7 @@ test("thread popover remains positioned from its marker and markers have no whit
   marker.click(); assert.equal(shadow.querySelector("[data-thread-popover]"), null);
 });
 
-test("thread popover hides when its marker scrolls outside the viewport", () => {
+test("thread popover hides when its marker scrolls outside the viewport", async () => {
   const window = new Window(); const document = window.document as unknown as Document;
   document.body.innerHTML = '<div id="target">Target</div>';
   const target = document.querySelector<HTMLElement>("#target")!;
@@ -679,8 +680,8 @@ test("thread popover hides when its marker scrolls outside the viewport", () => 
   marker.getBoundingClientRect = () => ({ x: 70, y: markerTop, left: 70, top: markerTop, right: 108, bottom: markerTop + 38, width: 38, height: 38, toJSON: () => ({}) });
   marker.click(); const popover = shadow.querySelector<HTMLElement>("[data-thread-popover]")!;
   assert.equal(popover.hidden, false);
-  markerTop = -40; window.dispatchEvent(new window.Event("scroll")); assert.equal(popover.hidden, true);
-  markerTop = 100; window.dispatchEvent(new window.Event("scroll")); assert.equal(popover.hidden, false);
+  markerTop = -40; window.dispatchEvent(new window.Event("scroll")); await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve())); assert.equal(popover.hidden, true);
+  markerTop = 100; window.dispatchEvent(new window.Event("scroll")); await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve())); assert.equal(popover.hidden, false);
   overlay.destroy();
 });
 
@@ -693,10 +694,23 @@ test("marker placement has an obvious active button and comment cursor", () => {
   button.click();
   assert.equal(button.getAttribute("aria-pressed"), "true");
   assert.match(button.textContent!, /Cancel marker/);
-  assert.match(document.documentElement.style.cursor, /url\(/);
+  assert.equal(document.documentElement.style.cursor, COMMENT_MARKER_CURSOR);
   document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }) as unknown as Event);
   assert.equal(button.getAttribute("aria-pressed"), "false");
   assert.equal(document.documentElement.style.cursor, "");
+});
+
+test("embedded marker intent uses the same cancel state as local placement", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected", { onRequestInteraction: () => undefined });
+  const button = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!.querySelector<HTMLButtonElement>('[data-action="add-comment"]')!;
+  overlay.setInteractionState("embedded", false, true);
+  assert.equal(button.getAttribute("aria-pressed"), "true");
+  assert.match(button.textContent!, /Cancel marker/);
+  overlay.setInteractionState("embedded", false, false);
+  assert.equal(button.getAttribute("aria-pressed"), "false");
+  assert.equal(button.textContent, "Add comment marker");
+  overlay.destroy();
 });
 
 test("course comments default to open and expose resolved separately", () => {

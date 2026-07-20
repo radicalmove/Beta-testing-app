@@ -32,12 +32,14 @@ export function createInteractionTargetController(options: {
   scorm: boolean; requestablePermission: boolean; loadingTimeoutMs: number;
   setTimeout(handler: () => void, delay: number): unknown; clearTimeout(timer: unknown): void;
   onState(state: InteractionTarget): void; onReplay(intent: DesiredInteraction): void; onCancel?: () => void;
+  onIntentChange?(intent: DesiredInteraction | undefined): void;
 }) {
   let current: InteractionTarget = options.scorm ? (options.requestablePermission ? "permission-required" : "loading") : "local";
   let requestablePermission = options.requestablePermission;
   let desired: DesiredInteraction | undefined;
   let deadline: unknown;
   let cancelled = false;
+  const setDesired = (next: DesiredInteraction | undefined) => { if (desired === next) return; desired = next; options.onIntentChange?.(next); };
   const publish = (next: InteractionTarget) => { if (current === next && !cancelled) return; current = next; cancelled = false; options.onState(next); };
   const beginDeadline = () => {
     if (current !== "loading") return;
@@ -48,15 +50,15 @@ export function createInteractionTargetController(options: {
   return {
     state: () => current,
     queuedIntent: () => desired,
-    request: (intent: DesiredInteraction) => { if (intent === "marker" && desired === "marker") { desired = undefined; options.onCancel?.(); return; } desired = intent; if (current === "embedded") options.onReplay(intent); },
-    cancel: () => { desired = undefined; cancelled = true; },
+    request: (intent: DesiredInteraction) => { if (intent === "marker" && desired === "marker") { setDesired(undefined); options.onCancel?.(); return; } setDesired(intent); if (current === "embedded") options.onReplay(intent); },
+    cancel: () => { setDesired(undefined); cancelled = true; },
     workerReady: () => { if (deadline !== undefined) options.clearTimeout(deadline); publish("embedded"); if (desired) options.onReplay(desired); },
-    workerLost: () => { publish(requestablePermission ? "permission-required" : "loading"); beginDeadline(); },
-    permissionRequired: () => { requestablePermission = true; publish("permission-required"); },
+    workerLost: () => { setDesired(undefined); publish(requestablePermission ? "permission-required" : "loading"); beginDeadline(); },
+    permissionRequired: () => { setDesired(undefined); requestablePermission = true; publish("permission-required"); },
     permissionDenied: () => publish("permission-required"),
-    permissionRevoked: () => publish("permission-required"),
+    permissionRevoked: () => { setDesired(undefined); publish("permission-required"); },
     permissionGranted: (reloadRequired = false) => { publish(reloadRequired ? "reload-required" : "loading"); beginDeadline(); },
-    destroy: () => { if (deadline !== undefined) options.clearTimeout(deadline); desired = undefined; },
+    destroy: () => { if (deadline !== undefined) options.clearTimeout(deadline); setDesired(undefined); },
   };
 }
 
@@ -265,6 +267,7 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
   let embeddedPageUrl = "";
   let interactionController: ReturnType<typeof createInteractionTargetController>;
   let embeddedHasSelection = false;
+  let embeddedMarkerActive = false;
   let overlay: ReviewOverlay;
   const waitingForApproval = "Waiting for approval — you can leave this page open or return later.";
   const checkPendingApproval = (): Promise<AuthenticationOutcome> => {
@@ -331,16 +334,16 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
     if (context.page_url === contextSnapshot.page_url) void loadPageComments(context.page_url);
     return saved;
   }, editThread: async (commentId, body) => { if (!courseId) throw new Error("Course connection unavailable"); await refreshCourseBindingBeforeComment(send, context, courseId); await send({ type: "EDIT_COMMENT_THREAD", comment_id: commentId, body }); await loadPageComments(context.page_url); }, replyThread: async (commentId, body) => { if (!courseId) throw new Error("Course connection unavailable"); await refreshCourseBindingBeforeComment(send, context, courseId); await send({ type: "REPLY_COMMENT_THREAD", comment_id: commentId, body }); await loadPageComments(context.page_url); }, changeStatus: async (commentId, nextStatus) => { if (!courseId) throw new Error("Course connection unavailable"); await refreshCourseBindingBeforeComment(send, context, courseId); await send({ type: "UPDATE_COMMENT_STATUS", comment_id: commentId, status: nextStatus }); }, refreshComments: refreshAfterMutation, manageSme: async (commentId, userIds) => { if (!courseId) throw new Error("Course connection unavailable"); await refreshCourseBindingBeforeComment(send, context, courseId); return send({ type: userIds ? "SET_SME_RECIPIENTS" : "GET_SME_RECIPIENTS", comment_id: commentId, ...(userIds ? { user_ids: userIds } : {}) }); }, deleteThread: async (commentId) => { if (!courseId) throw new Error("Course connection unavailable"); await refreshCourseBindingBeforeComment(send, context, courseId); await send({ type: "DELETE_COMMENT_THREAD", comment_id: commentId }); await refreshAfterMutation(); }, uploadScreenshot: (commentId, dataUrl) => send({ type: "UPLOAD_SCREENSHOT", comment_id: commentId, data_url: dataUrl }), cancelScreenshot: (commentId) => send({ type: "CANCEL_SCREENSHOT", comment_id: commentId }) }, buildDiagnostics);
-  interactionController = createInteractionTargetController({ scorm: scormRoute, requestablePermission: false, loadingTimeoutMs: Math.max(250, framePollDelay * 3), setTimeout: (handler, delay) => targetWindow.setTimeout(handler, delay), clearTimeout: (timer) => targetWindow.clearTimeout(timer as number), onState: (state) => { overlay.setInteractionState(state, state === "embedded" && embeddedHasSelection); if (state === "unavailable") overlay.showFrameFallback(); else overlay.hideFrameFallback(); }, onReplay: (intent) => { void sendScormCommand(intent === "selection" ? "SCORM_START_SELECTION" : "SCORM_START_MARKER").catch(() => interactionController.workerLost()); }, onCancel: () => { void sendScormCommand("SCORM_CANCEL_MARKER").catch(() => undefined); } });
+  interactionController = createInteractionTargetController({ scorm: scormRoute, requestablePermission: false, loadingTimeoutMs: Math.max(250, framePollDelay * 3), setTimeout: (handler, delay) => targetWindow.setTimeout(handler, delay), clearTimeout: (timer) => targetWindow.clearTimeout(timer as number), onState: (state) => { overlay.setInteractionState(state, state === "embedded" && embeddedHasSelection, embeddedMarkerActive); if (state === "unavailable") overlay.showFrameFallback(); else overlay.hideFrameFallback(); }, onIntentChange: (intent) => { embeddedMarkerActive = intent === "marker"; overlay.setInteractionState(interactionController.state(), interactionController.state() === "embedded" && embeddedHasSelection, embeddedMarkerActive); }, onReplay: (intent) => { void sendScormCommand(intent === "selection" ? "SCORM_START_SELECTION" : "SCORM_START_MARKER").catch(() => interactionController.workerLost()); }, onCancel: () => { void sendScormCommand("SCORM_CANCEL_MARKER").catch(() => undefined); } });
   const topMessageListener: RuntimeListener = (message) => {
     const record = message as { type?: unknown; event?: any; capability?: unknown };
     if (record.type === "SCORM_PERMISSION_REVOKED") { interactionController.permissionRevoked(); return; }
     if (record.type === "REVIEW_WORKER_READY") { interactionController.workerReady(); if (embeddedPageUrl) void sendScormCommand("SCORM_SET_COMMENTS", { comments: latestComments }).catch(() => undefined); return; }
     if (record.type !== "SCORM_WORKER_EVENT" || !record.event) return;
     const event = record.event; embeddedPageUrl = typeof event.page_url === "string" ? event.page_url : embeddedPageUrl;
-    if (event.type === "SCORM_SELECTION_CHANGED") { embeddedHasSelection = event.payload?.has_selection === true; overlay.setInteractionState(interactionController.state(), interactionController.state() === "embedded" && embeddedHasSelection); }
+    if (event.type === "SCORM_SELECTION_CHANGED") { embeddedHasSelection = event.payload?.has_selection === true; overlay.setInteractionState(interactionController.state(), interactionController.state() === "embedded" && embeddedHasSelection, embeddedMarkerActive); }
     else if (event.type === "SCORM_ANCHOR_CAPTURED" && typeof record.capability === "string") { interactionController.cancel(); const { anchor_type, selected_quote, prefix, suffix, css_selector, relative_x, relative_y } = event.payload; const anchor = anchor_type === "text_highlight" ? { anchor_type, selected_quote, prefix, suffix } : { anchor_type, css_selector, relative_x, relative_y }; targetDocument.documentElement.dispatchEvent(new targetWindow.CustomEvent("moodle-review:embedded-anchor", { detail: { capability: record.capability, anchor } })); }
-    else if (event.type === "SCORM_PAGE_IDENTITY_CHANGED") void sendScormCommand("SCORM_SET_COMMENTS", { comments: latestComments }).catch(() => undefined);
+    else if (event.type === "SCORM_PAGE_IDENTITY_CHANGED") { interactionController.cancel(); void sendScormCommand("SCORM_SET_COMMENTS", { comments: latestComments }).catch(() => undefined); }
     else if (event.type === "SCORM_COMMENTS_CHANGED") void loadPageComments(context.page_url);
     else if (event.type === "SCORM_COMMENT_NAVIGATION_REQUESTED") void (async () => { const navigation = await send<{ destination_url?: string }>({ type: "PREPARE_COMMENT_NAVIGATION", comment_id: event.payload.comment_id, page_url: event.payload.page_url }); if (navigation.destination_url) targetWindow.location.assign(navigation.destination_url); })().catch(() => undefined);
   };
@@ -388,7 +391,7 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
     });
   };
   const lifecycle = createLifecycleController(targetWindow, targetDocument, refresh);
-  const clearNavigatedPage = () => { const next = currentContext(targetWindow, targetDocument); if (context.page_url !== next.page_url) { commentSequence += 1; overlay.setPageComments([]); } };
+  const clearNavigatedPage = () => { const next = currentContext(targetWindow, targetDocument); if (context.page_url !== next.page_url) { interactionController.cancel(); commentSequence += 1; overlay.setPageComments([]); } };
   for (const eventName of ["popstate", "hashchange", "moodle-review:navigate"]) targetWindow.addEventListener(eventName, clearNavigatedPage);
   const scheduleTimeout = typeof targetWindow.setTimeout === "function" ? targetWindow.setTimeout.bind(targetWindow) : globalThis.setTimeout;
   const cancelTimeout = typeof targetWindow.clearTimeout === "function" ? targetWindow.clearTimeout.bind(targetWindow) : globalThis.clearTimeout;
