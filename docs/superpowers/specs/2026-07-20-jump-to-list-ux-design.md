@@ -6,7 +6,7 @@ Make the whole-course comment index and Jump-to menu easier to scan, consistentl
 
 ## Scope
 
-This change affects only the course comment panel, Jump-to menu, Help button colour, and Help dialog width. It must not alter stored comment data, comment visibility, status changes, SCORM launch/navigation targets, or contextual Previous/Next behaviour.
+This change affects only the course comment panel, Jump-to menu, Help button colour, Help dialog width, and persistence of the panel's expanded state. It must not alter stored comment data, comment visibility, status changes, SCORM launch/navigation targets, or contextual Previous/Next behaviour.
 
 ## Visual behaviour
 
@@ -23,6 +23,16 @@ This change affects only the course comment panel, Jump-to menu, Help button col
 - Comment entries and Jump-to options have no text underline at rest.
 - Both become underlined on hover and `:focus-visible` while retaining the established accessible focus outline.
 - The comment body remains the concise visible label. Existing accessible names may retain fuller page, author, status, and comment context, but must not announce a removed list number.
+
+### Course-specific panel state and animation
+
+- Expanding or collapsing the comments panel stores that state in browser-local storage under a key derived from the canonical course URL.
+- A newly mounted overlay restores the saved state for its current course. Moodle pages and SCORM activities belonging to the same course therefore retain the same panel state across navigation and browser restarts.
+- Different courses use independent keys and do not inherit each other's panel state.
+- Missing, malformed, or inaccessible browser storage falls back safely to the existing collapsed default and must not prevent the overlay from loading.
+- User-triggered expansion and collapse animate height and opacity over approximately 180ms. The animation applies only to the comments panel, not to comment markers or contextual threads.
+- The panel's `aria-expanded`, accessible label, focus behaviour, and hidden/inert state remain synchronized with the visible state throughout the transition.
+- Under `prefers-reduced-motion: reduce`, the transition duration is removed and the state changes immediately.
 
 ## Jump-to labels and ordering
 
@@ -55,4 +65,5 @@ Regression tests must demonstrate:
 5. `All pages` stays first, unnumbered pages precede numbered pages, and dotted numbers sort hierarchically.
 6. Duplicate visible titles with different URLs remain separate options.
 7. Opening Jump to applies viewport-clamped positioning and a scrollable maximum height, without breaking keyboard or outside-click closure.
-
+8. Panel state is saved and restored independently by course, survives remounting, and fails safely when storage is unavailable or malformed.
+9. Expansion and collapse expose synchronized accessibility state, use the short transition normally, and disable it under reduced-motion preferences.
