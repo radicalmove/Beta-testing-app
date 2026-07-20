@@ -424,6 +424,40 @@ test("unavailable panel storage never prevents mounting or toggling", () => {
   assert.equal(shadow.querySelector('[data-action="panel"]')!.getAttribute("aria-expanded"), "true");
 });
 
+test("connecting on the same course restores saved open state after a signed-out mount", () => {
+  const storage = createPanelStorage();
+  storage.values.set(`moodle-course-review:panel:${context.course_url}`, "open");
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "signed-out", { panelStateStorage: storage });
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+
+  assert.equal(shadow.querySelector('[data-action="panel"]'), null);
+  assert.equal(shadow.querySelector<HTMLElement>(".panel")!.hidden, true);
+  overlay.update(context, "connected");
+
+  assert.equal(shadow.querySelector<HTMLElement>(".panel")!.hidden, false);
+  assert.equal(shadow.querySelector<HTMLElement>(".panel")!.dataset.panelState, "open");
+  assert.equal(shadow.querySelector('[data-action="panel"]')!.getAttribute("aria-expanded"), "true");
+});
+
+test("reconnecting after a signed-out course change restores the new course state", () => {
+  const storage = createPanelStorage();
+  const otherCourse = { ...context, course_url: "https://learn.example/course/view.php?id=99", moodle_course_id: 99 };
+  storage.values.set(`moodle-course-review:panel:${context.course_url}`, "open");
+  storage.values.set(`moodle-course-review:panel:${otherCourse.course_url}`, "open");
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected", { panelStateStorage: storage });
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+
+  overlay.update(otherCourse, "signed-out");
+  assert.equal(shadow.querySelector('[data-action="panel"]'), null);
+  assert.equal(shadow.querySelector<HTMLElement>(".panel")!.hidden, true);
+  overlay.update(otherCourse, "connected");
+
+  assert.equal(shadow.querySelector<HTMLElement>(".panel")!.hidden, false);
+  assert.equal(shadow.querySelector('[data-action="panel"]')!.getAttribute("aria-expanded"), "true");
+});
+
 test("panel transitions synchronize accessibility state and finish closed", async () => {
   const window = new Window(); const document = window.document as unknown as Document;
   const shadow = (mountReviewOverlay(document, context, "connected", { panelStateStorage: createPanelStorage() }), document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!);
@@ -486,6 +520,13 @@ test("reduced-motion panel changes are immediate and CSS disables transitions", 
   assert.match(panelTransitionStyles, /transition:max-height 180ms ease,opacity 180ms ease/);
   assert.match(panelTransitionStyles, /@media\(prefers-reduced-motion:reduce\)/);
   assert.match(panelTransitionStyles, /transition:none/);
+});
+
+test("closing animation collapses the panel's complete outer height", () => {
+  assert.match(panelTransitionStyles, /\.panel\{[^}]*padding-top:16px[^}]*padding-bottom:16px[^}]*border-top-width:1px/);
+  assert.match(panelTransitionStyles, /\.panel\[data-panel-state="closed"\],\.panel\[data-panel-state="closing"\]\{[^}]*padding-top:0[^}]*padding-bottom:0[^}]*border-top-width:0/);
+  assert.match(panelTransitionStyles, /transition:[^}]*padding-top 180ms ease[^}]*padding-bottom 180ms ease[^}]*border-top-width 180ms ease/);
+  assert.match(panelTransitionStyles, /@media\(prefers-reduced-motion:reduce\)\{\.panel\[data-panel-animate="true"\]\{transition:none\}\}/);
 });
 
 test("a disconnected state closes an open review panel when its toggle is removed", () => {
