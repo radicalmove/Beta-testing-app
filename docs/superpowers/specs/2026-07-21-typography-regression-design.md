@@ -16,3 +16,4 @@ Restore the established compact review-tool typography without changing layout, 
 - Regression tests assert the SCORM host typography and the established 16 px/650 button typography.
 - Overlay style tests assert larger group headings and smaller comment-link text independently.
 - Run type checking, the complete extension unit suite, browser-flow tests, and packaging tests before release.
+- Publish the signed result as patch version 0.4.69 from `main`, following the established pilot release process and preserving unrelated user files.
