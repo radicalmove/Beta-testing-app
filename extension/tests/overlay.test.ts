@@ -320,12 +320,20 @@ test("one adaptive action opens highlighted text directly or enters marker place
 test("Help dialog provides complete instructions and metadata", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   mountReviewOverlay(document, context, "connected", {}, { version: "0.3.2", buildCommit: "abc1234def" }); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
-  const trigger = shadow.querySelector<HTMLElement>('[data-action="help"]')!; trigger.click();
+  const trigger = shadow.querySelector<HTMLElement>('[data-action="help"]')!;
+  assert.equal(trigger.getAttribute("aria-label"), "Help and instructions");
+  assert.equal(trigger.getAttribute("title"), "Help and instructions");
+  assert.equal(trigger.getAttribute("aria-expanded"), "false");
+  assert.ok(trigger.querySelector('[data-review-icon="help"]'));
+  assert.doesNotMatch(trigger.textContent ?? "", /\?/);
+  trigger.click();
+  assert.equal(trigger.getAttribute("aria-expanded"), "true");
   const dialog = shadow.querySelector<HTMLElement>('[role="dialog"]')!;
   assert.equal(dialog.getAttribute("aria-modal"), "true"); assert.equal(dialog.getAttribute("aria-labelledby"), "review-help-title"); assert.equal(dialog.getAttribute("aria-describedby"), "review-help-intro");
   for (const text of ["Highlight exact text", "Place a comment marker", "Moodle and SCORM", "Open comments in context", "Filter and jump", "Reply, edit, and attach", "Resolve or delete", "Who can see feedback", "Pilot 0.3.2 · build abc1234"]) assert.match(dialog.textContent!, new RegExp(text));
   assert.equal(shadow.activeElement, dialog.querySelector("h2"));
   dialog.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }) as unknown as Event);
+  assert.equal(trigger.getAttribute("aria-expanded"), "false");
   assert.equal(shadow.querySelector('[role="dialog"]'), null); assert.equal(shadow.activeElement, trigger);
 });
 
@@ -548,7 +556,8 @@ test("marker and delete controls follow the approved button states", () => {
   assert.match(semanticFilterHoverStyles, /\.toolbar-actions \[data-action="add-comment"\]\[aria-pressed="true"\]\{background:var\(--review-red\);border-color:var\(--review-red\);color:#fff\}/);
   assert.match(semanticFilterHoverStyles, /\.toolbar-actions \[data-action="add-comment"\]\[aria-pressed="true"\]:hover\{background:#fff;border-color:var\(--review-red\);color:var\(--review-red\)\}/);
   assert.match(semanticFilterHoverStyles, /\.comment-row-action\.delete-action\{border-radius:5px\}/);
-  assert.match(semanticFilterHoverStyles, /\.comment-row-action\.delete-action:hover\{background:#fff;border-color:var\(--review-red\)\}/);
+  assert.match(approvedControlStyles, /\.comment-row-action\.delete-action\{border:2px solid var\(--review-red\);background:var\(--review-red\);color:#fff\}/);
+  assert.match(approvedControlStyles, /\.comment-row-action\.delete-action:hover\{background:#fff;border-color:var\(--review-red\);color:var\(--review-red\)\}/);
 });
 
 test("comment controls use their semantic colours for selected and unselected states", () => {
@@ -645,6 +654,12 @@ test("course comment rows expose capability-gated resolve, reopen, and delete ac
   const remove = firstRow.querySelector<HTMLButtonElement>('[data-comment-action="delete"]')!;
   assert.match(resolve.getAttribute("aria-label") ?? "", /Resolve comment 1/); assert.equal(resolve.title, resolve.getAttribute("aria-label"));
   assert.match(remove.getAttribute("aria-label") ?? "", /Delete comment 1/); assert.equal(remove.title, remove.getAttribute("aria-label"));
+  for (const deleteAction of Array.from(shadow.querySelectorAll<HTMLButtonElement>('[data-comment-action="delete"].delete-action'))) {
+    assert.ok(deleteAction.querySelector('[data-review-icon="delete"]'));
+    assert.equal(deleteAction.getAttribute("aria-label"), deleteAction.title);
+    assert.match(deleteAction.getAttribute("aria-label") ?? "", /^Delete comment \d+$/);
+  }
+  assert.equal(resolve.querySelector("[data-review-icon]"), null);
   resolve.click(); await acceptConfirmation(shadow);
   assert.deepEqual(statusCalls, [[base.id, "resolved"]]); assert.deepEqual(navigationCalls, []);
   overlay.setCommentList(records); assert.equal(shadow.querySelector<HTMLButtonElement>('[data-comment-filter="open"]')!.getAttribute("aria-pressed"), "true"); assert.equal(shadow.querySelectorAll("[role='listitem']").length, 2);
@@ -659,6 +674,37 @@ test("course comment rows expose capability-gated resolve, reopen, and delete ac
   shadow.querySelector<HTMLElement>(`[data-comment-row="${base.id}"]`)!.querySelector<HTMLButtonElement>('[data-comment-action="delete"]')!.click(); assert.match(shadow.querySelector<HTMLElement>(".confirm-dialog")!.textContent!, /Delete this entire thread/); await acceptConfirmation(shadow);
   assert.deepEqual(deleteCalls, [base.id]); assert.deepEqual(navigationCalls, []);
   assert.equal(shadow.querySelectorAll("[role='listitem']").length, 1); assert.match(shadow.querySelector<HTMLButtonElement>("[data-comment-item]")!.textContent!, /^#1 /);
+});
+
+test("text controls remain free of review icon SVGs", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  document.body.innerHTML = "<p>Selected words</p>";
+  const overlay = mountReviewOverlay(document, context, "connected");
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const add = shadow.querySelector<HTMLButtonElement>('[data-action="add-comment"]')!;
+  const comments = shadow.querySelector<HTMLButtonElement>('[data-action="panel"]')!;
+  assert.equal(add.textContent, "Add comment marker");
+  assert.match(comments.textContent ?? "", /^Comments/);
+  overlay.setCommentList([]);
+  comments.click();
+  const textControls = [
+    add,
+    comments,
+    ...Array.from(shadow.querySelectorAll<HTMLButtonElement>(".comment-control")),
+  ];
+  assert.deepEqual(textControls.slice(2).map((button) => button.textContent), ["Whole course", "Current page", "Open", "Resolved", "Jump to"]);
+  for (const control of textControls) assert.equal(control.querySelector("svg"), null, `${control.textContent} must not contain an SVG`);
+  shadow.querySelector<HTMLButtonElement>('[data-action="help"]')!.click();
+  const closeHelp = shadow.querySelector<HTMLButtonElement>('[data-close-help]')!;
+  assert.equal(closeHelp.textContent, "Close help");
+  assert.equal(closeHelp.querySelector("svg"), null);
+  closeHelp.click();
+  const range = document.createRange(); range.selectNodeContents(document.querySelector("p")!.firstChild!); window.getSelection()!.addRange(range as any);
+  document.dispatchEvent(new window.Event("selectionchange") as unknown as Event);
+  add.click();
+  const cancel = shadow.querySelector<HTMLButtonElement>("[data-cancel]")!;
+  assert.equal(cancel.textContent, "Cancel");
+  assert.equal(cancel.querySelector("svg"), null);
 });
 
 test("course row actions are omitted without both capability and callback", () => {
