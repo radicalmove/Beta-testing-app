@@ -16,8 +16,14 @@ export type ProjectedCourseCommentGroup<T extends CourseCommentIdentity> = {
 
 const normalize = (value: string) => value.replace(/\s+/g, " ").trim();
 
+export function coursePageJumpLabel(title: string): string {
+  const normalized = normalize(title);
+  const label = normalized.replace(/^embedded\s+activity\s*·\s*/i, "");
+  return label || "Untitled page";
+}
+
 function leadingCourseNumber(title: string): number[] | undefined {
-  const match = normalize(title).match(/^(\d+(?:\.\d+)*)\b/);
+  const match = coursePageJumpLabel(title).match(/^(\d+(?:\.\d+)*)\b/);
   return match ? match[1]!.split(".").map(Number) : undefined;
 }
 

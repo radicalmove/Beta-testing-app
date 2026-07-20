@@ -1,11 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { projectCourseComments } from "../src/course-comment-order.ts";
+import { coursePageJumpLabel, projectCourseComments } from "../src/course-comment-order.ts";
 
 type Comment = { id: string; page_url: string; page_title: string; status: string };
 
 const comment = (id: string, page_title: string, page_url = `https://learn.example/page/${id}`): Comment => ({ id, page_url, page_title, status: "open" });
+
+test("creates normalized Jump-to labels and removes only the leading embedded activity prefix", () => {
+  assert.equal(coursePageJumpLabel("  Embedded activity  ·\t 1.1.2   Sources of law  "), "1.1.2 Sources of law");
+  assert.equal(coursePageJumpLabel("EMBEDDED ACTIVITY · Resources"), "Resources");
+  assert.equal(coursePageJumpLabel("A note about Embedded activity · 1.1.2"), "A note about Embedded activity · 1.1.2");
+  assert.equal(coursePageJumpLabel(" \n\t "), "Untitled page");
+});
 
 test("orders unnumbered course pages before naturally ordered dotted course pages", () => {
   const input = [
@@ -35,6 +42,32 @@ test("groups identical pages, preserves server order within a page, and uses sta
   const projected = projectCourseComments(input);
   assert.deepEqual(projected.groups.map((group) => group.pageUrl), ["https://learn.example/page/a", "https://learn.example/page/z"]);
   assert.deepEqual(projected.groups[0]!.comments.map((entry) => entry.comment.id), ["a-first", "a-second"]);
+});
+
+test("orders shuffled Jump-to destinations by visible label while preserving duplicate labels at separate URLs", () => {
+  const input = [
+    comment("one-two", "Embedded activity · 1.1.2", "https://learn.example/page/1.1.2"),
+    comment("support", "Support services"),
+    comment("one-one", "Embedded activity · 1.1.1", "https://learn.example/page/1.1.1"),
+    comment("institutions", "2 Institutions"),
+    comment("course-info", "Course information"),
+    comment("intro", "1 Introduction"),
+    comment("duplicate-one", "Embedded activity · 2.1.1", "https://learn.example/page/2.1.1-a"),
+    comment("duplicate-two", "Embedded activity · 2.1.1", "https://learn.example/page/2.1.1-b"),
+  ];
+
+  const projected = projectCourseComments(input);
+
+  assert.deepEqual(projected.groups.map((group) => [group.title, group.pageUrl]), [
+    ["Course information", "https://learn.example/page/course-info"],
+    ["Support services", "https://learn.example/page/support"],
+    ["1 Introduction", "https://learn.example/page/intro"],
+    ["Embedded activity · 1.1.1", "https://learn.example/page/1.1.1"],
+    ["Embedded activity · 1.1.2", "https://learn.example/page/1.1.2"],
+    ["2 Institutions", "https://learn.example/page/institutions"],
+    ["Embedded activity · 2.1.1", "https://learn.example/page/2.1.1-a"],
+    ["Embedded activity · 2.1.1", "https://learn.example/page/2.1.1-b"],
+  ]);
 });
 
 test("canonical numbering is assigned before filters so filtered views retain gaps", () => {
