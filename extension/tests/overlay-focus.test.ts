@@ -87,6 +87,7 @@ test("initial comment creation uses the shared composer controls", () => {
   assert.equal(composer.nextElementSibling?.classList.contains("error"), true);
   const styles = Array.from(shadow.querySelectorAll("style")).map((node) => node.textContent).join("");
   assert.match(styles, /\.comment-composer-field-row\{display:grid;grid-template-columns:minmax\(0,1fr\) 34px;gap:8px/);
+  assert.match(styles, /\.preview\+\.comment-composer\{margin-top:10px\}/);
   assert.match(styles, /@media\(max-width:420px\)\{\.comment-composer-actions button\{flex:0 0 auto\}/);
 });
 
