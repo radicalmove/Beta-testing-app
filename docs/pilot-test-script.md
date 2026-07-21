@@ -1,5 +1,7 @@
 # CRJU150 pilot test script
 
+For the full tester-facing checklist and pass/fail criteria, use the [manual pilot test plan](manual-pilot-test-plan.md). This document retains the installation and technical SCORM acceptance details.
+
 ## Install and confirm the pilot build
 
 Use only this unpacked-extension folder in both browsers:
