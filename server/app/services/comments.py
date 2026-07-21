@@ -72,7 +72,7 @@ def comment_capabilities(viewer: User, comment: Comment) -> dict:
     is_lead = viewer.role is UserRole.LD_DCD
     is_admin = viewer.role is UserRole.ADMIN
     if comment.author_role is UserRole.BETA_TESTER:
-        can_reply = is_author or is_lead
+        can_reply = is_author or is_lead or is_admin
     else:
         can_reply = viewer.role is not UserRole.BETA_TESTER or is_author
     return {
@@ -99,7 +99,7 @@ def normalized_page_url(value: str) -> str:
 
 def _reply_visible_to(viewer: User, comment: Comment, reply_author: User) -> bool:
     if viewer.role is UserRole.BETA_TESTER:
-        return reply_author.id == viewer.id or reply_author.role is UserRole.LD_DCD
+        return reply_author.id == viewer.id or reply_author.role in {UserRole.LD_DCD, UserRole.ADMIN}
     return True
 
 
@@ -111,8 +111,8 @@ def dashboard_comments_for(db: DbSession, user: User) -> list[DashboardComment]:
         CommentReply.comment_id == Comment.id,
         CommentReply.author_user_id != user.id,
         or_(
-            and_(Comment.author_role == UserRole.BETA_TESTER, or_(CommentReply.author_user_id == Comment.author_user_id, reply_author.role == UserRole.LD_DCD)),
-            and_(Comment.author_role != UserRole.BETA_TESTER, or_(CommentReply.author_user_id == Comment.author_user_id, reply_author.role.in_((UserRole.SME, UserRole.LD_DCD)))),
+            and_(Comment.author_role == UserRole.BETA_TESTER, or_(CommentReply.author_user_id == Comment.author_user_id, reply_author.role.in_((UserRole.LD_DCD, UserRole.ADMIN)))),
+            and_(Comment.author_role != UserRole.BETA_TESTER, or_(CommentReply.author_user_id == Comment.author_user_id, reply_author.role.in_((UserRole.SME, UserRole.LD_DCD, UserRole.ADMIN)))),
         ),
     )
     latest_at = (
@@ -334,8 +334,8 @@ def create_reply(db: DbSession, actor: User, comment: Comment, body: str) -> Com
     if not body.strip():
         raise ValueError("body is required")
     if comment.author_role is UserRole.BETA_TESTER:
-        if actor.id != comment.author_user_id and actor.role is not UserRole.LD_DCD:
-            raise AuthorizationError("Only the beta author or an LD/DCD can reply to a beta thread")
+        if actor.id != comment.author_user_id and actor.role not in {UserRole.LD_DCD, UserRole.ADMIN}:
+            raise AuthorizationError("Only the beta author, an LD/DCD, or an administrator can reply to a beta thread")
     elif actor.role is UserRole.BETA_TESTER and actor.id != comment.author_user_id:
         raise AuthorizationError("Beta testers can reply only to their own threads")
     reply = CommentReply(comment_id=comment.id, author_user_id=actor.id, body=body.strip(), created_at=utc_now())

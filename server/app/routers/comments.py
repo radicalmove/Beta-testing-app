@@ -53,7 +53,7 @@ def _comment_json(comment: Comment, db: DbSession | None = None, viewer: User | 
         replies = list(db.query(CommentReply).filter_by(comment_id=comment.id).order_by(CommentReply.created_at, CommentReply.id))
         if viewer.role is UserRole.BETA_TESTER:
             allowed = {viewer.id}
-            allowed.update(user.id for user in db.query(User).filter(User.role == UserRole.LD_DCD))
+            allowed.update(user.id for user in db.query(User).filter(User.role.in_((UserRole.LD_DCD, UserRole.ADMIN))))
             replies = [reply for reply in replies if reply.author_user_id in allowed]
         result["replies"] = [_reply_json(reply) for reply in replies]
         events = list(db.query(CommentStatusEvent).filter_by(comment_id=comment.id).order_by(CommentStatusEvent.created_at, CommentStatusEvent.id))

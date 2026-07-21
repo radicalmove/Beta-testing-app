@@ -127,7 +127,7 @@ def test_sme_threads_with_multiple_shares_are_not_duplicated(client):
     assert [item["id"] for item in response.json()] == [thread]
 
 
-def test_beta_thread_replies_are_limited_to_author_and_ld_dcd(client):
+def test_beta_thread_replies_are_allowed_for_author_course_team_and_administrator(client):
     beta, _ = headers_for(client, "beta@example.test", UserRole.BETA_TESTER)
     lead, _ = headers_for(client, "lead@example.test", UserRole.LD_DCD)
     admin, _ = headers_for(client, "admin@example.test", UserRole.ADMIN)
@@ -137,11 +137,11 @@ def test_beta_thread_replies_are_limited_to_author_and_ld_dcd(client):
     session.close()
     thread = make_comment(client, beta, course_id, "Beta feedback")
 
-    assert client.post(f"/api/comments/{thread}/replies", headers=admin, json={"body": "Admin answer"}).status_code == 403
+    assert client.post(f"/api/comments/{thread}/replies", headers=admin, json={"body": "Admin answer"}).status_code == 201
     assert client.post(f"/api/comments/{thread}/replies", headers=lead, json={"body": "LD answer"}).status_code == 201
     assert client.post(f"/api/comments/{thread}/replies", headers=beta, json={"body": "Thanks"}).status_code == 201
     detail = client.get(f"/api/comments/{thread}", headers=beta)
-    assert [reply["body"] for reply in detail.json()["replies"]] == ["LD answer", "Thanks"]
+    assert [reply["body"] for reply in detail.json()["replies"]] == ["Admin answer", "LD answer", "Thanks"]
 
 
 def test_page_comment_list_returns_anchors_and_role_filtered_conversation(client):
