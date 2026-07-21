@@ -38,16 +38,28 @@ def test_non_owner_cannot_change_status_but_ld_can(db_session):
     assert comment.status == "resolved"
 
 
-@pytest.mark.parametrize("target", ["open", "awaiting_sme"])
-def test_open_rejects_skipped_or_noop_status_transitions(db_session, target):
+def test_repeating_current_status_is_idempotent(db_session):
     owner = User(email="owner@example.test", password_hash="hash", approved_at=datetime.now(UTC), created_at=datetime.now(UTC))
     lead = User(email="lead@example.test", password_hash="hash", role=UserRole.LD_DCD, approved_at=datetime.now(UTC), created_at=datetime.now(UTC))
     db_session.add_all([owner, lead])
     course = resolve_course(db_session, moodle_course_id=12, course_url="https://moodle.example/course/view.php?id=12", title="Law")
     comment = create_comment(db_session, owner, course_id=course.id, page_url="https://moodle.example/page/9", page_title="Unit 1", body="Fix", category="assessment", anchor_type="text_highlight", selected_quote="Fix", css_selector="#content")
 
+    returned = update_comment_status(db_session, lead, comment, "open")
+
+    assert returned.status is CommentStatus.OPEN
+    assert [event.status for event in db_session.query(CommentStatusEvent).all()] == [CommentStatus.OPEN]
+
+
+def test_open_rejects_skipped_status_transition(db_session):
+    owner = User(email="owner-skip@example.test", password_hash="hash", approved_at=datetime.now(UTC), created_at=datetime.now(UTC))
+    lead = User(email="lead-skip@example.test", password_hash="hash", role=UserRole.LD_DCD, approved_at=datetime.now(UTC), created_at=datetime.now(UTC))
+    db_session.add_all([owner, lead])
+    course = resolve_course(db_session, moodle_course_id=13, course_url="https://moodle.example/course/view.php?id=13", title="Law")
+    comment = create_comment(db_session, owner, course_id=course.id, page_url="https://moodle.example/page/13", page_title="Unit 1", body="Fix", category="assessment", anchor_type="text_highlight", selected_quote="Fix", css_selector="#content")
+
     with pytest.raises(ValueError, match="Invalid status transition"):
-        update_comment_status(db_session, lead, comment, target)
+        update_comment_status(db_session, lead, comment, "awaiting_sme")
 
 
 def test_ld_can_resolve_open_feedback_and_reopen_it(db_session):

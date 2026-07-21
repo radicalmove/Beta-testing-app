@@ -1,6 +1,6 @@
 # Moodle Course Review — manual pilot test plan
 
-**Release candidate:** 0.4.69  
+**Release candidate:** 0.5.0
 **Course used for pilot:** CRJU150 (course 896)  
 **Purpose:** confirm the release works in the real UC Online Moodle and Rise/SCORM environment before wider pilot use.
 
@@ -8,8 +8,8 @@
 
 1. In Chrome or Edge, open `chrome://extensions` or `edge://extensions`.
 2. Enable **Developer mode**, remove older Moodle Course Review entries, and load only:
-   `/Users/rcd58/OpenAI Projects/Beta Testing App/pilot-builds/moodle-review-extension`
-3. Confirm the extension version is **0.4.69**, click **Reload**, then reload the Moodle tab.
+   `/Users/rcd58/OpenAI Projects/Beta Testing App-pilot-builds/moodle-review-extension`
+3. Confirm the extension version is **0.5.0**, click **Reload**, then reload the Moodle tab.
 4. Use a normal Moodle page first, then a Rise/SCORM activity. Record browser, browser version, reviewer role, date, and result.
 
 Use **Pass**, **Fail**, or **Blocked** for every test. A failure should include a screenshot, the page URL, and short steps to reproduce it.
@@ -21,7 +21,7 @@ Use **Pass**, **Fail**, or **Blocked** for every test. A failure should include 
 | M01 | Open CRJU150 in Chrome. | One review toolbar appears at bottom-right, shows the signed-in person and **Connected**. |
 | M02 | Repeat M01 in Edge. | Same behaviour; no separate installation or display issue. |
 | M03 | Reload the Moodle page and return later in the same browser. | The reviewer remains recognised for the same course without unnecessary sign-in. |
-| M04 | Highlight text, choose **Add comment marker**, save a comment. | The text remains yellow-highlighted with one teal comment marker beside it. |
+| M04 | Highlight text, choose **Add comment to highlighted text**, save a comment. | The text remains subtly yellow-highlighted, stays easy to read, and has one teal comment marker beside it. |
 | M05 | Click **Add comment marker**, then click an unhighlighted page area. | A teal marker is placed at that location and the comment form opens. |
 | M06 | Start marker mode, then choose **Cancel marker** or press Escape. | Marker mode ends, pointer returns to normal, and no comment is created. |
 | M07 | Click an existing marker twice. | First click opens its thread beside the marker; second click closes it. The thread moves with the page rather than sticking to the viewport. |
@@ -58,7 +58,7 @@ Use **Pass**, **Fail**, or **Blocked** for every test. A failure should include 
 | S03 | Add a marker inside Rise, then cancel and repeat. | The button changes to **Cancel marker**, the pointer becomes a comment marker, cancel works, and a saved marker opens its thread in the right place. |
 | S04 | Scroll through Rise with an open marker/thread. | The marker and its thread stay attached to their content; they do not stick to the top or bottom of the browser. |
 | S05 | Change Rise lesson/slide within a multi-lesson SCORM, then add and open a comment. | Comments remain associated with the current visible lesson even where the browser URL does not change. |
-| S06 | From **Comments** or **Jump to**, select a SCORM comment. | Moodle opens the SCORM player, Rise reaches the intended internal lesson, scrolls to the comment, and opens the thread. |
+| S06 | From **Comments** or **Jump to**, select a SCORM comment. | Moodle opens the SCORM player and makes bounded attempts to reach the saved Rise lesson, scroll to the marker, and open the thread. If Rise has changed and the anchor cannot be recovered, the correct SCORM activity remains open and the app gives a clear manual-location message rather than failing or opening the package outside Moodle. |
 
 ## Recovery, accessibility, and finish
 

@@ -10,7 +10,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.db import Base, get_session
 from app.main import create_app
-from app.models import CommentReply, User, UserRole
+from app.models import CommentReply, CourseMembership, MembershipState, User, UserRole
 from app.services.accounts import change_role
 from app.services.accounts import create_extension_login_code, exchange_extension_login_code
 from app.services.courses import resolve_course
@@ -57,6 +57,18 @@ def make_comment(client, headers, course_id, body):
     return response.json()["id"]
 
 
+def approve_sme_membership(client, course_id, *user_ids):
+    session = client.db_factory()
+    now = datetime.now(UTC)
+    for user_id in user_ids:
+        session.add(CourseMembership(
+            user_id=uuid.UUID(user_id), course_id=uuid.UUID(course_id), role=UserRole.SME,
+            state=MembershipState.APPROVED, approved_at=now, created_at=now, updated_at=now,
+        ))
+    session.commit()
+    session.close()
+
+
 @pytest.mark.parametrize("viewer", ["beta_one", "beta_two", "sme_one", "sme_two", "lead"])
 def test_course_thread_visibility_is_role_safe_and_shares_are_per_user(client, viewer):
     beta_one, _ = headers_for(client, "beta-one@example.test", UserRole.BETA_TESTER)
@@ -68,13 +80,14 @@ def test_course_thread_visibility_is_role_safe_and_shares_are_per_user(client, v
     course = resolve_course(session, moodle_course_id=12, course_url="https://moodle.example/course/view.php?id=12", title="Law")
     course_id = str(course.id)
     session.close()
+    approve_sme_membership(client, course_id, sme_one_id)
 
     beta_one_thread = make_comment(client, beta_one, course_id, "Beta one")
     beta_two_thread = make_comment(client, beta_two, course_id, "Beta two")
     sme_thread = make_comment(client, sme_one, course_id, "SME discussion")
     assert client.post(f"/api/comments/{beta_one_thread}/replies", headers=lead, json={"body": "LD answer"}).status_code == 201
     assert client.post(f"/api/comments/{beta_one_thread}/share", headers=lead, json={"user_id": sme_one_id}).status_code == 201
-    assert client.post(f"/api/comments/{beta_one_thread}/replies", headers=sme_one, json={"body": "SME-side note"}).status_code == 403
+    assert client.post(f"/api/comments/{beta_one_thread}/replies", headers=sme_one, json={"body": "SME-side note"}).status_code == 201
 
     headers_by_viewer = {"beta_one": beta_one, "beta_two": beta_two, "sme_one": sme_one, "sme_two": sme_two, "lead": lead}
     expected_by_viewer = {
@@ -109,8 +122,8 @@ def test_promoted_beta_author_does_not_expose_historical_beta_thread_to_other_sm
     assert {item["id"] for item in client.get("/api/comments", headers=beta, params={"course_id": course_id}).json()} == {beta_thread}
 
 
-def test_sme_threads_with_multiple_shares_are_not_duplicated(client):
-    sme_one, _ = headers_for(client, "sme-one@example.test", UserRole.SME)
+def test_beta_threads_with_multiple_sme_shares_are_not_duplicated(client):
+    beta, _ = headers_for(client, "beta@example.test", UserRole.BETA_TESTER)
     sme_two, sme_two_id = headers_for(client, "sme-two@example.test", UserRole.SME)
     sme_three, sme_three_id = headers_for(client, "sme-three@example.test", UserRole.SME)
     lead, _ = headers_for(client, "lead@example.test", UserRole.LD_DCD)
@@ -118,7 +131,8 @@ def test_sme_threads_with_multiple_shares_are_not_duplicated(client):
     course = resolve_course(session, moodle_course_id=12, course_url="https://moodle.example/course/view.php?id=12", title="Law")
     course_id = str(course.id)
     session.close()
-    thread = make_comment(client, sme_one, course_id, "SME discussion")
+    approve_sme_membership(client, course_id, sme_two_id, sme_three_id)
+    thread = make_comment(client, beta, course_id, "Beta discussion")
     assert client.post(f"/api/comments/{thread}/share", headers=lead, json={"user_id": sme_two_id}).status_code == 201
     assert client.post(f"/api/comments/{thread}/share", headers=lead, json={"user_id": sme_three_id}).status_code == 201
 
@@ -153,6 +167,7 @@ def test_page_comment_list_returns_anchors_and_role_filtered_conversation(client
     course = resolve_course(session, moodle_course_id=896, course_url="https://my.uconline.ac.nz/course/view.php?id=896", title="UCO")
     course_id = str(course.id)
     session.close()
+    approve_sme_membership(client, course_id, selected_sme_id)
     page_url = "https://my.uconline.ac.nz/mod/page/view.php?id=42#topic"
     created = client.post("/api/comments", headers=beta, json={
         "course_id": course_id, "page_url": page_url, "page_title": "Topic",
@@ -194,7 +209,7 @@ def test_page_comment_list_returns_anchors_and_role_filtered_conversation(client
 
     selected = client.get("/api/comments", headers=selected_sme, params={"course_id": course_id, "page_url": page_url})
     assert {row["id"] for row in selected.json()} == {comment_id}
-    assert selected.json()[0]["capabilities"] == {"can_reply": False, "can_change_status": False, "can_share_with_sme": False, "can_delete": False, "can_edit": False, "allowed_statuses": ["open"]}
+    assert selected.json()[0]["capabilities"] == {"can_reply": True, "can_change_status": False, "can_share_with_sme": False, "can_delete": False, "can_edit": False, "allowed_statuses": ["open"]}
     assert client.get("/api/comments", headers=other_sme, params={"course_id": course_id, "page_url": page_url}).json() == []
     lead_page = client.get("/api/comments", headers=lead, params={"course_id": course_id, "page_url": page_url})
     assert lead_page.json()[0]["capabilities"] == {"can_reply": True, "can_change_status": True, "can_share_with_sme": True, "can_delete": True, "can_edit": False, "allowed_statuses": ["open", "in_progress", "deferred"]}

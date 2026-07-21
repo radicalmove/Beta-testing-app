@@ -183,8 +183,8 @@ test("keyboard area selection starts from the last focused eligible page target"
   const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   shadow.querySelector<HTMLElement>('[data-action="add-comment"]')!.click();
   assert.match(shadow.querySelector("[data-marker-instruction]")!.textContent!, /arrow keys/);
-  assert.match(pageAction.style.outline, /4px/);
-  assert.match(pageAction.style.outline, /#d73b3d/);
+  assert.match(pageAction.style.outline, /3px/);
+  assert.match(pageAction.style.outline, /#b85812/);
   document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }) as unknown as Event);
   assert.ok(shadow.querySelector(".dialog"));
   assert.equal(pageAction.style.outline, "");
@@ -323,10 +323,12 @@ test("take to context retries a late text anchor and reports an accessible failu
   assert.equal(overlay.takeToContext(storedHighlight.id), true);
   assert.equal(contentScrolls, 1, "navigation must scroll the underlying course content, not the fixed marker");
   assert.ok(document.querySelector("[data-moodle-review-stored-highlight]"));
+  (document.getElementById(`moodle-review-highlight-${storedHighlight.id}`) as HTMLElement).click();
   document.querySelector("p")!.remove(); overlay.setPageComments([storedHighlight]);
   assert.equal(overlay.takeToContext(storedHighlight.id), false);
   const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
-  assert.match(shadow.querySelector('[data-recovery-status]')!.textContent!, /original content could not be found/);
+  assert.match(shadow.querySelector('[data-recovery-status]')!.textContent!, /correct page is open/i);
+  assert.match(shadow.querySelector('[data-recovery-status]')!.textContent!, /manually locate/i);
   assert.match(shadow.querySelector("blockquote")!.textContent!, /important phrase/);
 });
 

@@ -1,4 +1,5 @@
 import io
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -12,7 +13,7 @@ from app.config import get_settings
 from app.config import Settings
 from app.db import Base, get_session
 from app.main import create_app
-from app.models import Attachment, User, UserRole
+from app.models import Attachment, Comment, CourseMembership, MembershipState, User, UserRole
 from app.services.accounts import create_extension_login_code, exchange_extension_login_code
 from app.services.courses import resolve_course
 
@@ -187,7 +188,7 @@ def test_upload_requires_visibility_then_author_or_ld_dcd_permission(client):
     comment_id = make_comment(client, author)
 
     assert client.post(f"/api/comments/{comment_id}/attachments", headers=other_beta, files={"file": ("proof.png", PNG, "image/png")}).status_code == 404
-    assert client.post(f"/api/comments/{comment_id}/attachments", headers=admin, files={"file": ("proof.png", PNG, "image/png")}).status_code == 403
+    assert client.post(f"/api/comments/{comment_id}/attachments", headers=admin, files={"file": ("proof.png", PNG, "image/png")}).status_code == 201
     assert client.post(f"/api/comments/{comment_id}/attachments", headers=lead, files={"file": ("proof.png", PNG, "image/png")}).status_code == 201
 
 
@@ -198,6 +199,19 @@ def test_download_requires_thread_visibility(client):
     lead, _ = headers_for(client, "lead@example.test", UserRole.LD_DCD)
     admin, _ = headers_for(client, "admin@example.test", UserRole.ADMIN)
     comment_id = make_comment(client, author)
+    setup = client.db_factory()
+    comment = setup.get(Comment, uuid.UUID(comment_id))
+    setup.add(CourseMembership(
+        user_id=uuid.UUID(selected_sme_id),
+        course_id=comment.course_id,
+        role=UserRole.SME,
+        state=MembershipState.APPROVED,
+        approved_at=datetime.now(UTC),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    ))
+    setup.commit()
+    setup.close()
     uploaded = client.post(f"/api/comments/{comment_id}/attachments", headers=author, files={"file": ("proof.png", PNG, "image/png")})
     attachment_id = uploaded.json()["id"]
     assert client.post(f"/api/comments/{comment_id}/share", headers=lead, json={"user_id": selected_sme_id}).status_code == 201
@@ -206,11 +220,7 @@ def test_download_requires_thread_visibility(client):
     assert client.get(f"/api/attachments/{attachment_id}", headers=author).status_code == 200
     assert client.get(f"/api/attachments/{attachment_id}", headers=selected_sme).status_code == 200
     assert client.get(f"/api/attachments/{attachment_id}", headers=lead).status_code == 200
-    denied = client.get(f"/api/attachments/{attachment_id}", headers=admin)
-    assert denied.status_code == 404
-    assert denied.json() == {"detail": "Attachment not found"}
-    assert "proof.png" not in denied.text
-    assert str(client.storage_dir) not in denied.text
+    assert client.get(f"/api/attachments/{attachment_id}", headers=admin).status_code == 200
 
 
 def test_sme_visible_course_thread_allows_attachment_download(client):

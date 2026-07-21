@@ -283,6 +283,14 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       await chrome.storage.local.set({ deviceCredential: access.deviceCredential, deviceCourseHandle: value.course_handle, reviewerEmail: value.email });
       return { state: access.state, role: access.role };
     })();
+  } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "SIGN_OUT") {
+    operation = (async () => {
+      if (Object.keys(message as object).join(",") !== "type") throw new Error("Invalid sign-out request");
+      if (!await authorizeResolveSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) })) throw new Error("Unauthorized sign-out sender");
+      await chrome.storage.session.remove(["apiToken", "expiresAt"]);
+      await chrome.storage.local.remove(["courseTeamSession", "deviceCredential"]);
+      return { state: "signed-out" };
+    })();
   } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "AUTHENTICATE") {
     operation = (async () => {
       validateAuthenticateMessage(message);
@@ -470,25 +478,25 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       const payload = validateUploadScreenshotMessage(message);
       if (typeof sender.tab?.id !== "number" || !(await authorizeResolveSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) }))) throw new Error("Unauthorized UPLOAD_SCREENSHOT sender");
       const courseId = reviewContexts.courseId(sender);
-      if (!courseId) throw new Error("UPLOAD_SCREENSHOT comment context mismatch");
-      const claimed = await screenshotCapabilities.claim(payload.comment_id, sender.tab.id, courseId);
-      if (!claimed) throw new Error("UPLOAD_SCREENSHOT comment context mismatch");
-      try {
-        const decoded = validateScreenshotDataUrl(payload.data_url);
-        const bytes = new Uint8Array(decoded.bytes.length); bytes.set(decoded.bytes);
-        const extension = decoded.mime === "image/png" ? "png" : decoded.mime === "image/jpeg" ? "jpg" : decoded.mime === "application/pdf" ? "pdf" : decoded.mime === "application/msword" ? "doc" : "docx";
-        const form = new FormData(); form.append("file", new Blob([bytes.buffer], { type: decoded.mime }), `review-attachment.${extension}`);
-        const api = await client(); const upload = await api.request(`/api/comments/${payload.comment_id}/attachments`, { method: "POST", body: form });
-        if (!upload.ok) throw new Error(`Attachment upload failed (${upload.status})`);
-        return upload.json();
-      } catch (error) { await screenshotCapabilities.restore(payload.comment_id, claimed); throw error; }
+      if (!courseId) throw new Error("This course is not connected. Reload the Moodle page and try again.");
+      const decoded = validateScreenshotDataUrl(payload.data_url);
+      const bytes = new Uint8Array(decoded.bytes.length); bytes.set(decoded.bytes);
+      const extension = decoded.mime === "image/png" ? "png" : decoded.mime === "image/jpeg" ? "jpg" : decoded.mime === "application/pdf" ? "pdf" : decoded.mime === "application/msword" ? "doc" : "docx";
+      const form = new FormData(); form.append("file", new Blob([bytes.buffer], { type: decoded.mime }), `review-attachment.${extension}`);
+      const api = await client(); const upload = await api.request(`/api/comments/${payload.comment_id}/attachments`, { method: "POST", body: form });
+      if (!upload.ok) {
+        const detail = await upload.json().catch(() => undefined) as { detail?: unknown } | undefined;
+        throw new Error(typeof detail?.detail === "string" ? detail.detail : "The file could not be attached. Please try again.");
+      }
+      await screenshotCapabilities.cancel(payload.comment_id, sender.tab.id, courseId).catch(() => undefined);
+      return upload.json();
     })();
   } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "CANCEL_SCREENSHOT") {
     operation = (async () => {
       const payload = validateCancelScreenshotMessage(message);
       if (typeof sender.tab?.id !== "number" || !(await authorizeResolveSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) }))) throw new Error("Unauthorized CANCEL_SCREENSHOT sender");
       const courseId = reviewContexts.courseId(sender);
-      if (!courseId || !await screenshotCapabilities.cancel(payload.comment_id, sender.tab.id, courseId)) throw new Error("CANCEL_SCREENSHOT comment context mismatch");
+      if (courseId) await screenshotCapabilities.cancel(payload.comment_id, sender.tab.id, courseId).catch(() => undefined);
       return {};
     })();
   } else if (message && typeof message === "object" && ["GET_REVIEW_CONTEXT", "REVIEW_FRAME_READY", "GET_REVIEW_FRAME_STATUS", "REGISTER_REVIEW_FRAME", "RENEW_REVIEW_FRAME_LEASE", "ACK_REVIEW_FRAME_DORMANT"].includes((message as { type?: string }).type ?? "")) {

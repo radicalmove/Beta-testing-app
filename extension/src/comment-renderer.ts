@@ -8,6 +8,8 @@ export type UnresolvedAnchor = { id: string; label: string; quote?: string };
 
 export type CommentRenderer = {
   setComments(comments: PageComment[]): void;
+  setStatusFilter(filter: "open" | "resolved"): void;
+  orderedCommentIds(): string[];
   takeToContext(commentId: string): boolean;
   destroy(): void;
 };
@@ -22,9 +24,13 @@ export type CommentRendererOptions = {
   deleteThread?: (commentId: string) => Promise<void>;
   navigateToComment?: (commentId: string, pageUrl: string) => Promise<void> | void;
   onUnresolvedAnchors?: (anchors: UnresolvedAnchor[]) => void;
+  confirmAction?: (trigger: HTMLElement, title: string, message: string, confirmLabel: string) => Promise<boolean>;
+  currentViewer?: () => { display_name: string | null; email: string; role: string } | undefined;
 };
 
 const rendererStyles = `:host{all:initial;font:16px/1.5 Poppins,Arial,sans-serif;color:#102f38}button,textarea,input{box-sizing:border-box;font:inherit}button{appearance:none;min-height:36px;border:2px solid #073f3e;border-radius:5px;background:#fff;color:#073f3e;font-weight:650;padding:7px 9px;cursor:pointer}.thread-action:hover,.thread-action[aria-pressed="true"]{background:#073f3e;color:#fff}.thread-top-actions{display:contents}.thread-edit,.thread-delete,.resolve-toggle{position:absolute;top:8px;width:34px;min-height:34px;height:34px;padding:2px;border-radius:5px}.thread-edit{right:92px;border:2px solid #a84f12;background:#fff;color:#a84f12;font-size:23px;line-height:1}.thread-edit:hover,.thread-edit[aria-pressed="true"]{background:#a84f12;color:#fff}.thread-delete{right:8px;border:2px solid #d73b3d;background:#d73b3d;color:#fff}.thread-edit svg,.thread-delete svg,.resolve-toggle svg{display:block;width:100%;height:100%}.thread-delete:hover{border-color:#d73b3d;background:#fff;color:#d73b3d}.resolve-toggle{right:50px;margin:0;border:2px solid #111;border-radius:2px;background:#fff}.resolve-toggle:hover{border-color:#111;background:#f4f4f4}.status-hover-tick{opacity:0;transition:opacity .15s ease}.resolve-toggle:hover .status-hover-tick{opacity:.28}.status-resolved-tick{opacity:1}.thread-navigation{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}.thread-navigation button{height:34px;min-height:34px;padding:3px 6px;white-space:nowrap}.thread-navigation button:disabled{cursor:default;opacity:.42}.thread-previous,.thread-next{border-color:#356f9f;color:#356f9f}.thread-previous:not(:disabled):hover,.thread-next:not(:disabled):hover{background:#356f9f;color:#fff}.thread-reply{border-color:#073f3e;color:#073f3e}.thread-reply:hover,.thread-reply[aria-expanded="true"]{background:#073f3e;color:#fff}.comment-composer[data-reply-composer]{margin-top:12px}.comment-composer-field-row{display:grid;grid-template-columns:minmax(0,1fr) 34px;gap:8px;align-items:start;margin-right:-6px}.comment-composer-field-row textarea{min-width:0;width:100%;min-height:72px}.comment-composer-save{box-sizing:border-box;width:34px;height:34px;min-height:34px;padding:2px;border:2px solid #176b43;border-radius:5px;background:#176b43;color:#fff}.comment-composer-save svg{display:block;width:100%;height:100%}.comment-composer-save:hover{background:#fff;color:#176b43}.comment-composer-actions{display:flex;justify-content:flex-end;margin-top:8px}.comment-composer-cancel{box-sizing:border-box;width:calc((100% - 16px)/3);height:34px;min-height:34px;padding:3px 9px;border:2px solid #d73b3d;border-radius:5px;background:#d73b3d;color:#fff;font:inherit;font-weight:650;line-height:1}.comment-composer-cancel:hover{background:#fff;color:#d73b3d}.attachment-field{display:block;margin:10px 0;font-size:13px;font-weight:650}.attachment-field input{display:block;width:100%;margin-top:4px;font-size:12px;font-weight:400}`;
+
+const conversationStyles = `.thread-message{max-width:92%;margin-top:8px;padding:9px 10px;border:1px solid #b8dcdc;border-radius:8px;background:#f8fbfb}.thread-message-origin{margin-right:8%;background:#effafa;border-color:#8ad9d8}.thread-message-reply{margin-left:8%}.thread-message-participant-0{border-left:5px solid #356f9f}.thread-message-participant-1{border-left:5px solid #b85812}.thread-message-participant-2{border-left:5px solid #6d4a8e}.thread-message-participant-3{border-left:5px solid #176b43}.thread-message-byline{margin:0 0 3px;font-size:11px;font-weight:700;color:#52666c}.thread-message-body{white-space:pre-wrap;overflow-wrap:anywhere}.thread-share-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:8px}.thread-share-sme{grid-column:3;border-color:#b85812;color:#b85812}.thread-share-sme:hover,.thread-share-sme[aria-expanded="true"]{background:#b85812;color:#fff}.thread-sme-chooser{margin-top:8px;padding:9px;border:1px solid #8ad9d8;border-radius:8px}.thread-sme-option{display:grid;grid-template-columns:minmax(0,1fr) 34px;align-items:center;gap:8px;padding:5px 0}.thread-sme-option input{appearance:none;width:34px;height:34px;border:2px solid #111;border-radius:2px;background:#fff}.thread-sme-option input:checked{box-shadow:inset 0 0 0 5px #fff;background:#176b43}.thread-sme-save{width:34px;height:34px;min-height:34px;padding:2px;border-color:#176b43;background:#176b43;color:#fff}.thread-sme-save:hover{background:#fff;color:#176b43}`;
 
 const attachmentAccept = ".pdf,.doc,.docx,.png,.jpg,.jpeg,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg";
 const maxAttachmentBytes = 10 * 1024 * 1024;
@@ -63,13 +69,29 @@ function statusIcon(document: Document, resolved: boolean): SVGSVGElement {
   return svg;
 }
 
+function participantIndex(author: { display_name: string; role: string }): number {
+  let hash = 0;
+  for (const character of `${author.display_name}|${author.role}`) hash = ((hash << 5) - hash + character.charCodeAt(0)) | 0;
+  return Math.abs(hash) % 4;
+}
+
+function threadMessage(document: Document, author: { display_name: string; role: string }, body: string, origin = false): HTMLElement {
+  const node = document.createElement("div");
+  node.className = `thread-message ${origin ? "thread-message-origin" : "thread-message-reply"} thread-message-participant-${participantIndex(author)}`;
+  const byline = document.createElement("p"); byline.className = "thread-message-byline"; byline.textContent = `${author.display_name} · ${author.role.replaceAll("_", " ")}`;
+  const content = document.createElement("div"); content.className = "thread-message-body"; content.textContent = body;
+  if (origin) node.append(content);
+  else node.append(byline, content);
+  return node;
+}
+
 function createThreadRoot(document: Document): { root: ShadowRoot; dispose: () => void } {
   const host = document.createElement("div");
   host.dataset.moodleReviewRendererRoot = "true";
   host.setAttribute("data-moodle-review-ui", "true");
   host.style.cssText = "all:initial;position:fixed;inset:0;z-index:2147483646;pointer-events:none;font:16px/1.5 Poppins,Arial,sans-serif;color:#102f38";
   const root = host.attachShadow({ mode: "open" });
-  const style = document.createElement("style"); style.dataset.commentRendererStyles = "true"; style.textContent = rendererStyles; root.append(style);
+  const style = document.createElement("style"); style.dataset.commentRendererStyles = "true"; style.textContent = rendererStyles + conversationStyles; root.append(style);
   document.documentElement.append(host);
   return { root, dispose: () => host.remove() };
 }
@@ -78,11 +100,12 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
   const ownedRoot = options.root ? undefined : createThreadRoot(document);
   const root = options.root ?? ownedRoot!.root;
   if (options.root && !root.querySelector("style[data-comment-renderer-styles]")) {
-    const style = document.createElement("style"); style.dataset.commentRendererStyles = "true"; style.textContent = rendererStyles; root.append(style);
+    const style = document.createElement("style"); style.dataset.commentRendererStyles = "true"; style.textContent = rendererStyles + conversationStyles; root.append(style);
   }
   let comments = new Map<string, PageComment>();
   let projectedComments: PageComment[] = [];
   let courseOpenComments: PageComment[] = [];
+  let physicalOrderIds: string[] = [];
   let cleanups: Array<() => void> = [];
   let markers = new Map<string, HTMLElement>();
   let activeThreadId: string | undefined;
@@ -91,6 +114,7 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
   let deferredThreadId: string | undefined;
   let applyComments: (next: PageComment[]) => void;
   let mutationDepth = 0;
+  let statusFilter: "open" | "resolved" = "open";
   const repositioners = new Set<() => void>();
   let repositionFrame: number | undefined;
   let repositionListening = false;
@@ -121,14 +145,16 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
   const closeThread = (flushProjection = true) => {
     popoverCleanup?.(); popoverCleanup = undefined;
     root.querySelector("[data-thread-popover]")?.remove();
-    if (activeThreadId) markers.get(activeThreadId)?.setAttribute("aria-expanded", "false");
+    if (activeThreadId) { const marker = markers.get(activeThreadId); marker?.setAttribute("aria-expanded", "false"); marker?.style.removeProperty("background"); marker?.style.removeProperty("border-color"); }
     activeThreadId = undefined;
     if (flushProjection && pendingProjection) { const next = pendingProjection; pendingProjection = undefined; applyComments(next); }
   };
 
   const showError = (article: HTMLElement, error: unknown, fallback: string) => {
-    const alert = document.createElement("p"); alert.setAttribute("role", "alert"); alert.textContent = error instanceof Error ? error.message : fallback; article.append(alert);
+    article.querySelectorAll("[data-thread-error]").forEach((node) => node.remove());
+    const alert = document.createElement("p"); alert.dataset.threadError = "true"; alert.setAttribute("role", "alert"); alert.textContent = error instanceof Error ? error.message : fallback; article.append(alert);
   };
+  const clearErrors = (article: HTMLElement) => article.querySelectorAll("[data-thread-error]").forEach((node) => node.remove());
   const runMutation = async <T>(operation: () => Promise<T>): Promise<T> => {
     mutationDepth += 1;
     try { return await operation(); }
@@ -150,12 +176,12 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
     deferredThreadId = undefined;
     if (activeThreadId === comment.id && root.querySelector("[data-thread-popover]")) { closeThread(); marker.focus(); return; }
     closeThread(false);
-    activeThreadId = comment.id; marker.setAttribute("aria-expanded", "true");
+    activeThreadId = comment.id; marker.setAttribute("aria-expanded", "true"); marker.style.background = "#b85812"; marker.style.borderColor = "#7b3509";
     const article = document.createElement("article"); article.dataset.threadPopover = "true"; article.tabIndex = -1;
     const courseIndex = courseOpenComments.findIndex((candidate) => candidate.id === comment.id);
     const contextLine = document.createElement("p"); contextLine.dataset.threadPosition = "true"; contextLine.textContent = courseIndex >= 0 ? `Comment ${courseIndex + 1} of ${courseOpenComments.length}` : "Resolved comment"; contextLine.style.cssText = "margin:0 126px 4px 0;font-size:12px;color:#52666c";
     const byline = document.createElement("p"); byline.textContent = `${comment.author.display_name} · ${comment.author.role.replaceAll("_", " ")}`; byline.style.cssText = "margin:0 126px 10px 0;font-size:13px;font-weight:650";
-    const body = document.createElement("div"); body.textContent = comment.body; body.style.cssText = "padding:12px;border:1px solid #8ad9d8;border-radius:8px;background:#effafa";
+    const body = threadMessage(document, comment.author, comment.body, true); body.dataset.threadOriginal = "true";
     const topActions = document.createElement("div"); topActions.className = "thread-top-actions"; topActions.dataset.threadTopActions = "true";
     article.append(contextLine, byline, body, topActions);
 
@@ -166,17 +192,18 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
         if (existing) { existing.remove(); article.querySelector("[data-composer-actions]")?.remove(); edit.setAttribute("aria-pressed", "false"); body.hidden = false; edit.focus(); return; }
         article.querySelector("[data-reply-composer]")?.remove(); article.querySelector("[data-composer-actions]")?.remove(); article.querySelector<HTMLElement>("[data-reply-toggle]")?.setAttribute("aria-expanded", "false");
         const { composer: editor, textarea: input, attachment, save, actions, cancel } = createComposerControls(document, "edit", "Save edited comment", Boolean(options.uploadAttachment));
-        input.value = body.textContent ?? comment.body;
+        const bodyContent = body.querySelector<HTMLElement>(".thread-message-body");
+        input.value = bodyContent?.textContent ?? comment.body;
         cancel.dataset.cancelEdit = "true";
-        const close = () => { editor.remove(); actions.remove(); edit.setAttribute("aria-pressed", "false"); body.hidden = false; edit.focus(); };
+        const close = () => { editor.remove(); actions.remove(); clearErrors(article); edit.setAttribute("aria-pressed", "false"); body.hidden = false; edit.focus(); };
         cancel.addEventListener("click", close);
-        save.addEventListener("click", async () => { if (!input.value.trim()) return; save.disabled = true; try { await runMutation(() => options.editThread!(comment.id, input.value.trim())); const file = attachment.files?.[0]; if (file && options.uploadAttachment) await runMutation(async () => options.uploadAttachment!(comment.id, await readAttachment(document, file))); body.textContent = input.value.trim(); close(); } catch (error) { save.disabled = false; showError(article, error, "Could not save edit"); } });
+        save.addEventListener("click", async () => { if (!input.value.trim()) return; save.disabled = true; try { await runMutation(() => options.editThread!(comment.id, input.value.trim())); const file = attachment.files?.[0]; if (file && options.uploadAttachment) await runMutation(async () => options.uploadAttachment!(comment.id, await readAttachment(document, file))); if (bodyContent) bodyContent.textContent = input.value.trim(); close(); } catch (error) { save.disabled = false; showError(article, error, "Could not save edit"); } });
         body.hidden = true; body.after(editor); article.querySelector("[data-thread-navigation]")?.after(actions); edit.setAttribute("aria-pressed", "true"); input.focus();
       });
       topActions.append(edit);
     }
 
-    for (const reply of comment.replies) { const node = document.createElement("div"); node.textContent = `${reply.author.display_name} (${reply.author.role.replaceAll("_", " ")}): ${reply.body}`; node.style.cssText = "margin-top:8px;padding:10px;border:1px solid #d7e6e6;border-radius:8px"; article.append(node); }
+    for (const reply of comment.replies) article.append(threadMessage(document, reply.author, reply.body));
 
     let replyToggle: HTMLButtonElement | undefined;
     if (comment.capabilities.can_reply && options.replyThread) {
@@ -193,29 +220,49 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
         }
         const { composer, textarea: input, attachment, save, actions, cancel } = createComposerControls(document, "reply", "Save reply", Boolean(options.uploadAttachment));
         input.placeholder = "Add a reply…"; input.setAttribute("aria-label", "Add a reply");
-        const close = () => { composer.remove(); actions.remove(); toggle.setAttribute("aria-expanded", "false"); toggle.focus(); };
+        const close = () => { composer.remove(); actions.remove(); clearErrors(article); toggle.setAttribute("aria-expanded", "false"); toggle.focus(); };
         cancel.addEventListener("click", close);
-        save.addEventListener("click", async () => { const value = input.value.trim(); if (!value) return; save.disabled = true; try { await runMutation(() => options.replyThread!(comment.id, value)); const file = attachment.files?.[0]; if (file && options.uploadAttachment) await runMutation(async () => options.uploadAttachment!(comment.id, await readAttachment(document, file))); const node = document.createElement("div"); node.textContent = value; node.style.cssText = "margin-top:8px;padding:10px;border:1px solid #d7e6e6;border-radius:8px"; toggle.before(node); close(); } catch (error) { save.disabled = false; showError(article, error, "Could not save reply"); } });
+        save.addEventListener("click", async () => { const value = input.value.trim(); if (!value) return; save.disabled = true; try { await runMutation(() => options.replyThread!(comment.id, value)); const file = attachment.files?.[0]; if (file && options.uploadAttachment) await runMutation(async () => options.uploadAttachment!(comment.id, await readAttachment(document, file))); const viewer = options.currentViewer?.(); toggle.before(threadMessage(document, { display_name: viewer?.display_name || viewer?.email || "You", role: viewer?.role || "reviewer" }, value)); close(); } catch (error) { save.disabled = false; showError(article, error, "Could not save reply"); } });
         article.querySelector("[data-thread-navigation]")?.before(composer); article.querySelector("[data-thread-navigation]")?.after(actions); toggle.setAttribute("aria-expanded", "true"); input.focus();
       });
     }
 
-    if (comment.capabilities.can_share_with_sme && options.manageSme) {
-      const ask = document.createElement("button"); ask.type = "button"; ask.textContent = "Ask SME";
-      ask.addEventListener("click", async () => { ask.disabled = true; try { const state = await runMutation(() => options.manageSme!(comment.id)); const chooser = document.createElement("div"); chooser.style.cssText = "margin-top:10px;padding:10px;border:1px solid #8ad9d8;border-radius:8px"; const boxes: HTMLInputElement[] = []; for (const sme of state.available_recipients) { const label = document.createElement("label"); label.style.display = "block"; const box = document.createElement("input"); box.type = "checkbox"; box.value = sme.id; box.checked = state.selected_user_ids.includes(sme.id); boxes.push(box); label.append(box, ` ${sme.display_name}`); chooser.append(label); } const save = document.createElement("button"); save.type = "button"; save.textContent = "Save SME access"; save.addEventListener("click", async () => { save.disabled = true; await runMutation(() => options.manageSme!(comment.id, boxes.filter((box) => box.checked).map((box) => box.value))); chooser.remove(); ask.disabled = false; }); chooser.append(save); ask.after(chooser); } catch { ask.disabled = false; } });
-      article.append(ask);
+    let shareRow: HTMLElement | undefined;
+    if (comment.capabilities.can_share_with_sme && options.manageSme && comment.author.role === "beta_tester") {
+      shareRow = document.createElement("div"); shareRow.className = "thread-share-row";
+      const share = document.createElement("button"); share.type = "button"; share.className = "thread-share-sme"; share.textContent = "Share with SME"; share.setAttribute("aria-expanded", "false");
+      share.addEventListener("click", async () => {
+        const existing = article.querySelector<HTMLElement>("[data-sme-chooser]");
+        if (existing) { existing.remove(); share.setAttribute("aria-expanded", "false"); return; }
+        share.disabled = true;
+        try {
+          const state = await runMutation(() => options.manageSme!(comment.id));
+          const chooser = document.createElement("div"); chooser.className = "thread-sme-chooser"; chooser.dataset.smeChooser = "true";
+          const boxes: HTMLInputElement[] = [];
+          for (const sme of state.available_recipients) {
+            const label = document.createElement("label"); label.className = "thread-sme-option";
+            const name = document.createElement("span"); name.textContent = sme.display_name;
+            const box = document.createElement("input"); box.type = "checkbox"; box.value = sme.id; box.checked = state.selected_user_ids.includes(sme.id); box.setAttribute("aria-label", `Share with ${sme.display_name}`); boxes.push(box); label.append(name, box); chooser.append(label);
+          }
+          const save = document.createElement("button"); save.type = "button"; save.className = "thread-sme-save"; save.setAttribute("aria-label", "Save SME access"); save.title = "Save SME access"; save.append(createReviewIcon(document, "save"));
+          save.addEventListener("click", async () => { save.disabled = true; try { await runMutation(() => options.manageSme!(comment.id, boxes.filter((box) => box.checked).map((box) => box.value))); chooser.remove(); share.setAttribute("aria-expanded", "false"); } catch (error) { save.disabled = false; showError(article, error, "Could not save SME access"); } });
+          chooser.append(save); shareRow!.after(chooser); share.setAttribute("aria-expanded", "true");
+        } catch (error) { showError(article, error, "Could not load SME access"); }
+        finally { share.disabled = false; }
+      });
+      shareRow.append(share);
     }
 
     if (comment.capabilities.can_change_status && options.changeStatus) {
       const target = comment.status === "resolved" ? "open" : "resolved";
       const button = document.createElement("button"); button.type = "button"; button.className = `resolve-toggle${comment.status === "resolved" ? " resolved" : ""}`; button.append(statusIcon(document, comment.status === "resolved")); button.setAttribute("aria-label", target === "resolved" ? "Resolve this comment" : "Reopen this resolved comment"); button.title = target === "resolved" ? "Resolve comment" : "Reopen comment";
-      button.addEventListener("click", async () => { button.disabled = true; try { await runMutation(() => options.changeStatus!(comment.id, target)); if (target === "resolved") { button.replaceChildren(statusIcon(document, true)); button.classList.add("resolved"); document.defaultView?.setTimeout(() => { if (activeThreadId === comment.id) closeThread(); else article.remove(); }, 3000); } else closeThread(); } catch (error) { button.disabled = false; showError(article, error, "Could not update status"); } });
+      button.addEventListener("click", async () => { const verb = target === "resolved" ? "Resolve" : "Reopen"; if (options.confirmAction && !await options.confirmAction(button, `${verb} comment`, `${verb} this comment? It will move to the ${target === "resolved" ? "Resolved" : "Open"} list.`, verb)) return; button.disabled = true; try { await runMutation(() => options.changeStatus!(comment.id, target)); if (target === "resolved") { button.replaceChildren(statusIcon(document, true)); button.classList.add("resolved"); document.defaultView?.setTimeout(() => { if (activeThreadId === comment.id) closeThread(); else article.remove(); }, 3000); } else closeThread(); } catch (error) { button.disabled = false; showError(article, error, "Could not update status"); } });
       topActions.append(button);
     }
 
     if (comment.capabilities.can_delete && options.deleteThread) {
       const remove = document.createElement("button"); remove.type = "button"; remove.className = "thread-delete"; remove.append(createReviewIcon(document, "delete")); remove.setAttribute("aria-label", "Delete thread"); remove.title = "Delete comment thread";
-      remove.addEventListener("click", async () => { if (document.defaultView?.confirm && !document.defaultView.confirm("Delete this entire thread, including all replies and screenshots?")) return; remove.disabled = true; try { await runMutation(() => options.deleteThread!(comment.id)); closeThread(); } catch (error) { remove.disabled = false; showError(article, error, "Could not delete thread"); } });
+      remove.addEventListener("click", async () => { if (options.confirmAction && !await options.confirmAction(remove, "Delete comment", "Delete this entire thread, including all replies and attachments?", "Delete")) return; remove.disabled = true; try { await runMutation(() => options.deleteThread!(comment.id)); closeThread(); } catch (error) { remove.disabled = false; showError(article, error, "Could not delete thread"); } });
       topActions.append(remove);
     }
 
@@ -232,9 +279,18 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
     const previous = document.createElement("button"); previous.type = "button"; previous.className = "thread-previous"; previous.dataset.direction = "previous"; previous.textContent = "Previous"; previous.disabled = courseIndex <= 0; previous.addEventListener("click", () => void navigate(courseOpenComments[courseIndex - 1]));
     const next = document.createElement("button"); next.type = "button"; next.className = "thread-next"; next.dataset.direction = "next"; next.textContent = "Next"; next.disabled = courseIndex < 0 || courseIndex >= courseOpenComments.length - 1; next.addEventListener("click", () => void navigate(courseOpenComments[courseIndex + 1]));
     const reply = replyToggle ?? document.createElement("button"); if (!replyToggle) { reply.type = "button"; reply.className = "thread-reply"; reply.textContent = "Reply"; reply.disabled = true; }
-    navigation.append(previous, reply, next); article.append(navigation);
+    navigation.append(previous, reply, next); article.append(navigation); if (shareRow) article.append(shareRow);
 
-    const position = () => { const rect = marker.getBoundingClientRect(); const width = document.defaultView?.innerWidth ?? 800; const height = document.defaultView?.innerHeight ?? 600; article.hidden = marker.hidden || rect.top < 0 || rect.left < 0 || rect.bottom > height || rect.right > width; if (article.hidden) return; const popoverWidth = Math.min(360, width - 16); const popoverHeight = Math.min(article.offsetHeight || 300, height - 16); const right = rect.right + 8; article.style.left = `${right + popoverWidth <= width - 8 ? right : Math.max(8, rect.left - popoverWidth - 8)}px`; article.style.top = `${Math.max(8, Math.min(height - popoverHeight - 8, rect.top))}px`; };
+    const position = () => {
+      const rect = marker.getBoundingClientRect(); const width = document.defaultView?.innerWidth ?? 800; const height = document.defaultView?.innerHeight ?? 600;
+      article.hidden = marker.hidden || rect.top < 0 || rect.left < 0 || rect.bottom > height || rect.right > width; if (article.hidden) return;
+      const popoverWidth = Math.min(360, width - 16); const popoverHeight = Math.min(article.offsetHeight || 300, height - 16);
+      const right = rect.right + 8; const left = Math.max(8, rect.left - popoverWidth - 8);
+      const panel = document.getElementById("moodle-course-review-overlay")?.shadowRoot?.querySelector<HTMLElement>(".shell")?.getBoundingClientRect();
+      const overlapsPanel = (candidate: number) => Boolean(panel && candidate < panel.right + 8 && candidate + popoverWidth > panel.left - 8);
+      const preferred = right + popoverWidth <= width - 8 && !overlapsPanel(right) ? right : left;
+      article.style.left = `${preferred}px`; article.style.top = `${Math.max(8, Math.min(height - popoverHeight - 8, rect.top))}px`;
+    };
     article.style.cssText += ";position:fixed;pointer-events:auto;z-index:2147483647;width:min(360px,calc(100vw - 16px));max-height:min(480px,calc(100vh - 16px));overflow:auto;background:white;border:4px solid #28c4c2;border-radius:10px;padding:14px;box-shadow:0 8px 28px #0006";
     root.append(article); repositioners.add(position); startRepositioning(); position();
     popoverCleanup = () => { repositioners.delete(position); article.remove(); };
@@ -254,12 +310,14 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
       clear();
       projectedComments = [...next];
       root.querySelectorAll("[data-recovery-status], [data-recovery-quote]").forEach((node) => node.remove());
-      const local = next.filter((comment) => comment.page_url === pageUrl);
-      const localOrder = new Map(local.map((comment, index) => ({ comment, index, position: anchorPosition(comment) })).sort((left, right) => {
+      const localAll = next.filter((comment) => comment.page_url === pageUrl);
+      const local = localAll.filter((comment) => statusFilter === "resolved" ? comment.status === "resolved" : comment.status !== "resolved");
+      const localOrder = new Map(localAll.map((comment, index) => ({ comment, index, position: anchorPosition(comment) })).sort((left, right) => {
         if (left.position && right.position) return left.position.top - right.position.top || left.position.left - right.position.left || left.index - right.index;
         if (Boolean(left.position) !== Boolean(right.position)) return left.position ? -1 : 1;
         return left.index - right.index;
       }).map((entry, index) => [entry.comment.id, index]));
+      physicalOrderIds = [...localOrder.entries()].sort((left, right) => left[1] - right[1]).map(([id]) => id).filter((id) => next.find((comment) => comment.id === id)?.status !== "resolved");
       courseOpenComments = projectCourseComments(next.filter((comment) => comment.status !== "resolved")).groups.flatMap((group) => {
         const grouped = group.comments.map(({ comment }) => comment);
         return group.pageUrl === pageUrl ? grouped.sort((left, right) => (localOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (localOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER)) : grouped;
@@ -290,7 +348,15 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
 
   return {
     setComments(next) {
-      if (mutationDepth > 0 && activeThreadId && root.querySelector("[data-thread-popover]")) { pendingProjection = [...next]; return; }
+      if (activeThreadId && root.querySelector("[data-thread-popover]")) {
+        if (mutationDepth > 0 || root.querySelector("[data-edit-composer],[data-reply-composer]")) { pendingProjection = [...next]; return; }
+        const requestedId = activeThreadId;
+        closeThread(false);
+        applyComments(next);
+        const refreshedComment = comments.get(requestedId); const refreshedMarker = markers.get(requestedId);
+        if (refreshedComment && refreshedMarker) openThread(refreshedComment, Array.from(comments.keys()).indexOf(requestedId), refreshedMarker);
+        return;
+      }
       pendingProjection = undefined;
       applyComments(next);
       if (deferredThreadId) {
@@ -303,6 +369,14 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
         } else if (mutationDepth === 0) deferredThreadId = undefined;
       }
     },
+    setStatusFilter(filter) {
+      if (statusFilter === filter) return;
+      statusFilter = filter;
+      closeThread(false);
+      pendingProjection = undefined;
+      applyComments([...projectedComments]);
+    },
+    orderedCommentIds() { return [...physicalOrderIds]; },
     takeToContext(commentId) {
       let comment = comments.get(commentId); let marker = markers.get(commentId);
       if (!comment) return false;
@@ -313,13 +387,13 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
       }
       if (!comment || !marker) {
         root.querySelectorAll(`[data-recovery-status="${commentId}"], [data-recovery-quote="${commentId}"]`).forEach((node) => node.remove());
-        const status = document.createElement("p"); status.dataset.recoveryStatus = commentId; status.setAttribute("role", "status"); status.textContent = "The original content could not be found on this page";
+        const status = document.createElement("p"); status.dataset.recoveryStatus = commentId; status.setAttribute("role", "status"); status.textContent = "The correct page is open, but the original content could not be found. Manually locate the quoted text below; the review tool will keep trying to reconnect this comment.";
         const quote = document.createElement("blockquote"); quote.dataset.recoveryQuote = commentId; quote.textContent = comment?.selected_quote || (comment ? `${comment.page_title} · ${comment.body}` : "Comment context unavailable"); root.append(status, quote);
         return false;
       }
       scrollCommentIntoView(comment);
       marker.focus({ preventScroll: true }); openThread(comment, Array.from(comments.keys()).indexOf(commentId), marker); return true;
     },
-    destroy() { pendingProjection = undefined; deferredThreadId = undefined; clear(); projectedComments = []; courseOpenComments = []; options.onUnresolvedAnchors?.([]); ownedRoot?.dispose(); },
+    destroy() { pendingProjection = undefined; deferredThreadId = undefined; clear(); projectedComments = []; courseOpenComments = []; physicalOrderIds = []; options.onUnresolvedAnchors?.([]); ownedRoot?.dispose(); },
   };
 }

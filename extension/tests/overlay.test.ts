@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Window } from "happy-dom";
 
-import { approvedControlStyles, commentListLayoutStyles, commentsButtonStyles, controlAlignmentStyles, createOverlayMarkup, helpButtonStyles, mountReviewOverlay, OVERLAY_HOST_ID, overlayStyles, panelTransitionStyles, semanticFilterHoverStyles, tealOverlayOverrides } from "../src/overlay/root.ts";
+import { approvedControlStyles, commentListLayoutStyles, commentsButtonStyles, controlAlignmentStyles, createOverlayMarkup, helpButtonStyles, mountReviewOverlay, OVERLAY_HOST_ID, overlayStyles, panelTransitionStyles, semanticFilterHoverStyles, stabilisationUxStyles, tealOverlayOverrides } from "../src/overlay/root.ts";
 import { COMMENT_MARKER_CURSOR } from "../src/ui/comment-cursor.ts";
 import type { PanelStateStorage } from "../src/ui/panel-state.ts";
 
@@ -229,6 +229,22 @@ test("successful authentication moves focus to the first review control", async 
   shadow.querySelector<HTMLElement>('[data-action="authenticate"]')!.click(); await tick();
   assert.equal(shadow.activeElement, shadow.querySelector('[data-action="add-comment"]'));
   assert.match(shadow.querySelector('[aria-live="polite"]')!.textContent!, /Connected/);
+});
+
+test("connected viewers can explicitly sign out without forgetting their course identity", async () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  let signOuts = 0;
+  const overlay = mountReviewOverlay(document, context, "connected", {
+    onSignOut: async () => { signOuts += 1; },
+  });
+  overlay.setViewer({ display_name: "Richard Davies", email: "richard@example.test", role: "admin" });
+  const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const button = shadow.querySelector<HTMLButtonElement>('[data-action="sign-out"]')!;
+  assert.equal(button.hidden, false);
+  button.click(); await tick();
+  assert.equal(signOuts, 1);
+  assert.match(shadow.querySelector('[data-status-message]')!.textContent!, /Signed out/i);
+  assert.equal(shadow.querySelector<HTMLElement>('[data-viewer-line]')!.hidden, true);
 });
 
 test("course access form restores saved reviewers without asking them for another code", async () => {
@@ -737,7 +753,7 @@ test("resolving shows a large checked confirmation for three seconds", async () 
   const overlay = mountReviewOverlay(document, context, "connected", { changeStatus: async () => undefined }); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   const comment = { id: "00000000-0000-4000-8000-000000000051", body: "Resolve me", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: context.pageTitle, parent_activity_url: null, embedded_locator: null, anchor_type: "visual_pin" as const, selected_quote: null, prefix: null, suffix: null, css_selector: "#target", dom_selector: null, relative_x: .5, relative_y: .5, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: true, can_share_with_sme: false, can_delete: false } };
   overlay.setPageComments([comment]); document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")!.click();
-  const resolve = shadow.querySelector<HTMLButtonElement>(".resolve-toggle")!; resolve.click(); await Promise.resolve(); await Promise.resolve();
+  const resolve = shadow.querySelector<HTMLButtonElement>(".resolve-toggle")!; resolve.click(); await acceptConfirmation(shadow); await Promise.resolve(); await Promise.resolve();
   assert.equal(resolve.textContent, ""); assert.ok(resolve.querySelector("svg path")); assert.equal(delay, 3000); assert.ok(shadow.querySelector("[data-thread-popover]"));
   delayed?.(); assert.equal(shadow.querySelector("[data-thread-popover]"), null);
   overlay.destroy();
@@ -825,7 +841,12 @@ test("Help uses plum inversion states while Jump to remains blue", () => {
   assert.match(helpButtonStyles, /\.toolbar-actions \[data-action="help"\]\[aria-expanded="false"\]:hover,\.toolbar-actions \[data-action="help"\]\[aria-expanded="false"\]:focus-visible\{background:var\(--review-help\);border-color:var\(--review-help\);color:#fff\}/);
   assert.match(helpButtonStyles, /\.toolbar-actions \[data-action="help"\]\[aria-expanded="true"\]:hover,\.toolbar-actions \[data-action="help"\]\[aria-expanded="true"\]:focus-visible\{background:#fff;border-color:var\(--review-help\);color:var\(--review-help\)\}/);
   assert.match(overlayStyles, /\.dialog\{[^}]*width:min\(420px,calc\(100vw - 32px\)\)/);
-  assert.match(overlayStyles, /\.help-dialog\{width:min\(720px,calc\(100vw - 32px\)\)\}/);
+  assert.match(stabilisationUxStyles, /\.help-dialog\{width:min\(860px,calc\(100vw - 32px\)\)\}/);
+});
+
+test("comment links use compact two-line clamping and placement focus avoids destructive red", () => {
+  assert.match(stabilisationUxStyles, /\.comment-index-link\{[^}]*-webkit-line-clamp:2/);
+  assert.doesNotMatch(overlayStyles + tealOverlayOverrides, /4px solid #d73b3d/);
 });
 
 test("marker and delete controls follow the approved button states", () => {
@@ -891,7 +912,7 @@ test("whole-course list groups and canonically numbers comments in course order"
   ]);
   assert.deepEqual(Array.from(shadow.querySelectorAll<HTMLElement>(".comment-group-heading")).map((node) => node.textContent), ["Course information", "1 Introduction", "1.3 Case law", "1.10 Later"]);
   assert.deepEqual(Array.from(shadow.querySelectorAll<HTMLElement>("[data-comment-item]")).map((node) => node.dataset.commentIndex), ["1", "2", "3", "4"]);
-  const results = shadow.querySelector<HTMLElement>(".comment-results")!; results.scrollTop = 100; overlay.setCommentList([]); assert.equal(shadow.querySelector<HTMLElement>(".comment-results")!.scrollTop, 0);
+  const results = shadow.querySelector<HTMLElement>(".comment-results")!; results.scrollTop = 100; overlay.setCommentList([]); assert.equal(shadow.querySelector<HTMLElement>(".comment-results")!.scrollTop, 100);
   overlay.destroy();
 });
 
@@ -1081,7 +1102,7 @@ test("blank page titles use one Untitled page label in selectors, rows, and acce
   assert.doesNotMatch(navigation.getAttribute("aria-label") ?? "", /\n/);
 });
 
-test("page selector uses URLs, preserves duplicate titles, filters rows, and hides in current-page scope", () => {
+test("page selector uses URLs, preserves duplicate titles, filters rows, and remains available in current-page scope", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   const base = { id: "00000000-0000-4000-8000-000000000200", body: "Feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Same title", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight" as const, selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } };
@@ -1094,7 +1115,7 @@ test("page selector uses URLs, preserves duplicate titles, filters rows, and hid
   const visible = Array.from(shadow.querySelectorAll<HTMLElement>("[data-comment-item]")).filter((item) => !item.hidden);
   assert.equal(visible.length, 1); assert.equal(visible[0]!.textContent!.includes("Same title"), false); assert.match(visible[0]!.textContent!, /Other page/);
   shadow.querySelector<HTMLButtonElement>('[data-comment-scope="page"]')!.click();
-  assert.equal(shadow.querySelector<HTMLElement>(".comment-page-field")!.hidden, true);
+  assert.equal(shadow.querySelector<HTMLElement>(".comment-page-field")!.hidden, false);
 });
 
 test("Jump to navigates to the selected page through its first visible comment", async () => {

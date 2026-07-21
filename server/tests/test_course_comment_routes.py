@@ -46,19 +46,62 @@ def extension_headers(client, role=UserRole.BETA_TESTER):
     return {"Authorization": f"Bearer {token}"}
 
 
-def bound_extension_headers(client, course: Course, role=UserRole.BETA_TESTER):
+def bound_extension_headers(client, course: Course, role=UserRole.BETA_TESTER, *, email=None, display_name="Bound reviewer"):
     session = client.db_factory()
-    user = User(email=f"bound-{course.moodle_course_id}@example.test", display_name="Bound reviewer", password_hash="hash", role=UserRole.BETA_TESTER, approved_at=utc_now(), created_at=utc_now())
+    email = email or f"bound-{course.moodle_course_id}@example.test"
+    user = User(email=email, display_name=display_name, password_hash="hash", role=UserRole.BETA_TESTER, approved_at=utc_now(), created_at=utc_now())
     session.add(user)
     session.flush()
     membership = CourseMembership(user_id=user.id, course_id=course.id, role=role, state=MembershipState.APPROVED, approved_at=utc_now(), created_at=utc_now(), updated_at=utc_now())
     session.add(membership)
     session.flush()
-    raw_token = f"bound-token-{course.moodle_course_id}"
+    raw_token = f"bound-token-{course.moodle_course_id}-{role.value}-{user.id}"
     session.add(Session(user_id=user.id, membership_id=membership.id, token_hash=token_hash(raw_token), kind="extension", expires_at=utc_now() + timedelta(hours=8), created_at=utc_now()))
     session.commit()
     session.close()
     return {"Authorization": f"Bearer {raw_token}"}
+
+
+def test_course_membership_roles_drive_sme_thread_labels_and_private_replies(client):
+    session = client.db_factory()
+    course = resolve_course(session, moodle_course_id=899, course_url="https://moodle.example/course/view.php?id=899", title="Law")
+    course_ref = Course(id=course.id, moodle_course_id="899")
+    session.close()
+    beta = bound_extension_headers(client, course_ref, UserRole.BETA_TESTER, email="course-beta@example.test", display_name="Course beta")
+    lead = bound_extension_headers(client, course_ref, UserRole.LD_DCD, email="course-lead@example.test", display_name="Course lead")
+    sme = bound_extension_headers(client, course_ref, UserRole.SME, email="course-sme@example.test", display_name="Course SME")
+
+    created = client.post("/api/comments", headers=beta, json={
+        "course_id": str(course.id), "page_url": "https://moodle.example/page/899", "page_title": "Unit",
+        "body": "Beta feedback", "anchor_type": "text_highlight", "selected_quote": "Beta", "css_selector": "#main",
+    })
+    comment_id = created.json()["id"]
+    check = client.db_factory()
+    sme_user = check.query(User).filter_by(email="course-sme@example.test").one()
+    check.close()
+
+    assert client.put(f"/api/comments/{comment_id}/sme-recipients", headers=lead, json={"user_ids": [str(sme_user.id)]}).status_code == 200
+    reply = client.post(f"/api/comments/{comment_id}/replies", headers=sme, json={"body": "Private SME clarification"})
+    assert reply.status_code == 201
+
+    lead_view = client.get(f"/api/comments?course_id={course.id}", headers=lead).json()[0]
+    sme_view = client.get(f"/api/comments?course_id={course.id}", headers=sme).json()[0]
+    beta_view = client.get(f"/api/comments?course_id={course.id}", headers=beta).json()[0]
+    assert lead_view["replies"][0]["author"]["role"] == "sme"
+    assert sme_view["capabilities"]["can_reply"] is True
+    assert beta_view["replies"] == []
+
+    assert client.put(f"/api/comments/{comment_id}/sme-recipients", headers=lead, json={"user_ids": []}).status_code == 200
+    assert client.get(f"/api/comments?course_id={course.id}", headers=sme).json() == []
+
+    sme_origin = client.post("/api/comments", headers=sme, json={
+        "course_id": str(course.id), "page_url": "https://moodle.example/page/899", "page_title": "Unit",
+        "body": "SME feedback", "anchor_type": "text_highlight", "selected_quote": "SME", "css_selector": "#main",
+    })
+    assert sme_origin.status_code == 201
+    rendered = next(item for item in client.get(f"/api/comments?course_id={course.id}", headers=lead).json() if item["id"] == sme_origin.json()["id"])
+    assert rendered["author"] == {"display_name": "Course SME", "role": "sme"}
+    assert rendered["capabilities"]["can_share_with_sme"] is False
 
 
 def test_bound_extension_identity_is_authoritative_for_the_course(client):
@@ -236,7 +279,8 @@ def test_ask_sme_get_and_put_replace_current_recipients(client):
     session.close()
     course = Course(id=course_id, moodle_course_id="902")
     lead = bound_extension_headers(client, course, UserRole.LD_DCD)
-    created = client.post("/api/comments", headers=lead, json={"course_id": str(course_id), "page_url": "https://moodle.example/page/2", "page_title": "Page", "body": "Ask", "anchor_type": "text_highlight", "selected_quote": "Ask", "css_selector": "#main"})
+    beta = bound_extension_headers(client, course, UserRole.BETA_TESTER, email="ask-beta@example.test")
+    created = client.post("/api/comments", headers=beta, json={"course_id": str(course_id), "page_url": "https://moodle.example/page/2", "page_title": "Page", "body": "Ask", "anchor_type": "text_highlight", "selected_quote": "Ask", "css_selector": "#main"})
     url = f"/api/comments/{created.json()['id']}/sme-recipients"
 
     initial = client.get(url, headers=lead)

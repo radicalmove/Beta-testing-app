@@ -9,7 +9,7 @@ from app.dependencies import current_api_user, require_course_access
 from app.models import Comment, CommentReply, CommentStatusEvent, Course, CourseMembership, MembershipState, User, UserRole
 from app.schemas import CommentCreateRequest, CommentReplyRequest, CommentShareRequest, CommentSmeRecipientsRequest, CommentStatusRequest, CommentUpdateRequest
 from app.services.attachments import delete_attachment_objects
-from app.services.comments import AuthorizationError, PageComment, comment_capabilities, create_comment, create_reply, delete_comment_thread, replace_sme_recipients, share_comment_with_user, sme_recipient_state, update_comment_body, update_comment_status, visible_comment_for, visible_comments_for, visible_page_comments_for
+from app.services.comments import AuthorizationError, PageComment, comment_capabilities, course_role_for, create_comment, create_reply, delete_comment_thread, replace_sme_recipients, share_comment_with_user, sme_recipient_state, update_comment_body, update_comment_status, visible_comment_for, visible_comments_for, visible_page_comments_for
 
 router = APIRouter(prefix="/api/comments", tags=["comments"])
 
@@ -18,24 +18,24 @@ def _reply_json(reply: CommentReply) -> dict[str, str]:
     return {"id": str(reply.id), "author_user_id": str(reply.author_user_id), "body": reply.body}
 
 
-def _page_comment_json(projected: PageComment, viewer: User) -> dict:
+def _page_comment_json(projected: PageComment, viewer: User, db: DbSession) -> dict:
     comment, location, author = projected.comment, projected.location, projected.author
     return {
         "id": str(comment.id), "body": comment.body, "category": comment.category.value,
-        "status": comment.status.value, "author": {"display_name": author.display_name, "role": author.role.value}, "page_url": location.page_url, "page_title": location.page_title,
+        "status": comment.status.value, "author": {"display_name": author.display_name, "role": projected.author_role.value}, "page_url": location.page_url, "page_title": location.page_title,
         "parent_activity_url": location.parent_activity_url, "embedded_locator": location.embedded_locator,
         "anchor_type": location.anchor_type.value if hasattr(location.anchor_type, "value") else location.anchor_type, "selected_quote": location.selected_quote,
         "prefix": location.prefix, "suffix": location.suffix, "css_selector": location.css_selector,
         "dom_selector": location.dom_selector, "relative_x": location.relative_x, "relative_y": location.relative_y,
         "replies": [
-            {"id": str(reply.id), "body": reply.body, "author": {"display_name": reply_author.display_name, "role": reply_author.role.value}}
-            for reply, reply_author in projected.replies
+            {"id": str(reply.id), "body": reply.body, "author": {"display_name": reply_author.display_name, "role": reply_role.value}}
+            for reply, reply_author, reply_role in projected.replies
         ],
         "status_history": [
             {"status": event.status.value, "created_at": event.created_at.isoformat(), "actor": actor.display_name}
             for event, actor in projected.status_events
         ],
-        "capabilities": comment_capabilities(viewer, comment),
+        "capabilities": comment_capabilities(db, viewer, comment),
     }
 
 
@@ -51,9 +51,24 @@ def _comment_json(comment: Comment, db: DbSession | None = None, viewer: User | 
     result = {"id": str(comment.id), "course_id": str(comment.course_id), "location_id": str(comment.location_id), "author_user_id": str(comment.author_user_id), "category": comment.category.value, "status": comment.status.value, "body": comment.body}
     if db is not None and viewer is not None:
         replies = list(db.query(CommentReply).filter_by(comment_id=comment.id).order_by(CommentReply.created_at, CommentReply.id))
-        if viewer.role is UserRole.BETA_TESTER:
+        if course_role_for(db, viewer, comment.course_id) is UserRole.BETA_TESTER:
             allowed = {viewer.id}
-            allowed.update(user.id for user in db.query(User).filter(User.role.in_((UserRole.LD_DCD, UserRole.ADMIN))))
+            allowed.update(
+                membership.user_id
+                for membership in db.query(CourseMembership).filter(
+                    CourseMembership.course_id == comment.course_id,
+                    CourseMembership.state == MembershipState.APPROVED,
+                    CourseMembership.role.in_((UserRole.LD_DCD, UserRole.ADMIN)),
+                )
+            )
+            # Legacy course-team accounts may not yet have a membership row. Keep
+            # their global role as the migration fallback, but let an approved
+            # course membership override it through ``course_role_for``.
+            allowed.update(
+                candidate.id
+                for candidate in db.query(User).filter(User.role.in_((UserRole.LD_DCD, UserRole.ADMIN)))
+                if course_role_for(db, candidate, comment.course_id) in {UserRole.LD_DCD, UserRole.ADMIN}
+            )
             replies = [reply for reply in replies if reply.author_user_id in allowed]
         result["replies"] = [_reply_json(reply) for reply in replies]
         events = list(db.query(CommentStatusEvent).filter_by(comment_id=comment.id).order_by(CommentStatusEvent.created_at, CommentStatusEvent.id))
@@ -92,7 +107,7 @@ def list_comments(course_id: uuid.UUID, page_url: str | None = Query(default=Non
     if db.get(Course, course_id) is None:
         raise HTTPException(status_code=404, detail="Course not found")
     try:
-        return [_page_comment_json(comment, user) for comment in visible_page_comments_for(db, user, course_id, page_url)]
+        return [_page_comment_json(comment, user, db) for comment in visible_page_comments_for(db, user, course_id, page_url)]
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -127,8 +142,10 @@ def get_sme_recipients(comment_id: uuid.UUID, user: User = Depends(current_api_u
     if comment is None:
         raise HTTPException(status_code=404, detail="Comment not found")
     require_course_access(user, comment.course_id)
-    if user.role is not UserRole.LD_DCD:
+    if course_role_for(db, user, comment.course_id) not in {UserRole.LD_DCD, UserRole.ADMIN}:
         raise HTTPException(status_code=403, detail="Only an LD/DCD can ask SMEs")
+    if comment.author_role is not UserRole.BETA_TESTER:
+        raise HTTPException(status_code=422, detail="Only beta-tester feedback can be shared with SMEs")
     return _sme_recipients_json(db, comment)
 
 

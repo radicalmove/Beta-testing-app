@@ -16,6 +16,7 @@ test("fallback highlight follows changing range geometry and cleans up listeners
   const cleanup = renderTextHighlight(window.document as unknown as Document, range as unknown as Range);
   const marker = window.document.querySelector("[data-moodle-review-highlight]") as unknown as HTMLElement;
   assert.equal(marker.style.left, "10px");
+  assert.equal(marker.style.background, "rgba(255, 230, 106, 0.38)");
   rect = { left: 50, top: 60, width: 70, height: 80 };
   window.dispatchEvent(new window.Event("scroll"));
   assert.equal(marker.style.left, "50px");

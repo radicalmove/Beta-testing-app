@@ -121,7 +121,7 @@ def test_status_control_selects_current_state_and_only_offers_valid_transitions(
     assert ('<button disabled aria-disabled="true">' in status_form) is disabled
 
 
-def test_status_submission_rejects_no_op_while_form_requires_a_transition(dashboard_client):
+def test_status_submission_accepts_idempotent_no_op_while_form_requires_a_transition(dashboard_client):
     comment_id, _ = seed(dashboard_client)
     login(dashboard_client, "lead-no-op@example.test", UserRole.LD_DCD)
     page = dashboard_client.get(f"/dashboard/threads/{comment_id}")
@@ -131,7 +131,7 @@ def test_status_submission_rejects_no_op_while_form_requires_a_transition(dashbo
         data={"status": "open", "csrf_token": dashboard_client.cookies["csrf_token"]},
         follow_redirects=False,
     )
-    assert response.status_code == 422
+    assert response.status_code == 303
 
 
 @pytest.mark.parametrize(
