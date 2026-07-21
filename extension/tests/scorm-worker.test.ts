@@ -50,6 +50,8 @@ function createHarness(navigate?: (destination: URL, mode: "hash" | "route") => 
   let takenToContext = "";
   const createRenderer = (_document: Document, _pageUrl: string): CommentRenderer => ({
     setComments: (comments) => { projections.push(comments); },
+    setStatusFilter: () => {},
+    orderedCommentIds: () => [],
     takeToContext: (commentId) => { takenToContext = commentId; return true; },
     destroy: () => { rendererDestroyed += 1; },
   });

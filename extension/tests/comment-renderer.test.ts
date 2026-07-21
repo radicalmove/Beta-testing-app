@@ -113,6 +113,23 @@ test("opens a contextual thread beside its marker and toggles it closed", () => 
   assert.equal(marker.getAttribute("aria-expanded"), "false");
 });
 
+test("contextual thread moves left when the expanded comments panel occupies the right side", () => {
+  const { window, document } = setup();
+  Object.defineProperty(window, "innerWidth", { configurable: true, value: 1200 });
+  Object.defineProperty(window, "innerHeight", { configurable: true, value: 800 });
+  const overlay = document.createElement("div"); overlay.id = "moodle-course-review-overlay";
+  const overlayRoot = overlay.attachShadow({ mode: "open" }); const shell = document.createElement("section"); shell.className = "shell";
+  shell.getBoundingClientRect = () => ({ x: 840, y: 40, left: 840, top: 40, right: 1190, bottom: 780, width: 350, height: 740, toJSON() {} });
+  overlayRoot.append(shell); document.body.append(overlay);
+  const renderer = createCommentRenderer(document, pageUrl); renderer.setComments([comment()]);
+  const marker = document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")!;
+  marker.getBoundingClientRect = () => ({ x: 780, y: 220, left: 780, top: 220, right: 818, bottom: 258, width: 38, height: 38, toJSON() {} });
+  marker.click();
+  const popover = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!.querySelector<HTMLElement>("[data-thread-popover]")!;
+  assert.ok(Number.parseFloat(popover.style.left) + 360 <= 832);
+  renderer.destroy();
+});
+
 test("contextual threads preserve edit, reply, delete, and status callbacks", async () => {
   const { document } = setup();
   const calls: string[] = [];
@@ -542,7 +559,7 @@ test("resolved confirmation survives a callback projection refresh until its thr
 
   delayed?.();
   assert.equal(root.querySelector("[data-thread-popover]"), null);
-  assert.ok(document.querySelector("[data-moodle-review-stored-pin]"), "resolved projection must be applied after confirmation closes");
+  assert.equal(document.querySelector("[data-moodle-review-stored-pin]"), null, "resolved projection must leave the default Open view after confirmation closes");
 });
 
 test("delete refresh closes the thread and removes stale renderer artifacts", async () => {

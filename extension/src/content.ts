@@ -300,7 +300,8 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
   };
   const optionalFramePatterns = typeof __OPTIONAL_FRAME_PATTERNS__ !== "undefined" ? __OPTIONAL_FRAME_PATTERNS__ : [];
   let permissionOrigin = inaccessibleFrameOrigins(targetDocument).find((origin) => optionalFramePatterns.some((pattern) => matchPattern(`${origin}/`, pattern)));
-  const loadPageComments = async (pageUrl: string, preserveOnError = false) => { const sequence = ++commentSequence; try { const comments = await send<PageComment[]>({ type: "LIST_COURSE_COMMENTS" }); if (sequence === commentSequence && context.page_url === pageUrl) { latestComments = comments; overlay.setCommentList(comments); overlay.setRendererComments(scormRoute ? [] : comments); if (scormRoute && embeddedPageUrl) void sendScormCommand("SCORM_SET_COMMENTS", { comments }).catch(() => undefined); const pending: { comment_id?: string } = await send<{ comment_id?: string }>({ type: "CONSUME_COMMENT_NAVIGATION" }).catch(() => ({})); if (pending.comment_id) overlay.takeToContext(pending.comment_id); } } catch (error) { const current = sequence === commentSequence && context.page_url === pageUrl; if (preserveOnError && current) throw error; } };
+  let latestCommentsSignature = "";
+  const loadPageComments = async (pageUrl: string, preserveOnError = false) => { const sequence = ++commentSequence; try { const comments = await send<PageComment[]>({ type: "LIST_COURSE_COMMENTS" }); if (sequence === commentSequence && context.page_url === pageUrl) { const signature = JSON.stringify(comments); latestComments = comments; if (signature !== latestCommentsSignature) { latestCommentsSignature = signature; if (scormRoute) { overlay.setRendererComments([]); overlay.setCommentList(comments); } else overlay.setPageComments(comments); if (scormRoute && embeddedPageUrl) void sendScormCommand("SCORM_SET_COMMENTS", { comments }).catch(() => undefined); } const pending: { comment_id?: string } = await send<{ comment_id?: string }>({ type: "CONSUME_COMMENT_NAVIGATION" }).catch(() => ({})); if (pending.comment_id) overlay.takeToContext(pending.comment_id); } } catch (error) { const current = sequence === commentSequence && context.page_url === pageUrl; if (preserveOnError && current) throw error; } };
   const refreshAfterMutation = async () => { try { await loadPageComments(context.page_url, true); } catch { throw new Error("Change saved, but comments could not be refreshed. Reload the page."); } };
   overlay = mountReviewOverlay(targetDocument, context, "connecting", { onRequestInteraction: (intent) => { interactionController.request(intent); }, onRequestPermission: () => new Promise<boolean>((resolve) => {
     if (!permissionOrigin) { resolve(false); return; }
@@ -311,7 +312,7 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
     if (response.state === "pending") { scheduleApprovalCheck(); return { status: "pending", message: waitingForApproval }; }
     lastSignature = ""; refresh();
     return { status: "connected" };
-  }, getSavedReviewers: () => courseHandle ? send<Array<{ email: string; label: string }>>({ type: "LIST_SAVED_REVIEWERS", course_handle: courseHandle }) : Promise.resolve([]), onUseSavedReviewer: () => checkPendingApproval(), onCheckApproval: checkPendingApproval, onAuthenticate: () => new Promise((resolve) => {
+  }, getSavedReviewers: () => courseHandle ? send<Array<{ email: string; label: string }>>({ type: "LIST_SAVED_REVIEWERS", course_handle: courseHandle }) : Promise.resolve([]), onUseSavedReviewer: () => checkPendingApproval(), onCheckApproval: checkPendingApproval, onSignOut: async () => { await send({ type: "SIGN_OUT" }); lastSignature = ""; latestComments = []; }, onAuthenticate: () => new Promise((resolve) => {
     sendRuntimeMessage(runtime, { type: "AUTHENTICATE" }, (response) => {
       if (!response?.ok) {
         if ((response?.status as string | undefined) === "cancelled") resolve({ status: "signed-out", message: "Sign-in cancelled" });
@@ -357,7 +358,7 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
     lastSignature = signature;
     const pageChanged = context.page_url !== next.page_url;
     context = next;
-    if (pageChanged) { commentSequence += 1; overlay.setPageComments([]); }
+    if (pageChanged) { commentSequence += 1; latestCommentsSignature = ""; overlay.setPageComments([]); }
     overlay.update(context, "connecting");
     const sequence = ++requestSequence;
     const requestedCourseUrl = context.course_url;
@@ -432,10 +433,17 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
     : ((timer) => globalThis.clearInterval(timer));
   const framePoll = scheduleFramePoll(checkFrames, framePollDelay);
   (framePoll as unknown as { unref?: () => void }).unref?.();
+  const commentPoll = scheduleFramePoll(() => {
+    if (!stopped && courseId && !targetDocument.hidden) void loadPageComments(context.page_url);
+  }, 15_000);
+  (commentPoll as unknown as { unref?: () => void }).unref?.();
+  const refreshVisibleComments = () => { if (!targetDocument.hidden && courseId) void loadPageComments(context.page_url); };
+  targetWindow.addEventListener("focus", refreshVisibleComments);
+  targetDocument.addEventListener("visibilitychange", refreshVisibleComments);
   const onFrameReady = (event: MessageEvent) => { if (event.data?.type === "MOODLE_REVIEW_FRAME_READY") checkFrames(); };
   targetWindow.addEventListener("message", onFrameReady);
   refresh();
-  return () => { stopped = true; interactionController.destroy(); runtime.onMessage?.removeListener(topMessageListener); clearApprovalTimer(); targetDocument.removeEventListener("visibilitychange", onVisibility); cancelTimeout(fallbackTimer); cancelFramePoll(framePoll); targetWindow.removeEventListener("message", onFrameReady); for (const eventName of ["popstate", "hashchange", "moodle-review:navigate"]) targetWindow.removeEventListener(eventName, clearNavigatedPage); lifecycle.teardown(); overlay.destroy(); };
+  return () => { stopped = true; interactionController.destroy(); runtime.onMessage?.removeListener(topMessageListener); clearApprovalTimer(); targetDocument.removeEventListener("visibilitychange", onVisibility); targetDocument.removeEventListener("visibilitychange", refreshVisibleComments); targetWindow.removeEventListener("focus", refreshVisibleComments); cancelTimeout(fallbackTimer); cancelFramePoll(framePoll); cancelFramePoll(commentPoll); targetWindow.removeEventListener("message", onFrameReady); for (const eventName of ["popstate", "hashchange", "moodle-review:navigate"]) targetWindow.removeEventListener(eventName, clearNavigatedPage); lifecycle.teardown(); overlay.destroy(); };
 }
 
 type RuntimeResponse = { ok?: boolean; status?: ConnectionStatus; error?: string; data?: unknown } | undefined;

@@ -44,6 +44,24 @@ test("groups identical pages, preserves server order within a page, and uses sta
   assert.deepEqual(projected.groups[0]!.comments.map((entry) => entry.comment.id), ["a-first", "a-second"]);
 });
 
+test("uses supplied physical anchor ranks within a page without changing page ordering", () => {
+  const input = [
+    comment("created-first", "1 Introduction", "https://learn.example/page/one"),
+    comment("created-last", "1 Introduction", "https://learn.example/page/one"),
+    comment("middle", "1 Introduction", "https://learn.example/page/one"),
+    comment("next-page", "2 Institutions", "https://learn.example/page/two"),
+  ];
+
+  const projected = projectCourseComments(input, new Map([
+    ["created-last", 0],
+    ["middle", 1],
+    ["created-first", 2],
+  ]));
+
+  assert.deepEqual(projected.groups[0]!.comments.map((entry) => entry.comment.id), ["created-last", "middle", "created-first"]);
+  assert.deepEqual(projected.groups.flatMap((group) => group.comments.map((entry) => entry.displayIndex)), [1, 2, 3, 4]);
+});
+
 test("sorts unnumbered destinations by their visible Jump-to labels", () => {
   const input = [
     comment("beta", "Beta"),

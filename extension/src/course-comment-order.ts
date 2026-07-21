@@ -36,7 +36,7 @@ function compareNumbers(left: number[], right: number[]): number {
   return 0;
 }
 
-export function projectCourseComments<T extends CourseCommentIdentity>(comments: readonly T[]): { groups: Array<ProjectedCourseCommentGroup<T>> } {
+export function projectCourseComments<T extends CourseCommentIdentity>(comments: readonly T[], physicalRanks: ReadonlyMap<string, number> = new Map()): { groups: Array<ProjectedCourseCommentGroup<T>> } {
   const pages = new Map<string, { pageUrl: string; title: string; firstSeen: number; comments: T[] }>();
   comments.forEach((comment, index) => {
     const title = normalize(comment.page_title) || "Untitled page";
@@ -64,7 +64,14 @@ export function projectCourseComments<T extends CourseCommentIdentity>(comments:
     groups: ordered.map((page) => ({
       pageUrl: page.pageUrl,
       title: page.title,
-      comments: page.comments.map((comment) => ({ comment, displayIndex: ++displayIndex })),
+      comments: [...page.comments]
+        .map((comment, sourceIndex) => ({ comment, sourceIndex, rank: physicalRanks.get((comment as T & { id?: string }).id ?? "") }))
+        .sort((left, right) => {
+          if (left.rank !== undefined && right.rank !== undefined) return left.rank - right.rank || left.sourceIndex - right.sourceIndex;
+          if ((left.rank !== undefined) !== (right.rank !== undefined)) return left.rank !== undefined ? -1 : 1;
+          return left.sourceIndex - right.sourceIndex;
+        })
+        .map(({ comment }) => ({ comment, displayIndex: ++displayIndex })),
     })),
   };
 }

@@ -9,7 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.db import Base, get_session
 from app.main import create_app
-from app.models import Comment, CommentReply, CommentStatusEvent, PageLocation, User, UserRole
+from app.models import Comment, CommentReply, CommentStatusEvent, CourseMembership, MembershipState, PageLocation, User, UserRole
 from app.services.accounts import create_extension_login_code, exchange_extension_login_code
 from app.services.comments import share_comment_with_user
 from app.services.courses import resolve_course
@@ -85,6 +85,8 @@ def test_only_ld_dcd_can_change_a_beta_thread_status(client):
     session = client.db_factory()
     lead_user = session.query(User).filter_by(email="lead@example.test").one()
     sme_user = session.query(User).filter_by(email="sme@example.test").one()
+    session.add(CourseMembership(course_id=course.id, user_id=sme_user.id, role=UserRole.SME, state=MembershipState.APPROVED, created_at=datetime.now(UTC), updated_at=datetime.now(UTC)))
+    session.commit()
     share_comment_with_user(session, lead_user, session.get(Comment, UUID(comment_id)), sme_user)
     session.close()
 
@@ -95,23 +97,27 @@ def test_only_ld_dcd_can_change_a_beta_thread_status(client):
     assert client.post(f"/api/comments/{comment_id}/status", headers=lead, json={"status": "in_progress"}).status_code == 200
 
 
-def test_only_ld_dcd_can_share_a_beta_thread_with_an_sme(client):
+def test_ld_dcd_and_admin_can_share_a_beta_thread_with_an_sme(client):
     beta = headers_for(client, "beta@example.test", UserRole.BETA_TESTER)
     lead = headers_for(client, "lead@example.test", UserRole.LD_DCD)
     admin = headers_for(client, "admin@example.test", UserRole.ADMIN)
     sme = headers_for(client, "sme@example.test", UserRole.SME)
     session = client.db_factory()
     course = resolve_course(session, moodle_course_id=12, course_url="https://moodle.example/course/view.php?id=12", title="Law")
+    course_id = course.id
     sme_user = session.query(User).filter_by(email="sme@example.test").one()
+    sme_user_id = sme_user.id
+    session.add(CourseMembership(course_id=course.id, user_id=sme_user.id, role=UserRole.SME, state=MembershipState.APPROVED, created_at=datetime.now(UTC), updated_at=datetime.now(UTC)))
+    session.commit()
     session.close()
     created = client.post("/api/comments", headers=beta, json={
-        "course_id": str(course.id), "page_url": "https://moodle.example/page/9", "page_title": "Unit 1", "body": "Fix",
+        "course_id": str(course_id), "page_url": "https://moodle.example/page/9", "page_title": "Unit 1", "body": "Fix",
         "anchor_type": "text_highlight", "selected_quote": "Fix", "css_selector": "#content",
     })
     comment_id = created.json()["id"]
 
-    assert client.post(f"/api/comments/{comment_id}/share", headers=admin, json={"user_id": str(sme_user.id)}).status_code == 403
-    assert client.post(f"/api/comments/{comment_id}/share", headers=lead, json={"user_id": str(sme_user.id)}).status_code == 201
+    assert client.post(f"/api/comments/{comment_id}/share", headers=admin, json={"user_id": str(sme_user_id)}).status_code == 201
+    assert client.post(f"/api/comments/{comment_id}/share", headers=lead, json={"user_id": str(sme_user_id)}).status_code == 201
 
 
 def test_author_deletes_the_complete_thread_and_repeat_is_nondisclosing(client):

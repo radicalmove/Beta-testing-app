@@ -30,12 +30,13 @@ def allowed_status_choices(current: CommentStatus) -> tuple[CommentStatus, ...]:
     return (current, *STATUS_TRANSITIONS[current])
 
 
-def _visibility_clause(user: User):
-    if user.role in {UserRole.LD_DCD, UserRole.ADMIN}:
+def _visibility_clause(user: User, role: UserRole | None = None):
+    effective_role = role or user.role
+    if effective_role in {UserRole.LD_DCD, UserRole.ADMIN}:
         return True
-    if user.role is UserRole.BETA_TESTER:
+    if effective_role is UserRole.BETA_TESTER:
         return Comment.author_user_id == user.id
-    if user.role is UserRole.SME:
+    if effective_role is UserRole.SME:
         shared_with_user = select(CommentShare.id).where(
             CommentShare.comment_id == Comment.id,
             CommentShare.shared_with_user_id == user.id,
@@ -63,22 +64,40 @@ class PageComment:
     comment: Comment
     location: PageLocation
     author: User
-    replies: tuple[tuple[CommentReply, User], ...]
+    author_role: UserRole
+    replies: tuple[tuple[CommentReply, User, UserRole], ...]
     status_events: tuple[tuple[CommentStatusEvent, User], ...]
 
 
-def comment_capabilities(viewer: User, comment: Comment) -> dict:
+def course_role_for(db: DbSession, user: User, course_id: uuid.UUID) -> UserRole:
+    """Use the approved course role; global roles are only a legacy fallback."""
+    if user.role is UserRole.ADMIN:
+        return UserRole.ADMIN
+    membership_role = db.scalar(select(CourseMembership.role).where(
+        CourseMembership.user_id == user.id,
+        CourseMembership.course_id == course_id,
+        CourseMembership.state == MembershipState.APPROVED,
+    ))
+    return membership_role or user.role
+
+
+def comment_capabilities(db: DbSession, viewer: User, comment: Comment) -> dict:
+    viewer_role = course_role_for(db, viewer, comment.course_id)
     is_author = viewer.id == comment.author_user_id
-    is_lead = viewer.role is UserRole.LD_DCD
-    is_admin = viewer.role is UserRole.ADMIN
+    is_lead = viewer_role is UserRole.LD_DCD
+    is_admin = viewer_role is UserRole.ADMIN
+    is_assigned_sme = viewer_role is UserRole.SME and db.scalar(select(CommentShare.id).where(
+        CommentShare.comment_id == comment.id,
+        CommentShare.shared_with_user_id == viewer.id,
+    ).limit(1)) is not None
     if comment.author_role is UserRole.BETA_TESTER:
-        can_reply = is_author or is_lead or is_admin
+        can_reply = is_author or is_lead or is_admin or is_assigned_sme
     else:
-        can_reply = viewer.role is not UserRole.BETA_TESTER or is_author
+        can_reply = viewer_role is not UserRole.BETA_TESTER or is_author
     return {
         "can_reply": can_reply,
         "can_change_status": is_lead or is_admin,
-        "can_share_with_sme": is_lead,
+        "can_share_with_sme": (is_lead or is_admin) and comment.author_role is UserRole.BETA_TESTER,
         "can_delete": is_author or is_lead or is_admin,
         "can_edit": is_author,
         "allowed_statuses": [item.value for item in allowed_status_choices(comment.status)] if is_lead or is_admin else [comment.status.value],
@@ -97,9 +116,11 @@ def normalized_page_url(value: str) -> str:
     return clean
 
 
-def _reply_visible_to(viewer: User, comment: Comment, reply_author: User) -> bool:
-    if viewer.role is UserRole.BETA_TESTER:
-        return reply_author.id == viewer.id or reply_author.role in {UserRole.LD_DCD, UserRole.ADMIN}
+def _reply_visible_to(db: DbSession, viewer: User, comment: Comment, reply_author: User) -> bool:
+    viewer_role = course_role_for(db, viewer, comment.course_id)
+    reply_role = course_role_for(db, reply_author, comment.course_id)
+    if viewer_role is UserRole.BETA_TESTER:
+        return reply_author.id == viewer.id or reply_role in {UserRole.LD_DCD, UserRole.ADMIN}
     return True
 
 
@@ -148,7 +169,7 @@ def dashboard_comments_for(db: DbSession, user: User) -> list[DashboardComment]:
 def visible_comments_for(db: DbSession, user: User, course_id: uuid.UUID) -> list[Comment]:
     """Return exactly the course threads this user is allowed to discover."""
     query = select(Comment).where(Comment.course_id == course_id)
-    query = query.where(_visibility_clause(user))
+    query = query.where(_visibility_clause(user, course_role_for(db, user, course_id)))
     return list(db.scalars(query.order_by(Comment.created_at, Comment.id)))
 
 
@@ -160,7 +181,7 @@ def visible_page_comments_for(db: DbSession, user: User, course_id: uuid.UUID, p
         select(Comment, PageLocation, author)
         .join(PageLocation, PageLocation.id == Comment.location_id)
         .join(author, author.id == Comment.author_user_id)
-        .where(Comment.course_id == course_id, _visibility_clause(user))
+        .where(Comment.course_id == course_id, _visibility_clause(user, course_role_for(db, user, course_id)))
         .order_by(Comment.created_at, Comment.id)
     )
     if normalized is not None:
@@ -185,25 +206,33 @@ def visible_page_comments_for(db: DbSession, user: User, course_id: uuid.UUID, p
         .where(CommentStatusEvent.comment_id.in_(comment_ids))
         .order_by(CommentStatusEvent.created_at, CommentStatusEvent.id)
     ).all()
-    replies_by_comment: dict[uuid.UUID, list[tuple[CommentReply, User]]] = {comment_id: [] for comment_id in comment_ids}
+    replies_by_comment: dict[uuid.UUID, list[tuple[CommentReply, User, UserRole]]] = {comment_id: [] for comment_id in comment_ids}
     for reply, reply_by in reply_rows:
-        if _reply_visible_to(user, comments_by_id[reply.comment_id], reply_by):
-            replies_by_comment[reply.comment_id].append((reply, reply_by))
+        reply_role = course_role_for(db, reply_by, comments_by_id[reply.comment_id].course_id)
+        if _reply_visible_to(db, user, comments_by_id[reply.comment_id], reply_by):
+            replies_by_comment[reply.comment_id].append((reply, reply_by, reply_role))
     events_by_comment: dict[uuid.UUID, list[tuple[CommentStatusEvent, User]]] = {comment_id: [] for comment_id in comment_ids}
     for event, actor in event_rows:
         events_by_comment[event.comment_id].append((event, actor))
-    return [PageComment(comment, location, thread_author, tuple(replies_by_comment[comment.id]), tuple(events_by_comment[comment.id])) for comment, location, thread_author in rows]
+    return [PageComment(comment, location, thread_author, course_role_for(db, thread_author, comment.course_id), tuple(replies_by_comment[comment.id]), tuple(events_by_comment[comment.id])) for comment, location, thread_author in rows]
 
 
 def visible_comment_for(db: DbSession, user: User, comment_id: uuid.UUID) -> Comment | None:
-    return db.scalar(select(Comment).where(Comment.id == comment_id, _visibility_clause(user)))
+    comment = db.get(Comment, comment_id)
+    if comment is None:
+        return None
+    allowed = db.scalar(select(Comment.id).where(
+        Comment.id == comment_id,
+        _visibility_clause(user, course_role_for(db, user, comment.course_id)),
+    ))
+    return comment if allowed is not None else None
 
 
 def delete_comment_thread(db: DbSession, actor: User, comment: Comment) -> tuple[str, ...]:
     comment = db.scalar(select(Comment).where(Comment.id == comment.id).with_for_update())
     if comment is None:
         return ()
-    if actor.id != comment.author_user_id and actor.role not in {UserRole.LD_DCD, UserRole.ADMIN}:
+    if actor.id != comment.author_user_id and course_role_for(db, actor, comment.course_id) not in {UserRole.LD_DCD, UserRole.ADMIN}:
         raise AuthorizationError("Only the author or an LD/DCD can delete this thread")
     location_id = comment.location_id
     attachments = list(db.scalars(select(Attachment).where(Attachment.comment_id == comment.id)))
@@ -249,8 +278,10 @@ def replace_sme_recipients(db: DbSession, actor: User, comment_id: uuid.UUID, us
     comment = db.scalar(select(Comment).where(Comment.id == comment_id).with_for_update())
     if comment is None:
         return None
-    if actor.role not in {UserRole.LD_DCD, UserRole.ADMIN}:
+    if course_role_for(db, actor, comment.course_id) not in {UserRole.LD_DCD, UserRole.ADMIN}:
         raise AuthorizationError("Only an LD/DCD can ask SMEs")
+    if comment.author_role is not UserRole.BETA_TESTER:
+        raise ValueError("Only beta-tester feedback can be shared with SMEs")
     valid = set(db.scalars(select(CourseMembership.user_id).where(
         CourseMembership.course_id == comment.course_id,
         CourseMembership.role == UserRole.SME,
@@ -302,7 +333,7 @@ def create_comment(db: DbSession, author: User, *, course_id: uuid.UUID, page_ur
     location = PageLocation(course_id=course_id, page_url=page_url.strip(), page_title=page_title.strip(), anchor_type=anchor_type, selected_quote=selected_quote, prefix=prefix, suffix=suffix, css_selector=css_selector, dom_selector=dom_selector, relative_x=relative_x, relative_y=relative_y, parent_activity_url=parent_activity_url, embedded_locator=embedded_locator, created_at=instant)
     db.add(location)
     db.flush()
-    comment = Comment(course_id=course_id, location_id=location.id, author_user_id=author.id, author_role=author.role, body=body.strip(), category=CommentCategory(category), status=CommentStatus.OPEN, created_at=instant, updated_at=instant)
+    comment = Comment(course_id=course_id, location_id=location.id, author_user_id=author.id, author_role=course_role_for(db, author, course_id), body=body.strip(), category=CommentCategory(category), status=CommentStatus.OPEN, created_at=instant, updated_at=instant)
     db.add(comment)
     db.flush()
     db.add(CommentStatusEvent(comment_id=comment.id, actor_user_id=author.id, status=CommentStatus.OPEN, created_at=instant))
@@ -315,9 +346,11 @@ def update_comment_status(db: DbSession, actor: User, comment: Comment, status: 
     comment = db.scalar(select(Comment).where(Comment.id == comment.id).with_for_update())
     if comment is None:
         raise ValueError("Comment no longer exists")
-    if actor.role not in {UserRole.LD_DCD, UserRole.ADMIN}:
+    if course_role_for(db, actor, comment.course_id) not in {UserRole.LD_DCD, UserRole.ADMIN}:
         raise AuthorizationError("Only an LD/DCD can change comment status")
     new_status = CommentStatus(status)
+    if new_status is comment.status:
+        return comment
     if new_status is CommentStatus.RESOLVED and comment.status is not CommentStatus.RESOLVED:
         pass
     elif new_status not in STATUS_TRANSITIONS[comment.status]:
@@ -333,10 +366,15 @@ def update_comment_status(db: DbSession, actor: User, comment: Comment, status: 
 def create_reply(db: DbSession, actor: User, comment: Comment, body: str) -> CommentReply:
     if not body.strip():
         raise ValueError("body is required")
+    actor_role = course_role_for(db, actor, comment.course_id)
     if comment.author_role is UserRole.BETA_TESTER:
-        if actor.id != comment.author_user_id and actor.role not in {UserRole.LD_DCD, UserRole.ADMIN}:
+        assigned_sme = actor_role is UserRole.SME and db.scalar(select(CommentShare.id).where(
+            CommentShare.comment_id == comment.id,
+            CommentShare.shared_with_user_id == actor.id,
+        ).limit(1)) is not None
+        if actor.id != comment.author_user_id and actor_role not in {UserRole.LD_DCD, UserRole.ADMIN} and not assigned_sme:
             raise AuthorizationError("Only the beta author, an LD/DCD, or an administrator can reply to a beta thread")
-    elif actor.role is UserRole.BETA_TESTER and actor.id != comment.author_user_id:
+    elif actor_role is UserRole.BETA_TESTER and actor.id != comment.author_user_id:
         raise AuthorizationError("Beta testers can reply only to their own threads")
     reply = CommentReply(comment_id=comment.id, author_user_id=actor.id, body=body.strip(), created_at=utc_now())
     db.add(reply)
@@ -346,9 +384,17 @@ def create_reply(db: DbSession, actor: User, comment: Comment, body: str) -> Com
 
 
 def share_comment_with_user(db: DbSession, actor: User, comment: Comment, shared_with: User) -> CommentShare:
-    if actor.role is not UserRole.LD_DCD:
+    if course_role_for(db, actor, comment.course_id) not in {UserRole.LD_DCD, UserRole.ADMIN}:
         raise AuthorizationError("Only an LD/DCD can share a thread")
-    if shared_with.role is not UserRole.SME or shared_with.approved_at is None:
+    if comment.author_role is not UserRole.BETA_TESTER:
+        raise ValueError("Only beta-tester feedback can be shared with SMEs")
+    membership = db.scalar(select(CourseMembership).where(
+        CourseMembership.course_id == comment.course_id,
+        CourseMembership.user_id == shared_with.id,
+        CourseMembership.role == UserRole.SME,
+        CourseMembership.state == MembershipState.APPROVED,
+    ))
+    if membership is None:
         raise ValueError("Threads can be shared only with an SME account")
     share = CommentShare(comment_id=comment.id, shared_with_user_id=shared_with.id, shared_by_user_id=actor.id, created_at=utc_now())
     db.add(share)

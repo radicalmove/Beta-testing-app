@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi import UploadFile
 from sqlalchemy.orm import Session as DbSession
 
-from app.models import Attachment, Comment, User, UserRole
+from app.models import Attachment, Comment, User
 from app.security import utc_now
 from app.services.comments import visible_comment_for
 
@@ -24,9 +24,7 @@ _SIGNATURE_BYTES = 8
 
 
 def visible_attachment_comment_for(db: DbSession, user: User, comment_id: uuid.UUID) -> Comment | None:
-    """Apply thread visibility without the comment-only administrator bypass."""
-    if user.role is UserRole.ADMIN:
-        return None
+    """Apply the same role-aware visibility used by the comment thread."""
     return visible_comment_for(db, user, comment_id)
 
 
