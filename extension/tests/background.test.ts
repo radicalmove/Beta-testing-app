@@ -121,6 +121,28 @@ test("a worker replaced after locator application receives the locator again", a
   navigation.cancel(7);
 });
 
+test("a slow SCORM app receives its locator again until the target identity loads", async () => {
+  const storage = new NavigationStorage(); let nextTimer = 1; const timers = new Map<number, () => void>(); const applied: string[] = [];
+  let pageUrl = "https://rise.example/index.html#moodle-review-page=Loading";
+  const navigation = new EmbeddedCommentNavigation(storage, {
+    setTimeout: (callback) => { const token = nextTimer++; timers.set(token, callback); return token; },
+    clearTimeout: (token) => { timers.delete(token as number); },
+    current: () => ({ courseId: id(3), topUrl: context.parent_activity_url, workerInstanceId: id(2), generation: 4, pageUrl }),
+    navigateParent: async () => undefined, applyLocator: async (_tabId, locator) => { applied.push(locator); },
+    projectionContains: () => true, takeToContext: async () => undefined,
+  });
+  await navigation.prepare(7, embeddedComment);
+  assert.equal((await navigation.advance(7)).state, "identity-waiting");
+  assert.deepEqual(applied, [embeddedComment.embeddedLocator]);
+
+  const retry = [...timers.values()][0]!; timers.clear(); retry(); await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.deepEqual(applied, [embeddedComment.embeddedLocator, embeddedComment.embeddedLocator]);
+  pageUrl = embeddedComment.pageUrl;
+  const ready = [...timers.values()][0]!; timers.clear(); ready(); await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal((await storage.get("commentNavigation:7"))["commentNavigation:7"], undefined);
+});
+
 test("navigation requires exact comment identity and legacy comments never guess an activity", async () => {
   const storage = new NavigationStorage(); let pageUrl = event.page_url; let projected = true; const opened: string[] = [];
   const navigation = new EmbeddedCommentNavigation(storage, {

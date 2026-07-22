@@ -147,7 +147,7 @@ export class EmbeddedCommentNavigation {
     }
 
     const locatorAppliedToCurrentWorker = record.locatorWorkerInstanceId === current.workerInstanceId && record.locatorGeneration === current.generation;
-    if (!locatorAppliedToCurrentWorker) {
+    if (!locatorAppliedToCurrentWorker || record.state === "identity-waiting") {
       record.state = "locator-applying";
       await this.save(key, record);
       await this.dependencies.applyLocator(tabId, record.embeddedLocator!);
