@@ -99,11 +99,11 @@ The timings are targets rather than frame-accurate requirements. Numbered clips 
 | 47–52s | 10 | “Across Moodle pages…” | **MOODLE** | Navigation wait at 3×; result at 1× |
 | 52–56s | 11 | “…and Rise courses, every comment keeps its context.” | **RISE** | Navigation wait at 3×; marker at 1× |
 | 56–60s | 10 or comment list | “Resolve the issue… one place.” | None | Three short action cuts |
-| 60–63s | Roadmap intro | “And this is only the beginning.” | **COMING NEXT** | Fade through black |
-| 63–65s | Roadmap 1 | “Virtual beta testers.” | **VIRTUAL BETA TESTERS** | 2-second card; brief accent |
-| 65–67s | Roadmap 2 | “Storyline integration.” | **STORYLINE INTEGRATION** | 2-second card; brief accent |
-| 67–69s | Roadmap 3 | “An API for CUBE.” | **CUBE API** | 2-second card; brief accent |
-| 69–72s | Roadmap 4 | “And more.” | **OTHER APPLICATIONS** | 3-second card; fade through black |
+| 60–62s | Roadmap intro | “And this is only the beginning.” | **COMING NEXT** | Fade through black |
+| 62–66s | Roadmap 1 | “Virtual beta testers.” | **VIRTUAL BETA TESTERS** / Automated spelling, grammar & common-issue checks | 4-second card; brief accent |
+| 66–68s | Roadmap 2 | “Storyline integration.” | **STORYLINE INTEGRATION** | 2-second card; brief accent |
+| 68–70s | Roadmap 3 | “An API for CUBE.” | **CUBE API** | 2-second card; brief accent |
+| 70–72s | Roadmap 4 | “And more.” | **OTHER APPLICATIONS** | 2-second card; fade through black |
 | 72–75s | Final lock-up | “RADCRA. Problems can't hide.” | **RADCRA** plus expanded name | Hold to black at the end |
 
 ## Screen-capture plan
@@ -128,9 +128,9 @@ Typing, uploads, waits, and long navigation may run at 2–4×. Return to normal
 
 ## Roadmap cards
 
-The closing roadmap sequence uses three dedicated two-second cards and one three-second card:
+The closing roadmap sequence gives the detailed virtual-tester promise four seconds, followed by three concise two-second cards:
 
-1. **Virtual beta testers** — automated checks for spelling, grammar, consistency, and other common issues.
+1. **Virtual beta testers** — subtitle: **Automated spelling, grammar & common-issue checks**.
 2. **Storyline integration** — review support for Articulate Storyline content.
 3. **CUBE API** — an API enabling integration with CUBE software.
 4. **Other applications** — a deliberately open-ended suggestion that RADCRA's review model can extend further.
