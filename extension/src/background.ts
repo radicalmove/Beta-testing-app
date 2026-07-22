@@ -1,4 +1,4 @@
-import { ApiClient, authenticate, getActiveToken, lookupReviewCourse, redeemReviewerInvitation, renewReviewerDevice, resumeReviewerMembership, type SessionToken } from "./api";
+import { ApiClient, authenticate, getActiveToken, listCourseReviewers, lookupReviewCourse, redeemReviewerInvitation, renewReviewerDevice, resumeReviewerMembership, signInExistingReviewer, type SessionToken } from "./api";
 import { authorizeAuthenticateSender, authorizeResolveSender, handleCreateCommentBridge, handleCreateEmbeddedCommentBridge, handleDeleteCommentBridge, handleListCourseCommentsBridge, handleListPageCommentsBridge, handleResolveCourseBridge, normalizeErrorMessage, validateAuthenticateMessage, validateCancelScreenshotMessage, validatePageCommentsResponse, validateUploadScreenshotMessage, validateViewerResponse, type CreateCommentPayload, type ResolveCoursePayload } from "./background-bridge.ts";
 import { EmbeddedCommentNavigation, handleCommentNavigationMessage } from "./embedded-comment-navigation.ts";
 import { EmbeddedAnchorCapabilities, issueEmbeddedAnchorFromWorker } from "./embedded-anchor-capabilities.ts";
@@ -266,11 +266,18 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       if (!await authorizeResolveSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) })) throw new Error("Unauthorized access sender");
       const value = message as { type?: unknown; course_handle?: unknown };
       if (Object.keys(value).sort().join(",") !== "course_handle,type" || typeof value.course_handle !== "string") throw new Error("Invalid saved reviewer request");
-      const reviewers = new Set<string>();
-      const pending = await pendingAccess.get(value.course_handle); if (pending) reviewers.add(pending.email);
-      const saved = await chrome.storage.local.get(["deviceCourseHandle", "reviewerEmail"]);
-      if (saved.deviceCourseHandle === value.course_handle && typeof saved.reviewerEmail === "string") reviewers.add(saved.reviewerEmail.trim().toLowerCase());
-      return Array.from(reviewers).sort().map((email) => ({ email, label: email }));
+      return listCourseReviewers({ serviceOrigin: await serviceOrigin(), courseHandle: value.course_handle });
+    })();
+  } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "USE_SAVED_REVIEWER") {
+    operation = (async () => {
+      if (!await authorizeResolveSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) })) throw new Error("Unauthorized access sender");
+      const value = message as { type?: unknown; course_handle?: unknown; membership_id?: unknown };
+      if (Object.keys(value).sort().join(",") !== "course_handle,membership_id,type" || typeof value.course_handle !== "string" || typeof value.membership_id !== "string") throw new Error("Invalid existing reviewer request");
+      const access = await signInExistingReviewer({ serviceOrigin: await serviceOrigin(), courseHandle: value.course_handle, membershipId: value.membership_id });
+      if (!access.session || !access.deviceCredential || access.state !== "approved") throw new Error("Unable to verify reviewer access");
+      await chrome.storage.session.set(access.session);
+      await chrome.storage.local.set({ deviceCredential: access.deviceCredential, deviceCourseHandle: value.course_handle, reviewerMembershipId: value.membership_id });
+      return { state: access.state, role: access.role };
     })();
   } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "RESUME_REVIEW_ACCESS") {
     operation = (async () => {
@@ -288,7 +295,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       if (Object.keys(message as object).join(",") !== "type") throw new Error("Invalid sign-out request");
       if (!await authorizeResolveSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) })) throw new Error("Unauthorized sign-out sender");
       await chrome.storage.session.remove(["apiToken", "expiresAt"]);
-      await chrome.storage.local.remove(["courseTeamSession", "deviceCredential"]);
+      await chrome.storage.local.remove(["courseTeamSession", "deviceCredential", "reviewerMembershipId"]);
       return { state: "signed-out" };
     })();
   } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "AUTHENTICATE") {

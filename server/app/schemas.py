@@ -83,6 +83,15 @@ class DeviceRenewRequest(BaseModel):
     device_credential: str = Field(min_length=32, max_length=256)
 
 
+class CourseReviewerListRequest(BaseModel):
+    course_handle: uuid.UUID
+
+
+class ExistingReviewerSignInRequest(BaseModel):
+    course_handle: uuid.UUID
+    membership_id: uuid.UUID
+
+
 class MembershipStateRequest(BaseModel):
     state: str
 

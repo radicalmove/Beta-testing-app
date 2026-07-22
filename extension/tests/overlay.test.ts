@@ -251,10 +251,11 @@ test("course access form restores saved reviewers without asking them for anothe
   const window = new Window(); const document = window.document as unknown as Document;
   const submitted: any[] = [];
   let existingUses = 0;
+  let selectedMembershipId = "";
   mountReviewOverlay(document, context, "signed-out", {
     onAccessSubmit: async (input) => { submitted.push(input); return { status: "connected" }; },
-    getSavedReviewers: async () => [{ email: "richard@example.test", label: "Richard (richard@example.test)" }],
-    onUseSavedReviewer: async () => { existingUses += 1; return { status: "connected" }; },
+    getSavedReviewers: async () => [{ membershipId: "membership-1", label: "Richard · Learning designer / course developer" }],
+    onUseSavedReviewer: async (membershipId) => { selectedMembershipId = membershipId; existingUses += 1; return { status: "connected" }; },
   });
   const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   shadow.querySelector<HTMLElement>('[data-action="authenticate"]')!.click();
@@ -276,6 +277,7 @@ test("course access form restores saved reviewers without asking them for anothe
   assert.equal((form.querySelector("[data-new-fields]") as HTMLElement).hidden, true);
   (form.querySelector('[data-use-existing]') as HTMLElement).click(); await tick();
   assert.equal(existingUses, 1);
+  assert.equal(selectedMembershipId, "membership-1");
 });
 
 test("approved course-team members can sign in without an invitation", async () => {

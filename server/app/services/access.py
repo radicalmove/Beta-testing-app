@@ -115,6 +115,27 @@ def resume_membership(db: DbSession, *, course_id: uuid.UUID, email: str, reconn
     return AccessResult(membership, session_token, device, reconnect_code="")
 
 
+def list_approved_reviewers(db: DbSession, *, course_id: uuid.UUID) -> list[tuple[CourseMembership, User]]:
+    course = db.get(Course, course_id)
+    if course is None or not course.is_confirmed:
+        raise AccessDenied("Course is not enabled for review")
+    return db.execute(
+        select(CourseMembership, User)
+        .join(User, User.id == CourseMembership.user_id)
+        .where(CourseMembership.course_id == course_id, CourseMembership.state == MembershipState.APPROVED)
+        .order_by(User.display_name, User.email)
+    ).all()
+
+
+def sign_in_existing_reviewer(db: DbSession, *, course_id: uuid.UUID, membership_id: uuid.UUID) -> AccessResult:
+    membership = db.scalar(select(CourseMembership).where(CourseMembership.id == membership_id, CourseMembership.course_id == course_id))
+    if membership is None or membership.state is not MembershipState.APPROVED:
+        raise AccessDenied("Unable to verify reviewer access")
+    session_token, device = _issue_access(db, membership)
+    db.commit()
+    return AccessResult(membership, session_token, device, reconnect_code="")
+
+
 def renew_device(db: DbSession, *, course_id: uuid.UUID, device_credential: str) -> AccessResult:
     now = utc_now()
     current = db.scalar(select(DeviceCredential).where(DeviceCredential.credential_hash == token_hash(device_credential), DeviceCredential.rotated_at.is_(None), DeviceCredential.revoked_at.is_(None), DeviceCredential.expires_at > now))

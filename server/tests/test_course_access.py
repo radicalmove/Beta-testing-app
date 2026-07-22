@@ -4,7 +4,7 @@ import pytest
 
 from app.models import Course, MembershipState, User, UserRole
 from app.security import utc_now
-from app.services.access import AccessDenied, create_invitation, redeem_invitation, renew_device, resume_membership
+from app.services.access import AccessDenied, create_invitation, list_approved_reviewers, redeem_invitation, renew_device, resume_membership, sign_in_existing_reviewer
 
 
 def user(db_session, email: str, role=UserRole.BETA_TESTER) -> User:
@@ -72,3 +72,22 @@ def test_device_credential_rotates_and_old_value_cannot_be_reused(db_session):
     assert renewed.device_credential != joined.device_credential
     with pytest.raises(AccessDenied):
         renew_device(db_session, course_id=target_course.id, device_credential=joined.device_credential)
+
+
+def test_approved_course_reviewers_can_be_listed_and_signed_in_on_another_browser(db_session):
+    admin = user(db_session, "admin5@example.test", UserRole.ADMIN)
+    target_course = course(db_session)
+    _, beta_code = create_invitation(db_session, admin, target_course, "reviewer@example.test", UserRole.BETA_TESTER)
+    beta = redeem_invitation(db_session, course_id=target_course.id, display_name="Pilot Reviewer", email="reviewer@example.test", role=UserRole.BETA_TESTER, invitation_code=beta_code)
+    _, sme_code = create_invitation(db_session, admin, target_course, "pending-sme@example.test", UserRole.SME)
+    redeem_invitation(db_session, course_id=target_course.id, display_name="Pending SME", email="pending-sme@example.test", role=UserRole.SME, invitation_code=sme_code)
+
+    reviewers = list_approved_reviewers(db_session, course_id=target_course.id)
+
+    assert [(member.id, person.display_name, member.role) for member, person in reviewers] == [
+        (beta.membership.id, "Pilot Reviewer", UserRole.BETA_TESTER),
+    ]
+    signed_in = sign_in_existing_reviewer(db_session, course_id=target_course.id, membership_id=beta.membership.id)
+    assert signed_in.membership.id == beta.membership.id
+    assert signed_in.session_token
+    assert signed_in.device_credential

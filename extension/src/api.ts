@@ -4,6 +4,7 @@ type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Resp
 
 type CourseLookup = { course_handle: string; title: string };
 type ReviewerAccess = { state: string; role: string; session?: SessionToken; deviceCredential?: string; reconnectCode?: string };
+export type CourseReviewer = { membershipId: string; label: string };
 
 async function publicJson(originValue: string, path: string, body: unknown, fetcher?: Fetch): Promise<any> {
   const origin = validateServiceOrigin(originValue).origin;
@@ -18,11 +19,25 @@ export async function lookupReviewCourse(options: { serviceOrigin: string; moodl
   return body;
 }
 
+export async function listCourseReviewers(options: { serviceOrigin: string; courseHandle: string; fetch?: Fetch }): Promise<CourseReviewer[]> {
+  const body = await publicJson(options.serviceOrigin, "/api/access/reviewers", { course_handle: options.courseHandle }, options.fetch);
+  if (!Array.isArray(body?.reviewers)) throw new Error("Invalid reviewer list response");
+  return body.reviewers.map((reviewer: unknown) => {
+    if (!reviewer || typeof reviewer !== "object" || typeof (reviewer as { membership_id?: unknown }).membership_id !== "string" || typeof (reviewer as { label?: unknown }).label !== "string") throw new Error("Invalid reviewer list response");
+    return { membershipId: (reviewer as { membership_id: string }).membership_id, label: (reviewer as { label: string }).label };
+  });
+}
+
 function parseReviewerAccess(body: any, now: () => number): ReviewerAccess {
   if (typeof body?.state !== "string" || typeof body?.role !== "string") throw new Error("Invalid reviewer access response");
   if (body.state === "pending" && body.session_token == null && body.device_credential == null) return { state: body.state, role: body.role, reconnectCode: typeof body.reconnect_code === "string" ? body.reconnect_code : undefined };
   if (typeof body.session_token !== "string" || typeof body.expires_in !== "number" || typeof body.device_credential !== "string") throw new Error("Invalid reviewer access response");
   return { state: body.state, role: body.role, session: { apiToken: body.session_token, expiresAt: now() + body.expires_in * 1000 }, deviceCredential: body.device_credential, reconnectCode: typeof body.reconnect_code === "string" ? body.reconnect_code : undefined };
+}
+
+export async function signInExistingReviewer(options: { serviceOrigin: string; courseHandle: string; membershipId: string; fetch?: Fetch; now?: () => number }): Promise<ReviewerAccess> {
+  const body = await publicJson(options.serviceOrigin, "/api/access/reviewers/sign-in", { course_handle: options.courseHandle, membership_id: options.membershipId }, options.fetch);
+  return parseReviewerAccess(body, options.now ?? Date.now);
 }
 
 export async function redeemReviewerInvitation(options: { serviceOrigin: string; courseHandle: string; displayName: string; email: string; role: string; invitationCode: string; fetch?: Fetch; now?: () => number }): Promise<ReviewerAccess> {

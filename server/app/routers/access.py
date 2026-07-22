@@ -7,11 +7,18 @@ from sqlalchemy.orm import Session as DbSession
 from app.db import get_session
 from app.dependencies import current_dashboard_user, current_extension_user, require_course_access
 from app.models import AuditEvent, Course, CourseMembership, MembershipState, User, UserRole
-from app.schemas import CourseLookupRequest, DeviceRenewRequest, InvitationCreateRequest, InvitationRedeemRequest, MembershipResumeRequest, MembershipStateRequest
+from app.schemas import CourseLookupRequest, CourseReviewerListRequest, DeviceRenewRequest, ExistingReviewerSignInRequest, InvitationCreateRequest, InvitationRedeemRequest, MembershipResumeRequest, MembershipStateRequest
 from app.security import utc_now
-from app.services.access import AccessDenied, create_invitation, redeem_invitation, renew_device, resume_membership
+from app.services.access import AccessDenied, create_invitation, list_approved_reviewers, redeem_invitation, renew_device, resume_membership, sign_in_existing_reviewer
 
 router = APIRouter(tags=["course access"])
+
+ROLE_LABELS = {
+    UserRole.BETA_TESTER: "Beta tester",
+    UserRole.SME: "Subject matter expert",
+    UserRole.LD_DCD: "Learning designer / course developer",
+    UserRole.ADMIN: "Administrator",
+}
 
 
 def _access_json(result) -> dict:
@@ -31,6 +38,26 @@ def lookup_course(payload: CourseLookupRequest, db: DbSession = Depends(get_sess
     if course is None:
         raise HTTPException(status_code=404, detail="Course not enabled for review")
     return {"course_handle": str(course.id), "title": course.title}
+
+
+@router.post("/api/access/reviewers")
+def approved_reviewers(payload: CourseReviewerListRequest, db: DbSession = Depends(get_session)) -> dict:
+    try:
+        reviewers = list_approved_reviewers(db, course_id=payload.course_handle)
+    except AccessDenied as exc:
+        raise HTTPException(status_code=404, detail="Course not enabled for review") from exc
+    return {"reviewers": [
+        {"membership_id": str(membership.id), "label": f"{reviewer.display_name} · {ROLE_LABELS[membership.role]}"}
+        for membership, reviewer in reviewers
+    ]}
+
+
+@router.post("/api/access/reviewers/sign-in")
+def sign_in_existing(payload: ExistingReviewerSignInRequest, db: DbSession = Depends(get_session)) -> dict:
+    try:
+        return _access_json(sign_in_existing_reviewer(db, course_id=payload.course_handle, membership_id=payload.membership_id))
+    except AccessDenied as exc:
+        raise HTTPException(status_code=403, detail="Unable to verify reviewer access") from exc
 
 
 @router.post("/api/access/redeem")

@@ -312,7 +312,14 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
     if (response.state === "pending") { scheduleApprovalCheck(); return { status: "pending", message: waitingForApproval }; }
     lastSignature = ""; refresh();
     return { status: "connected" };
-  }, getSavedReviewers: () => courseHandle ? send<Array<{ email: string; label: string }>>({ type: "LIST_SAVED_REVIEWERS", course_handle: courseHandle }) : Promise.resolve([]), onUseSavedReviewer: () => checkPendingApproval(), onCheckApproval: checkPendingApproval, onSignOut: async () => { await send({ type: "SIGN_OUT" }); lastSignature = ""; latestComments = []; }, onAuthenticate: () => new Promise((resolve) => {
+  }, getSavedReviewers: () => courseHandle ? send<Array<{ membershipId: string; label: string }>>({ type: "LIST_SAVED_REVIEWERS", course_handle: courseHandle }) : Promise.resolve([]), onUseSavedReviewer: async (membershipId) => {
+    if (!courseHandle) throw new Error("Course not enabled for review");
+    const response = await send<{ state: string }>({ type: "USE_SAVED_REVIEWER", course_handle: courseHandle, membership_id: membershipId });
+    if (response.state !== "approved") throw new Error("Unable to verify reviewer access");
+    lastSignature = "";
+    refresh();
+    return { status: "connected" };
+  }, onCheckApproval: checkPendingApproval, onSignOut: async () => { await send({ type: "SIGN_OUT" }); lastSignature = ""; latestComments = []; }, onAuthenticate: () => new Promise((resolve) => {
     sendRuntimeMessage(runtime, { type: "AUTHENTICATE" }, (response) => {
       if (!response?.ok) {
         if ((response?.status as string | undefined) === "cancelled") resolve({ status: "signed-out", message: "Sign-in cancelled" });
