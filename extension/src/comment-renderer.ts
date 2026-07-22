@@ -30,7 +30,7 @@ export type CommentRendererOptions = {
 
 const rendererStyles = `:host{all:initial;font:16px/1.5 Poppins,Arial,sans-serif;color:#102f38}button,textarea,input{box-sizing:border-box;font:inherit}button{appearance:none;min-height:36px;border:2px solid #073f3e;border-radius:5px;background:#fff;color:#073f3e;font-weight:650;padding:7px 9px;cursor:pointer}.thread-action:hover,.thread-action[aria-pressed="true"]{background:#073f3e;color:#fff}.thread-top-actions{display:contents}.thread-edit,.thread-delete,button.resolve-toggle{position:absolute;top:8px;width:34px;min-height:34px;height:34px;padding:2px;border-radius:5px}.thread-edit{right:92px;border:2px solid #a84f12;background:#fff;color:#a84f12;font-size:23px;line-height:1}.thread-edit:hover,.thread-edit[aria-pressed="true"]{background:#a84f12;color:#fff}.thread-delete{right:8px;border:2px solid #d73b3d;background:#d73b3d;color:#fff}.thread-edit svg,.thread-delete svg,button.resolve-toggle svg,.thread-sme-toggle svg{display:block;width:100%;height:100%}.thread-delete:hover{border-color:#d73b3d;background:#fff;color:#d73b3d}button.resolve-toggle{right:50px;margin:0;border:2px solid #111;border-radius:2px;background:#fff}button.resolve-toggle:hover,.thread-sme-toggle:hover{border-color:#111;background:#f4f4f4}.status-hover-tick{opacity:0;transition:opacity .15s ease}button.resolve-toggle:hover .status-hover-tick,.thread-sme-toggle:hover .status-hover-tick{opacity:.28}.status-resolved-tick{opacity:1}.thread-status{margin:8px 0 0;color:#a51d24;font-size:13px;font-weight:650}.thread-navigation{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}.thread-navigation button{height:34px;min-height:34px;padding:3px 6px;white-space:nowrap}.thread-navigation button:disabled{cursor:default;opacity:.42}.thread-previous,.thread-next{border-color:#356f9f;color:#356f9f}.thread-previous:not(:disabled):hover,.thread-next:not(:disabled):hover{background:#356f9f;color:#fff}.thread-reply{border-color:#073f3e;color:#073f3e}.thread-reply:hover,.thread-reply[aria-expanded="true"]{background:#073f3e;color:#fff}.comment-composer[data-reply-composer]{margin-top:12px}.comment-composer-field-row{display:grid;grid-template-columns:minmax(0,1fr) 34px;gap:8px;align-items:start;margin-right:-6px}.comment-composer-field-row textarea{min-width:0;width:100%;min-height:72px}.comment-composer-save{box-sizing:border-box;width:34px;height:34px;min-height:34px;padding:2px;border:2px solid #176b43;border-radius:5px;background:#176b43;color:#fff}.comment-composer-save svg{display:block;width:100%;height:100%}.comment-composer-save:hover{background:#fff;color:#176b43}.comment-composer-actions{display:flex;justify-content:flex-end;margin-top:8px}.comment-composer-cancel{box-sizing:border-box;width:calc((100% - 16px)/3);height:34px;min-height:34px;padding:3px 9px;border:2px solid #d73b3d;border-radius:5px;background:#d73b3d;color:#fff;font:inherit;font-weight:650;line-height:1}.comment-composer-cancel:hover{background:#fff;color:#d73b3d}.attachment-field{display:block;margin:10px 0;font-size:13px;font-weight:650}.attachment-field input{display:block;width:100%;margin-top:4px;font-size:12px;font-weight:400}`;
 
-const conversationStyles = `.thread-message{max-width:92%;margin-top:8px;padding:9px 10px;border:1px solid #b8dcdc;border-radius:8px;background:#f8fbfb}.thread-message-origin{margin-right:8%;background:#effafa;border-color:#8ad9d8}.thread-message-reply{margin-left:8%}.thread-message-participant-0{border-left:5px solid #356f9f}.thread-message-participant-1{border-left:5px solid #b85812}.thread-message-participant-2{border-left:5px solid #6d4a8e}.thread-message-participant-3{border-left:5px solid #176b43}.thread-message-byline{margin:0 0 3px;font-size:11px;font-weight:700;color:#52666c}.thread-message-body{white-space:pre-wrap;overflow-wrap:anywhere}.thread-share-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:8px}.thread-share-sme{grid-column:1/-1;border-color:#b85812;color:#b85812}.thread-share-sme:hover,.thread-share-sme[aria-expanded="true"]{background:#b85812;color:#fff}.thread-sme-access{display:flex;align-items:flex-start;gap:8px;margin-top:8px}.thread-sme-chooser{flex:1;min-width:0;margin:0;padding:9px;border:1px solid #8ad9d8;border-radius:8px}.thread-sme-option{display:grid;grid-template-columns:minmax(0,1fr) 34px;align-items:center;gap:8px;padding:5px 0}.thread-sme-toggle{position:static;width:34px;height:34px;min-height:34px;margin:0;padding:2px;border:2px solid #111;border-radius:2px;background:#fff}.thread-sme-save{flex:0 0 34px;width:34px;height:34px;min-height:34px;padding:2px;border-color:#176b43;background:#176b43;color:#fff}.thread-sme-save:hover{background:#fff;color:#176b43}`;
+const conversationStyles = `.thread-message{max-width:92%;margin-top:8px;padding:9px 10px;border:1px solid #b8dcdc;border-radius:8px;background:#f8fbfb}.thread-message-origin{margin-right:8%;background:#effafa;border-color:#8ad9d8}.thread-message-reply{margin-left:8%}.thread-message-origin-participant{margin-left:0;margin-right:8%}.thread-message-other-participant{margin-left:8%;margin-right:0}.thread-message-participant-0{border-left:5px solid #356f9f}.thread-message-participant-1{border-left:5px solid #b85812}.thread-message-participant-2{border-left:5px solid #6d4a8e}.thread-message-participant-3{border-left:5px solid #176b43}.thread-message-byline{margin:0 0 3px;font-size:11px;font-weight:700;color:#52666c}.thread-message-body{white-space:pre-wrap;overflow-wrap:anywhere}.thread-share-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:8px}.thread-share-sme{grid-column:1/-1;border-color:#b85812;color:#b85812}.thread-share-sme:hover,.thread-share-sme[aria-expanded="true"]{background:#b85812;color:#fff}.thread-sme-access{display:flex;align-items:flex-start;gap:8px;margin-top:8px}.thread-sme-chooser{flex:1;min-width:0;margin:0;padding:9px;border:1px solid #8ad9d8;border-radius:8px}.thread-sme-option{display:grid;grid-template-columns:minmax(0,1fr) 34px;align-items:center;gap:8px;padding:5px 0}.thread-sme-toggle{position:static;width:34px;height:34px;min-height:34px;margin:0;padding:2px;border:2px solid #111;border-radius:2px;background:#fff}.thread-sme-save{flex:0 0 34px;width:34px;height:34px;min-height:34px;padding:2px;border-color:#176b43;background:#176b43;color:#fff}.thread-sme-save:hover{background:#fff;color:#176b43}`;
 
 const attachmentAccept = ".pdf,.doc,.docx,.png,.jpg,.jpeg,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg";
 const maxAttachmentBytes = 10 * 1024 * 1024;
@@ -75,9 +75,31 @@ function participantIndex(author: { display_name: string; role: string }): numbe
   return Math.abs(hash) % 4;
 }
 
-function threadMessage(document: Document, author: { display_name: string; role: string }, body: string, origin = false): HTMLElement {
+const participantColours = ["#356f9f", "#b85812", "#6d4a8e", "#176b43", "#a51d24", "#4f5f9f", "#087d7a", "#8b5a2b"];
+
+function participantKey(author: { display_name: string; role: string }): string {
+  return `${author.display_name}\u0000${author.role}`;
+}
+
+function participantColour(author: { display_name: string; role: string }, participants: Map<string, number>): string {
+  const key = participantKey(author);
+  let index = participants.get(key);
+  if (index === undefined) {
+    index = participants.size;
+    participants.set(key, index);
+  }
+  return participantColours[index] ?? `hsl(${Math.round((index * 137.508) % 360)} 47% 37%)`;
+}
+
+function sameParticipant(left: { display_name: string; role: string }, right: { display_name: string; role: string }): boolean {
+  return left.display_name === right.display_name && left.role === right.role;
+}
+
+function threadMessage(document: Document, author: { display_name: string; role: string }, body: string, origin = false, originParticipant = false, colour?: string): HTMLElement {
   const node = document.createElement("div");
-  node.className = `thread-message ${origin ? "thread-message-origin" : "thread-message-reply"} thread-message-participant-${participantIndex(author)}`;
+  const replyAlignment = origin ? "" : originParticipant ? " thread-message-origin-participant" : " thread-message-other-participant";
+  node.className = `thread-message ${origin ? "thread-message-origin" : "thread-message-reply"}${replyAlignment} thread-message-participant-${participantIndex(author)}`;
+  if (colour) node.style.borderLeftColor = colour;
   const byline = document.createElement("p"); byline.className = "thread-message-byline"; byline.textContent = `${author.display_name} · ${author.role.replaceAll("_", " ")}`;
   const content = document.createElement("div"); content.className = "thread-message-body"; content.textContent = body;
   if (origin) node.append(content);
@@ -183,10 +205,12 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
     closeThread(false);
     activeThreadId = comment.id; marker.setAttribute("aria-expanded", "true"); marker.style.background = "#b85812"; marker.style.borderColor = "#7b3509";
     const article = document.createElement("article"); article.dataset.threadPopover = "true"; article.tabIndex = -1;
+    const threadParticipants = new Map<string, number>();
+    for (const participant of [comment.author, ...comment.replies.map((reply) => reply.author)]) participantColour(participant, threadParticipants);
     const courseIndex = courseOpenComments.findIndex((candidate) => candidate.id === comment.id);
     const contextLine = document.createElement("p"); contextLine.dataset.threadPosition = "true"; contextLine.textContent = courseIndex >= 0 ? `Comment ${courseIndex + 1} of ${courseOpenComments.length}` : "Resolved comment"; contextLine.style.cssText = "margin:0 126px 4px 0;font-size:12px;color:#52666c";
     const byline = document.createElement("p"); byline.textContent = `${comment.author.display_name} · ${comment.author.role.replaceAll("_", " ")}`; byline.style.cssText = "margin:0 126px 10px 0;font-size:13px;font-weight:650";
-    const body = threadMessage(document, comment.author, comment.body, true); body.dataset.threadOriginal = "true";
+    const body = threadMessage(document, comment.author, comment.body, true, false, participantColour(comment.author, threadParticipants)); body.dataset.threadOriginal = "true";
     const topActions = document.createElement("div"); topActions.className = "thread-top-actions"; topActions.dataset.threadTopActions = "true";
     article.append(contextLine, byline, body, topActions);
 
@@ -208,7 +232,7 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
       topActions.append(edit);
     }
 
-    for (const reply of comment.replies) article.append(threadMessage(document, reply.author, reply.body));
+    for (const reply of comment.replies) article.append(threadMessage(document, reply.author, reply.body, false, sameParticipant(comment.author, reply.author), participantColour(reply.author, threadParticipants)));
 
     let replyToggle: HTMLButtonElement | undefined;
     if (comment.capabilities.can_reply && options.replyThread) {
@@ -227,7 +251,7 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
         input.placeholder = "Add a reply…"; input.setAttribute("aria-label", "Add a reply");
         const close = () => { composer.remove(); actions.remove(); clearErrors(article); toggle.setAttribute("aria-expanded", "false"); toggle.focus(); };
         cancel.addEventListener("click", close);
-        save.addEventListener("click", async () => { const value = input.value.trim(); if (!value) return; save.disabled = true; try { await runMutation(() => options.replyThread!(comment.id, value)); const file = attachment.files?.[0]; if (file && options.uploadAttachment) await runMutation(async () => options.uploadAttachment!(comment.id, await readAttachment(document, file))); const viewer = options.currentViewer?.(); toggle.before(threadMessage(document, { display_name: viewer?.display_name || viewer?.email || "You", role: viewer?.role || "reviewer" }, value)); close(); } catch (error) { save.disabled = false; showError(article, error, "Could not save reply"); } });
+        save.addEventListener("click", async () => { const value = input.value.trim(); if (!value) return; save.disabled = true; try { await runMutation(() => options.replyThread!(comment.id, value)); const file = attachment.files?.[0]; if (file && options.uploadAttachment) await runMutation(async () => options.uploadAttachment!(comment.id, await readAttachment(document, file))); const viewer = options.currentViewer?.(); const author = { display_name: viewer?.display_name || viewer?.email || "You", role: viewer?.role || "reviewer" }; toggle.before(threadMessage(document, author, value, false, sameParticipant(comment.author, author), participantColour(author, threadParticipants))); close(); } catch (error) { save.disabled = false; showError(article, error, "Could not save reply"); } });
         article.querySelector("[data-thread-navigation]")?.before(composer); article.querySelector("[data-thread-navigation]")?.after(actions); toggle.setAttribute("aria-expanded", "true"); input.focus();
       });
     }

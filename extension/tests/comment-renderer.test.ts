@@ -69,6 +69,46 @@ test("standalone SCORM threads use the established Poppins typography and button
   renderer.destroy();
 });
 
+test("replies from the original commenter stay left-aligned while other participants align right", () => {
+  const { document } = setup();
+  const renderer = createCommentRenderer(document, pageUrl);
+  renderer.setComments([comment({
+    replies: [
+      { id: "00000000-0000-4000-8000-000000000011", body: "Original reviewer follow-up", author: { display_name: "Reviewer", role: "beta_tester" } },
+      { id: "00000000-0000-4000-8000-000000000012", body: "Course-team response", author: { display_name: "Learning designer", role: "ld_dcd" } },
+    ],
+  })]);
+
+  document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")!.click();
+  const shadow = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!;
+  const replies = Array.from(shadow.querySelectorAll<HTMLElement>("[data-thread-popover] .thread-message-reply"));
+  assert.equal(replies.length, 2);
+  assert.ok(replies[0].classList.contains("thread-message-origin-participant"));
+  assert.ok(replies[1].classList.contains("thread-message-other-participant"));
+  const css = shadow.querySelector("style")!.textContent!;
+  assert.match(css, /\.thread-message-origin-participant\{margin-left:0;margin-right:8%/);
+  assert.match(css, /\.thread-message-other-participant\{margin-left:8%;margin-right:0/);
+  renderer.destroy();
+});
+
+test("each participant in a thread receives a distinct reply colour", () => {
+  const { document } = setup();
+  const renderer = createCommentRenderer(document, pageUrl);
+  renderer.setComments([comment({
+    replies: [
+      { id: "00000000-0000-4000-8000-000000000021", body: "Administrator response", author: { display_name: "Richard Davies", role: "admin" } },
+      { id: "00000000-0000-4000-8000-000000000022", body: "SME response", author: { display_name: "Pilot SME", role: "sme" } },
+    ],
+  })]);
+
+  document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")!.click();
+  const shadow = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!;
+  const replies = Array.from(shadow.querySelectorAll<HTMLElement>("[data-thread-popover] .thread-message-reply"));
+  assert.equal(replies.length, 2);
+  assert.notEqual(replies[0].style.borderLeftColor, replies[1].style.borderLeftColor);
+  renderer.destroy();
+});
+
 test("nested SCORM scrolling hides offscreen markers and their open threads", async () => {
   const { window, document } = setup();
   const target = document.querySelector<HTMLElement>("#target")!;
