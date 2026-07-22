@@ -1,7 +1,7 @@
 {
   "name": "moodle-course-review-extension",
   "private": true,
-  "version": "0.5.8",
+  "version": "0.5.9",
   "type": "module",
   "scripts": {
     "test": "node --test --test-concurrency=1 tests/*.test.ts",

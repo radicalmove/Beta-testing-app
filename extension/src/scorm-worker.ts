@@ -42,6 +42,15 @@ export function embeddedPageIdentity(window: Window & typeof globalThis, documen
   return { pageUrl: identity.href, pageTitle: `Embedded activity · ${label}`, embeddedLocator };
 }
 
+function activateRiseCover(document: Document): boolean {
+  const candidates = document.querySelectorAll<HTMLAnchorElement>('a.one-page-cover__start-link[aria-label="Start"]');
+  if (candidates.length !== 1) return false;
+  const start = candidates[0];
+  if (!/^#\/lessons\/[A-Za-z0-9_-]{1,256}$/.test(start.getAttribute("href") ?? "")) return false;
+  start.click();
+  return true;
+}
+
 export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
   const { window, document } = options;
   const navigate = options.navigate ?? ((destination: URL, mode: "hash" | "route") => {
@@ -196,6 +205,7 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
         }
         case "SCORM_APPLY_LOCATOR": {
           try {
+            if (activateRiseCover(document)) return acknowledgement(command, true);
             const destination = new URL(command.payload.embedded_locator, window.location.href);
             if (destination.origin !== window.location.origin) return acknowledgement(command, false, "LOCATOR_ORIGIN_MISMATCH");
             const mode = command.payload.embedded_locator.startsWith("#") ? "hash" : "route";

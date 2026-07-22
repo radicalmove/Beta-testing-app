@@ -238,6 +238,25 @@ test("apply-locator retains hash-only Rise navigation on the current document", 
   worker.destroy();
 });
 
+test("apply-locator opens the exact Rise cover before navigating to the saved lesson", () => {
+  let navigations = 0;
+  const { window, worker, refresh } = createHarness(() => { navigations += 1; return true; });
+  window.document.body.innerHTML = '<main><h1>Course cover</h1><a class="one-page-cover__start-link" aria-label="Start" href="#/lessons/first">Start</a></main>';
+  const start = window.document.querySelector(".one-page-cover__start-link") as unknown as HTMLAnchorElement;
+  let starts = 0; start.addEventListener("click", (event: Event) => { event.preventDefault(); starts += 1; start.remove(); window.location.hash = "/lessons/first"; window.document.title = "Lesson 1"; window.document.querySelector("h1")!.textContent = "Lesson 1"; });
+
+  const first = worker.handleCommand(command(window, "SCORM_APPLY_LOCATOR", { embedded_locator: "#/lessons/saved" }));
+  assert.equal(first.ok, true);
+  assert.equal(starts, 1);
+  assert.equal(navigations, 0);
+
+  refresh();
+  const second = worker.handleCommand({ ...command(window, "SCORM_APPLY_LOCATOR", { embedded_locator: "#/lessons/saved" }), request_id: "423e4567-e89b-42d3-a456-426614174000" });
+  assert.equal(second.ok, true);
+  assert.equal(navigations, 1);
+  worker.destroy();
+});
+
 test("apply-locator does not acknowledge success when route navigation fails", () => {
   const attempts: Array<{ href: string; mode: string }> = [];
   const { window, worker } = createHarness((destination, mode) => {
