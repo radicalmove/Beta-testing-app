@@ -4,7 +4,7 @@ import pytest
 
 from app.models import Course, MembershipState, User, UserRole
 from app.security import utc_now
-from app.services.access import AccessDenied, create_invitation, list_approved_reviewers, redeem_invitation, renew_device, resume_membership, sign_in_existing_reviewer
+from app.services.access import AccessDenied, create_invitation, find_approved_reviewer, list_approved_reviewers, redeem_invitation, renew_device, resume_membership, sign_in_existing_reviewer
 
 
 def user(db_session, email: str, role=UserRole.BETA_TESTER) -> User:
@@ -87,6 +87,9 @@ def test_approved_course_reviewers_can_be_listed_and_signed_in_on_another_browse
     assert [(member.id, person.display_name, member.role) for member, person in reviewers] == [
         (beta.membership.id, "Pilot Reviewer", UserRole.BETA_TESTER),
     ]
+    found = find_approved_reviewer(db_session, course_id=target_course.id, email=" REVIEWER@EXAMPLE.TEST ")
+    assert found[0].id == beta.membership.id
+    assert find_approved_reviewer(db_session, course_id=target_course.id, email="pending-sme@example.test") is None
     signed_in = sign_in_existing_reviewer(db_session, course_id=target_course.id, membership_id=beta.membership.id)
     assert signed_in.membership.id == beta.membership.id
     assert signed_in.session_token

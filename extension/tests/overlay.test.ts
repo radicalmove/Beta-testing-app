@@ -247,14 +247,14 @@ test("connected viewers can explicitly sign out without forgetting their course 
   assert.equal(shadow.querySelector<HTMLElement>('[data-viewer-line]')!.hidden, true);
 });
 
-test("course access form restores saved reviewers without asking them for another code", async () => {
+test("course access form finds an approved reviewer by email and confirms their identity", async () => {
   const window = new Window(); const document = window.document as unknown as Document;
   const submitted: any[] = [];
   let existingUses = 0;
   let selectedMembershipId = "";
   mountReviewOverlay(document, context, "signed-out", {
     onAccessSubmit: async (input) => { submitted.push(input); return { status: "connected" }; },
-    getSavedReviewers: async () => [{ membershipId: "membership-1", label: "Richard · Learning designer / course developer" }],
+    findApprovedReviewer: async (email) => email === "richard@example.test" ? { membershipId: "membership-1", label: "Richard · Learning designer / course developer" } : undefined,
     onUseSavedReviewer: async (membershipId) => { selectedMembershipId = membershipId; existingUses += 1; return { status: "connected" }; },
   });
   const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
@@ -262,6 +262,7 @@ test("course access form restores saved reviewers without asking them for anothe
   const form = shadow.querySelector<HTMLFormElement>("[data-access-form]")!;
   assert.ok(form);
   assert.match(form.textContent!, /New reviewer|Existing reviewer/);
+  assert.doesNotMatch(form.textContent!, /Learning designer or course developer/);
   assert.doesNotMatch(form.textContent!, /reconnect/i);
   assert.match(form.textContent!, /Invitation code/);
   assert.equal(shadow.querySelectorAll("[data-reviewer-name]").length, 0);
@@ -273,9 +274,14 @@ test("course access form restores saved reviewers without asking them for anothe
   assert.equal(submitted.length, 0);
   shadow.querySelector<HTMLElement>('[data-mode="existing"]')!.click();
   await tick();
-  assert.match(form.textContent!, /Richard/);
   assert.equal((form.querySelector("[data-new-fields]") as HTMLElement).hidden, true);
-  (form.querySelector('[data-use-existing]') as HTMLElement).click(); await tick();
+  assert.match(form.textContent!, /Admin sign in/);
+  assert.equal(form.querySelector("[data-admin-sign-in]")?.closest("[data-existing-fields]") !== null, true);
+  (form.querySelector('[name="existingEmail"]') as HTMLInputElement).value = "richard@example.test";
+  (form.querySelector('[data-find-existing]') as HTMLElement).click(); await tick();
+  assert.match(form.textContent!, /Richard · Learning designer/);
+  assert.match(form.textContent!, /r\*{5}d@example\.test/i);
+  (form.querySelector('[data-confirm-existing]') as HTMLElement).click(); await tick();
   assert.equal(existingUses, 1);
   assert.equal(selectedMembershipId, "membership-1");
 });
@@ -287,8 +293,9 @@ test("approved course-team members can sign in without an invitation", async () 
   const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   shadow.querySelector<HTMLElement>('[data-action="authenticate"]')!.click();
   const form = shadow.querySelector<HTMLFormElement>("[data-access-form]")!;
-  assert.match(form.textContent!, /Course team sign in/);
-  form.querySelector<HTMLElement>("[data-team-sign-in]")!.click(); await tick();
+  form.querySelector<HTMLElement>('[data-mode="existing"]')!.click(); await tick();
+  assert.match(form.textContent!, /Admin sign in/);
+  form.querySelector<HTMLElement>("[data-admin-sign-in]")!.click(); await tick();
   assert.equal(teamSignIns, 1);
   assert.match(shadow.querySelector("[data-status-message]")!.textContent!, /Connected/);
 });

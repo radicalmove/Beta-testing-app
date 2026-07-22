@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ApiClient, authenticate, getActiveToken, listCourseReviewers, lookupReviewCourse, redeemReviewerInvitation, signInExistingReviewer, validateServiceOrigin } from "../src/api.ts";
+import { ApiClient, authenticate, findCourseReviewer, getActiveToken, lookupReviewCourse, redeemReviewerInvitation, signInExistingReviewer, validateServiceOrigin } from "../src/api.ts";
 
 test("API calls use the configured private service origin and bearer token", async () => {
   const calls: Array<{ url: string; init?: RequestInit }> = [];
@@ -162,21 +162,22 @@ test("course lookup and invitation redemption use public credential-free endpoin
   assert.equal(requests.every((request) => request.init?.credentials === "omit"), true);
 });
 
-test("existing reviewers can be listed and signed in for the current course", async () => {
+test("existing reviewers can be found by email and signed in for the current course", async () => {
   const requests: Array<{ url: string; init?: RequestInit }> = [];
   const fetcher = async (url: string | URL | Request, init?: RequestInit) => {
     requests.push({ url: String(url), init });
     if (String(url).endsWith("/api/access/reviewers")) {
-      return new Response(JSON.stringify({ reviewers: [{ membership_id: "member-1", label: "Pilot LD · Learning designer / course developer" }] }), { status: 200 });
+      return new Response(JSON.stringify({ reviewer: { membership_id: "member-1", label: "Pilot LD · Learning designer / course developer" } }), { status: 200 });
     }
     return new Response(JSON.stringify({ state: "approved", role: "ld_dcd", session_token: "session", expires_in: 28800, device_credential: "device" }), { status: 200 });
   };
 
-  const reviewers = await listCourseReviewers({ serviceOrigin: "https://review.example.org", courseHandle: "course-1", fetch: fetcher });
+  const reviewer = await findCourseReviewer({ serviceOrigin: "https://review.example.org", courseHandle: "course-1", email: "Pilot.LD@Example.test", fetch: fetcher });
   const access = await signInExistingReviewer({ serviceOrigin: "https://review.example.org", courseHandle: "course-1", membershipId: "member-1", fetch: fetcher });
 
-  assert.deepEqual(reviewers, [{ membershipId: "member-1", label: "Pilot LD · Learning designer / course developer" }]);
+  assert.deepEqual(reviewer, { membershipId: "member-1", label: "Pilot LD · Learning designer / course developer" });
   assert.equal(access.session?.apiToken, "session");
+  assert.deepEqual(JSON.parse(String(requests[0]?.init?.body)), { course_handle: "course-1", email: "Pilot.LD@Example.test" });
   assert.deepEqual(JSON.parse(String(requests[1]?.init?.body)), { course_handle: "course-1", membership_id: "member-1" });
   assert.equal(requests.every((request) => new Headers(request.init?.headers).get("Authorization") === null), true);
 });

@@ -312,7 +312,7 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
     if (response.state === "pending") { scheduleApprovalCheck(); return { status: "pending", message: waitingForApproval }; }
     lastSignature = ""; refresh();
     return { status: "connected" };
-  }, getSavedReviewers: () => courseHandle ? send<Array<{ membershipId: string; label: string }>>({ type: "LIST_SAVED_REVIEWERS", course_handle: courseHandle }) : Promise.resolve([]), onUseSavedReviewer: async (membershipId) => {
+  }, findApprovedReviewer: (email) => courseHandle ? send<{ membershipId: string; label: string } | undefined>({ type: "FIND_APPROVED_REVIEWER", course_handle: courseHandle, email }) : Promise.resolve(undefined), onUseSavedReviewer: async (membershipId) => {
     if (!courseHandle) throw new Error("Course not enabled for review");
     const response = await send<{ state: string }>({ type: "USE_SAVED_REVIEWER", course_handle: courseHandle, membership_id: membershipId });
     if (response.state !== "approved") throw new Error("Unable to verify reviewer access");

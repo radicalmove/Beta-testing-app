@@ -127,6 +127,21 @@ def list_approved_reviewers(db: DbSession, *, course_id: uuid.UUID) -> list[tupl
     ).all()
 
 
+def find_approved_reviewer(db: DbSession, *, course_id: uuid.UUID, email: str) -> tuple[CourseMembership, User] | None:
+    course = db.get(Course, course_id)
+    if course is None or not course.is_confirmed:
+        raise AccessDenied("Course is not enabled for review")
+    return db.execute(
+        select(CourseMembership, User)
+        .join(User, User.id == CourseMembership.user_id)
+        .where(
+            CourseMembership.course_id == course_id,
+            CourseMembership.state == MembershipState.APPROVED,
+            User.email == _email(email),
+        )
+    ).first()
+
+
 def sign_in_existing_reviewer(db: DbSession, *, course_id: uuid.UUID, membership_id: uuid.UUID) -> AccessResult:
     membership = db.scalar(select(CourseMembership).where(CourseMembership.id == membership_id, CourseMembership.course_id == course_id))
     if membership is None or membership.state is not MembershipState.APPROVED:

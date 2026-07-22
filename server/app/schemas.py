@@ -85,6 +85,7 @@ class DeviceRenewRequest(BaseModel):
 
 class CourseReviewerListRequest(BaseModel):
     course_handle: uuid.UUID
+    email: str | None = Field(default=None, min_length=3, max_length=320)
 
 
 class ExistingReviewerSignInRequest(BaseModel):

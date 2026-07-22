@@ -19,13 +19,12 @@ export async function lookupReviewCourse(options: { serviceOrigin: string; moodl
   return body;
 }
 
-export async function listCourseReviewers(options: { serviceOrigin: string; courseHandle: string; fetch?: Fetch }): Promise<CourseReviewer[]> {
-  const body = await publicJson(options.serviceOrigin, "/api/access/reviewers", { course_handle: options.courseHandle }, options.fetch);
-  if (!Array.isArray(body?.reviewers)) throw new Error("Invalid reviewer list response");
-  return body.reviewers.map((reviewer: unknown) => {
-    if (!reviewer || typeof reviewer !== "object" || typeof (reviewer as { membership_id?: unknown }).membership_id !== "string" || typeof (reviewer as { label?: unknown }).label !== "string") throw new Error("Invalid reviewer list response");
-    return { membershipId: (reviewer as { membership_id: string }).membership_id, label: (reviewer as { label: string }).label };
-  });
+export async function findCourseReviewer(options: { serviceOrigin: string; courseHandle: string; email: string; fetch?: Fetch }): Promise<CourseReviewer | undefined> {
+  const body = await publicJson(options.serviceOrigin, "/api/access/reviewers", { course_handle: options.courseHandle, email: options.email }, options.fetch);
+  if (body?.reviewer == null) return undefined;
+  const reviewer = body.reviewer as { membership_id?: unknown; label?: unknown };
+  if (typeof reviewer.membership_id !== "string" || typeof reviewer.label !== "string") throw new Error("Invalid reviewer lookup response");
+  return { membershipId: reviewer.membership_id, label: reviewer.label };
 }
 
 function parseReviewerAccess(body: any, now: () => number): ReviewerAccess {

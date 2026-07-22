@@ -9,7 +9,7 @@ from app.dependencies import current_dashboard_user, current_extension_user, req
 from app.models import AuditEvent, Course, CourseMembership, MembershipState, User, UserRole
 from app.schemas import CourseLookupRequest, CourseReviewerListRequest, DeviceRenewRequest, ExistingReviewerSignInRequest, InvitationCreateRequest, InvitationRedeemRequest, MembershipResumeRequest, MembershipStateRequest
 from app.security import utc_now
-from app.services.access import AccessDenied, create_invitation, list_approved_reviewers, redeem_invitation, renew_device, resume_membership, sign_in_existing_reviewer
+from app.services.access import AccessDenied, create_invitation, find_approved_reviewer, list_approved_reviewers, redeem_invitation, renew_device, resume_membership, sign_in_existing_reviewer
 
 router = APIRouter(tags=["course access"])
 
@@ -43,13 +43,19 @@ def lookup_course(payload: CourseLookupRequest, db: DbSession = Depends(get_sess
 @router.post("/api/access/reviewers")
 def approved_reviewers(payload: CourseReviewerListRequest, db: DbSession = Depends(get_session)) -> dict:
     try:
-        reviewers = list_approved_reviewers(db, course_id=payload.course_handle)
+        if payload.email is None:
+            reviewers = list_approved_reviewers(db, course_id=payload.course_handle)
+            return {"reviewers": [
+                {"membership_id": str(membership.id), "label": f"{reviewer.display_name} · {ROLE_LABELS[membership.role]}"}
+                for membership, reviewer in reviewers
+            ]}
+        result = find_approved_reviewer(db, course_id=payload.course_handle, email=payload.email)
     except AccessDenied as exc:
         raise HTTPException(status_code=404, detail="Course not enabled for review") from exc
-    return {"reviewers": [
-        {"membership_id": str(membership.id), "label": f"{reviewer.display_name} · {ROLE_LABELS[membership.role]}"}
-        for membership, reviewer in reviewers
-    ]}
+    if result is None:
+        return {"reviewer": None}
+    membership, reviewer = result
+    return {"reviewer": {"membership_id": str(membership.id), "label": f"{reviewer.display_name} · {ROLE_LABELS[membership.role]}"}}
 
 
 @router.post("/api/access/reviewers/sign-in")

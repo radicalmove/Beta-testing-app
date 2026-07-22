@@ -1,4 +1,4 @@
-import { ApiClient, authenticate, getActiveToken, listCourseReviewers, lookupReviewCourse, redeemReviewerInvitation, renewReviewerDevice, resumeReviewerMembership, signInExistingReviewer, type SessionToken } from "./api";
+import { ApiClient, authenticate, findCourseReviewer, getActiveToken, lookupReviewCourse, redeemReviewerInvitation, renewReviewerDevice, resumeReviewerMembership, signInExistingReviewer, type SessionToken } from "./api";
 import { authorizeAuthenticateSender, authorizeResolveSender, handleCreateCommentBridge, handleCreateEmbeddedCommentBridge, handleDeleteCommentBridge, handleListCourseCommentsBridge, handleListPageCommentsBridge, handleResolveCourseBridge, normalizeErrorMessage, validateAuthenticateMessage, validateCancelScreenshotMessage, validatePageCommentsResponse, validateUploadScreenshotMessage, validateViewerResponse, type CreateCommentPayload, type ResolveCoursePayload } from "./background-bridge.ts";
 import { EmbeddedCommentNavigation, handleCommentNavigationMessage } from "./embedded-comment-navigation.ts";
 import { EmbeddedAnchorCapabilities, issueEmbeddedAnchorFromWorker } from "./embedded-anchor-capabilities.ts";
@@ -261,12 +261,12 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       const saved = await chrome.storage.local.get(["deviceCourseHandle"]);
       return saved.deviceCourseHandle === value.course_handle && await activeToken() ? { state: "connected" } : { state: "none" };
     })();
-  } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "LIST_SAVED_REVIEWERS") {
+  } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "FIND_APPROVED_REVIEWER") {
     operation = (async () => {
       if (!await authorizeResolveSender(sender, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) })) throw new Error("Unauthorized access sender");
-      const value = message as { type?: unknown; course_handle?: unknown };
-      if (Object.keys(value).sort().join(",") !== "course_handle,type" || typeof value.course_handle !== "string") throw new Error("Invalid saved reviewer request");
-      return listCourseReviewers({ serviceOrigin: await serviceOrigin(), courseHandle: value.course_handle });
+      const value = message as { type?: unknown; course_handle?: unknown; email?: unknown };
+      if (Object.keys(value).sort().join(",") !== "course_handle,email,type" || typeof value.course_handle !== "string" || typeof value.email !== "string") throw new Error("Invalid reviewer lookup request");
+      return findCourseReviewer({ serviceOrigin: await serviceOrigin(), courseHandle: value.course_handle, email: value.email });
     })();
   } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "USE_SAVED_REVIEWER") {
     operation = (async () => {
