@@ -32,33 +32,79 @@ The visual treatment is black, white, and RADCRA teal. Use Poppins, or the close
 | 59–71s | Coming next | Four roadmap cards |
 | 71–75s | Final lock-up | RADCRA name and closing line |
 
-## Narration draft
+## Final narration
 
-The final recording script should preserve short lines and pauses so it is easy to perform and edit. Its intended content is:
+The recording script contains approximately 126 words. Read it slowly and deliberately, leaving the line breaks as short pauses:
 
-> I know who you are.  
-> I know what you want from your course review process.  
-> Clear feedback. In the right place. Before the deadline.  
->  
-> I've developed a very particular set of skills—skills acquired through far too many review cycles.  
-> I used them to build RADCRA: the Rapid App Development Course Review App.  
->  
-> With RADCRA, reviewers leave feedback exactly where the problem lives.  
-> Highlight the words. Pin the screen. Add evidence. Start the conversation.  
->  
-> Beta testers see their own feedback. Learning designers see the complete review. Subject-matter experts see the conversations shared with them.  
-> The right feedback. The right people. The right view.  
->  
-> From Moodle pages to Rise courses, every comment stays connected to its context.  
-> Resolve an issue. Move to the next. Keep the entire review in one place.  
->  
-> But I'm not finished.  
-> Virtual beta testers. Storyline integration. An API for CUBE.  
-> And other applications we haven't discovered yet.  
->  
-> RADCRA. I found the problem. Now I can find the comment.
+> Your course has a problem.
+>
+> Your reviewers will find it.
+>
+> The harder part is finding their feedback again.
+>
+> After more review cycles than I care to count, I assembled an unusually specific set of skills.
+>
+> Then I built RADCRA: Rapid App Development Course Review App.
+>
+> RADCRA puts feedback where the problem lives.
+>
+> Highlight the words. Pin the screen. Add evidence. Start the conversation.
+>
+> Beta testers see their own feedback.
+>
+> Learning designers see the full review.
+>
+> Subject-matter experts see what has been shared with them.
+>
+> The right feedback. The right people. The right view.
+>
+> Across Moodle pages and Rise courses, every comment keeps its context.
+>
+> Resolve the issue. Move to the next. Keep the review in one place.
+>
+> And this is only the beginning.
+>
+> Virtual beta testers.
+>
+> Storyline integration.
+>
+> An API for CUBE.
+>
+> And more.
+>
+> RADCRA.
+>
+> Problems can't hide.
 
-The script may be tightened after a timed read. The priority is a natural 72–75 second delivery, not retaining every word.
+Make a rough recording before editing. If it exceeds 75 seconds, shorten pauses before speeding the delivery. If it is under 70 seconds, lengthen the opening and final pauses rather than adding words.
+
+## Edit decision list
+
+The timings are targets rather than frame-accurate requirements. Numbered clips refer to the required captures in the next section.
+
+| Time | Clip | Narration | On-screen text | Treatment |
+|---|---:|---|---|---|
+| 0–3s | Black/fragment | “Your course has a problem.” | None | Fade up from black; tiny UI fragment |
+| 3–6s | 1 | “Your reviewers will find it.” | None | Hard cut; slow pointer movement |
+| 6–11s | 2 | “The harder part is finding their feedback again.” | None | Tight toolbar crop; fade to black |
+| 11–18s | Title, then 2 | “After more review cycles… specific set of skills.” | **RADCRA** | Low impact on reveal; open panel |
+| 18–23s | 2 | “Then I built RADCRA…” | Rapid App Development Course Review App | Hold title long enough to read |
+| 23–26s | 3 | “RADCRA puts feedback…” | **Feedback in context** | Speed typing to 3× |
+| 26–28s | 4 | “Highlight the words. Pin the screen.” | None | Two short hard cuts |
+| 28–31s | 5, then 6 | “Add evidence. Start the conversation.” | None | Upload at 4×; reply result at 1× |
+| 31–35s | 7 | “Beta testers see their own feedback.” | **BETA TESTER · MY FEEDBACK** | Slow pan or static capture |
+| 35–39s | 8 | “Learning designers see the full review.” | **LEARNING DESIGNER · FULL REVIEW** | Match cut to same course area |
+| 39–43s | 9 | “Subject-matter experts…” | **SME · SHARED WITH ME** | Match cut; hold on shared thread |
+| 43–47s | 7–9 montage | “The right feedback. The right people. The right view.” | Each role label flashes in turn | Three clean hard cuts |
+| 47–52s | 10 | “Across Moodle pages…” | **MOODLE** | Navigation wait at 3×; result at 1× |
+| 52–56s | 11 | “…and Rise courses, every comment keeps its context.” | **RISE** | Navigation wait at 3×; marker at 1× |
+| 56–60s | 10 or comment list | “Resolve the issue… one place.” | None | Three short action cuts |
+| 60–63s | Roadmap intro | “And this is only the beginning.” | **COMING NEXT** | Fade through black |
+| 63–65s | Roadmap 1 | “Virtual beta testers.” | **VIRTUAL BETA TESTERS** | 2-second card; brief accent |
+| 65–67s | Roadmap 2 | “Storyline integration.” | **STORYLINE INTEGRATION** | 2-second card; brief accent |
+| 67–69s | Roadmap 3 | “An API for CUBE.” | **CUBE API** | 2-second card; brief accent |
+| 69–72s | Roadmap 4 | “And more.” | **OTHER APPLICATIONS** | 3-second card; fade through black |
+| 72–75s | Final lock-up | “RADCRA. Problems can't hide.” | **RADCRA** plus expanded name | Hold to black at the end |
 
 ## Screen-capture plan
 
@@ -82,7 +128,7 @@ Typing, uploads, waits, and long navigation may run at 2–4×. Return to normal
 
 ## Roadmap cards
 
-The closing roadmap sequence uses four cards of roughly three seconds each:
+The closing roadmap sequence uses three dedicated two-second cards and one three-second card:
 
 1. **Virtual beta testers** — automated checks for spelling, grammar, consistency, and other common issues.
 2. **Storyline integration** — review support for Articulate Storyline content.
