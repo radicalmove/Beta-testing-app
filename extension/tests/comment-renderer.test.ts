@@ -330,15 +330,15 @@ test("previous and next navigate through open comments across the whole course",
 });
 
 test("previous and next follow anchor order on the current page and scroll into context", async () => {
-  const { window, document } = setup();
+  const { document } = setup();
   const positions = [["early", 20], ["middle", 120], ["late", 220]] as const;
+  const scrolls: string[] = [];
   for (const [id, top] of positions) {
     const target = document.createElement("div"); target.id = id;
     target.getBoundingClientRect = () => ({ x: 10, y: top, left: 10, top, right: 110, bottom: top + 40, width: 100, height: 40, toJSON() {} });
+    target.scrollIntoView = () => { scrolls.push(id); };
     document.body.append(target);
   }
-  const scrolls: number[] = [];
-  window.scrollBy = ((options: ScrollToOptions) => { scrolls.push(Number(options.top)); }) as typeof window.scrollBy;
   const early = comment({ id: "00000000-0000-4000-8000-000000000031", body: "Early", css_selector: "#early" });
   const middle = comment({ id: "00000000-0000-4000-8000-000000000032", body: "Middle", css_selector: "#middle" });
   const late = comment({ id: "00000000-0000-4000-8000-000000000033", body: "Late", css_selector: "#late" });
@@ -352,7 +352,29 @@ test("previous and next follow anchor order on the current page and scroll into 
 
   assert.equal(root.querySelector<HTMLElement>("[data-thread-popover] div")?.textContent, "Early");
   assert.equal(root.querySelector<HTMLElement>("[data-thread-position]")?.textContent, "Comment 1 of 3");
-  assert.ok(scrolls.length > 0);
+  assert.deepEqual(scrolls, ["early"]);
+});
+
+test("next scrolls a visual pin through its nested SCORM scroll container", async () => {
+  const { document } = setup();
+  const scroller = document.createElement("div");
+  const later = document.createElement("div"); later.id = "later-in-scorm";
+  later.getBoundingClientRect = () => ({ x: 10, y: 720, left: 10, top: 720, right: 210, bottom: 820, width: 200, height: 100, toJSON() {} });
+  scroller.append(later); document.body.append(scroller);
+  const scrolls: ScrollIntoViewOptions[] = [];
+  later.scrollIntoView = (options?: boolean | ScrollIntoViewOptions) => { if (typeof options === "object") scrolls.push(options); };
+  const first = comment({ id: "00000000-0000-4000-8000-000000000036", body: "First", css_selector: "#target" });
+  const second = comment({ id: "00000000-0000-4000-8000-000000000037", body: "Later", css_selector: "#later-in-scorm" });
+  const renderer = createCommentRenderer(document, pageUrl);
+  renderer.setComments([first, second]);
+  document.querySelector<HTMLElement>(`[data-moodle-review-stored-pin="${first.id}"]`)!.click();
+  const root = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!;
+
+  root.querySelector<HTMLButtonElement>('[data-thread-navigation] [data-direction="next"]')!.click();
+  await settle();
+
+  assert.deepEqual(scrolls, [{ block: "center", inline: "center", behavior: "smooth" }]);
+  assert.equal(root.querySelector<HTMLElement>("[data-thread-position]")?.textContent, "Comment 2 of 2");
 });
 
 test("next restores the previous marker to its unfocused teal colour", async () => {

@@ -160,8 +160,10 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
       if (recovered.status === "resolved") (recovered.range.commonAncestorContainer.nodeType === 1 ? recovered.range.commonAncestorContainer as HTMLElement : recovered.range.commonAncestorContainer.parentElement)?.scrollIntoView?.({ block: "center", behavior: "smooth" });
       return;
     }
-    const position = anchorPosition(comment);
-    if (position && document.defaultView) document.defaultView.scrollBy({ top: position.top - document.defaultView.innerHeight / 2, behavior: "auto" });
+    if (comment.css_selector && comment.relative_x !== null && comment.relative_y !== null) {
+      const recovered = recoverPinAnchor(document, { css_selector: comment.css_selector, relative_x: comment.relative_x, relative_y: comment.relative_y });
+      if (recovered.status === "resolved") recovered.element.scrollIntoView?.({ block: "center", inline: "center", behavior: "smooth" });
+    }
   };
 
   const closeThread = (flushProjection = true) => {
