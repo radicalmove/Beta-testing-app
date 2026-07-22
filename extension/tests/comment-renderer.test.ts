@@ -555,6 +555,7 @@ test("resolved confirmation survives a callback projection refresh until its thr
   root.querySelector<HTMLElement>('[aria-label="Resolve this comment"]')!.click();
   await settle();
   assert.ok(root.querySelector<HTMLElement>('[aria-label="Resolve this comment"] svg path'), "resolved confirmation uses the green pen tick");
+  assert.equal(root.querySelector<HTMLElement>("[data-thread-status]")?.textContent, "Comment resolved. Moving to Resolved.", "popover confirmation matches the comments-list status message");
   assert.ok(root.querySelector("[data-thread-popover]"));
 
   delayed?.();
