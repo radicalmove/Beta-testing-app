@@ -355,6 +355,27 @@ test("previous and next follow anchor order on the current page and scroll into 
   assert.ok(scrolls.length > 0);
 });
 
+test("next restores the previous marker to its unfocused teal colour", async () => {
+  const { document } = setup();
+  const secondTarget = document.createElement("div"); secondTarget.id = "second-target";
+  secondTarget.getBoundingClientRect = () => ({ x: 10, y: 220, left: 10, top: 220, right: 210, bottom: 320, width: 200, height: 100, toJSON() {} });
+  document.body.append(secondTarget);
+  const first = comment({ id: "00000000-0000-4000-8000-000000000034", body: "First", css_selector: "#target" });
+  const second = comment({ id: "00000000-0000-4000-8000-000000000035", body: "Second", css_selector: "#second-target" });
+  const renderer = createCommentRenderer(document, pageUrl);
+  renderer.setComments([first, second]);
+  const firstMarker = document.querySelector<HTMLElement>(`[data-moodle-review-stored-pin="${first.id}"]`)!;
+  firstMarker.click();
+  const root = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!;
+
+  root.querySelector<HTMLButtonElement>('[data-thread-navigation] [data-direction="next"]')!.click();
+  await settle();
+
+  assert.equal(firstMarker.getAttribute("aria-expanded"), "false");
+  assert.equal(firstMarker.style.background, "#28c4c2");
+  assert.equal(firstMarker.style.borderColor, "#0b6261");
+});
+
 test("next from the final anchor-ordered comment navigates to the following course page", async () => {
   const { document } = setup();
   const positions = [["first-on-page", 20], ["last-on-page", 220]] as const;

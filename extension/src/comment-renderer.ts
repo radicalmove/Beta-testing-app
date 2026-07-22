@@ -167,7 +167,7 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
   const closeThread = (flushProjection = true) => {
     popoverCleanup?.(); popoverCleanup = undefined;
     root.querySelector("[data-thread-popover]")?.remove();
-    if (activeThreadId) { const marker = markers.get(activeThreadId); marker?.setAttribute("aria-expanded", "false"); marker?.style.removeProperty("background"); marker?.style.removeProperty("border-color"); }
+    if (activeThreadId) { const marker = markers.get(activeThreadId); marker?.setAttribute("aria-expanded", "false"); if (marker) { marker.style.background = "#28c4c2"; marker.style.borderColor = "#0b6261"; } }
     activeThreadId = undefined;
     if (flushProjection && pendingProjection) { const next = pendingProjection; pendingProjection = undefined; applyComments(next); }
   };
