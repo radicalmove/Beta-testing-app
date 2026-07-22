@@ -1,5 +1,7 @@
 # Cross-page SCORM Cover Activation Implementation Plan
 
+> **Amendment after browser verification:** `SCORM_ACTIVATE_COVER` must never call `element.click()`. It arms an exact Rise Start listener and returns `USER_ACTION_REQUIRED`. A new generation-bound `SCORM_COVER_ACTIVATED` event is emitted only for a trusted mouse/keyboard-generated click; the background confirms the pending cover phase from that event and resumes navigation. Tests must prove untrusted clicks are ignored, trusted Start activation resumes the pending request, already-current SCORM skips the handoff, and the top panel reports the required arrow/Tab+Enter action while waiting.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make comment navigation entering a target Rise SCORM confirm its Start cover once before applying the saved locator, while navigation already inside that same SCORM skips cover activation.
