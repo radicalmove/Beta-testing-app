@@ -8,7 +8,7 @@ export type EmbeddedNavigationStorage = {
 
 export type EmbeddedNavigationState =
   | "prepared" | "parent-loading" | "worker-loading" | "locator-applying"
-  | "identity-waiting" | "projection-waiting" | "context-opening" | "complete";
+  | "cover-activating" | "identity-waiting" | "projection-waiting" | "context-opening" | "complete";
 
 export type EmbeddedNavigationTarget = {
   id: string;
@@ -25,6 +25,8 @@ type RecordValue = EmbeddedNavigationTarget & {
   expiresAt: number;
   locatorWorkerInstanceId?: string;
   locatorGeneration?: number;
+  targetPlayerNavigationRequested?: boolean;
+  coverConfirmed?: boolean;
 };
 
 type WorkerState = { courseId?: string; topUrl: string; workerInstanceId?: string; generation?: number; pageUrl?: string };
@@ -35,6 +37,7 @@ type Dependencies = {
   clearTimeout?: (timer: Timer) => void;
   current(tabId: number): WorkerState;
   navigateParent(tabId: number, parentActivityUrl: string): Promise<void>;
+  activateCover?(tabId: number): Promise<void>;
   applyLocator(tabId: number, locator: string): Promise<void>;
   projectionContains(tabId: number, commentId: string, pageUrl: string): boolean;
   takeToContext(tabId: number, commentId: string): Promise<void>;
@@ -131,10 +134,9 @@ export class EmbeddedCommentNavigation {
       return this.openWhenProjected(key, record);
     }
 
-    if (current.pageUrl === record.pageUrl) return this.openWhenProjected(key, record);
-
     if (current.topUrl !== record.parentActivityUrl) {
       record.state = "parent-loading";
+      record.targetPlayerNavigationRequested = true;
       await this.save(key, record);
       await this.dependencies.navigateParent(tabId, record.parentActivityUrl);
       return { state: record.state };
@@ -145,6 +147,18 @@ export class EmbeddedCommentNavigation {
       await this.save(key, record);
       return { state: record.state };
     }
+
+    if (record.targetPlayerNavigationRequested && !record.coverConfirmed) {
+      record.state = "cover-activating";
+      await this.save(key, record);
+      await this.dependencies.activateCover?.(tabId);
+      record.coverConfirmed = true;
+      record.state = "identity-waiting";
+      await this.save(key, record);
+      return { state: record.state };
+    }
+
+    if (current.pageUrl === record.pageUrl) return this.openWhenProjected(key, record);
 
     const locatorAppliedToCurrentWorker = record.locatorWorkerInstanceId === current.workerInstanceId && record.locatorGeneration === current.generation;
     if (!locatorAppliedToCurrentWorker || record.state === "identity-waiting") {

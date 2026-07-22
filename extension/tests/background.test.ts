@@ -68,6 +68,7 @@ test("embedded navigation follows the bounded state machine and consumes only th
     now: () => now,
     current: () => ({ courseId: id(3), topUrl, ...worker }),
     navigateParent: async (_tabId, url) => { topUrl = url; },
+    activateCover: async () => { commands.push("cover"); },
     applyLocator: async () => { commands.push("locator"); },
     projectionContains: () => projected,
     takeToContext: async (_tabId, commentId) => { commands.push("context"); opened.push(commentId); },
@@ -77,7 +78,9 @@ test("embedded navigation follows the bounded state machine and consumes only th
   assert.equal(topUrl, context.parent_activity_url);
   worker = { workerInstanceId: id(8), generation: 5, pageUrl: worker.pageUrl };
   assert.equal((await navigation.advance(7)).state, "identity-waiting");
-  assert.deepEqual(commands, ["locator"]);
+  assert.deepEqual(commands, ["cover"]);
+  assert.equal((await navigation.advance(7)).state, "identity-waiting");
+  assert.deepEqual(commands, ["cover", "locator"]);
   worker.pageUrl = event.page_url;
   assert.equal((await navigation.advance(7)).state, "projection-waiting");
   projected = true;
@@ -85,6 +88,26 @@ test("embedded navigation follows the bounded state machine and consumes only th
   assert.deepEqual(opened, [id(21)]);
   assert.equal((await storage.get("commentNavigation:7"))["commentNavigation:7"], undefined);
   now += 1;
+  navigation.cancel(7);
+});
+
+test("a different SCORM retries an unconfirmed cover but never reactivates it after confirmation", async () => {
+  const storage = new NavigationStorage(); let topUrl = "https://moodle.example/mod/scorm/player.php?cm=99"; let workerInstanceId = id(2); let coverAttempts = 0; const locators: string[] = [];
+  const navigation = new EmbeddedCommentNavigation(storage, {
+    current: () => ({ courseId: id(3), topUrl, workerInstanceId, generation: 4, pageUrl: "https://rise.example/index.html#moodle-review-page=Loading" }),
+    navigateParent: async (_tabId, url) => { topUrl = url; },
+    activateCover: async () => { coverAttempts += 1; if (coverAttempts === 1) throw new Error("COVER_NOT_READY"); },
+    applyLocator: async (_tabId, locator) => { locators.push(locator); }, projectionContains: () => false, takeToContext: async () => undefined,
+  });
+  await navigation.prepare(7, embeddedComment);
+  assert.equal((await navigation.advance(7)).state, "parent-loading");
+  await assert.rejects(() => navigation.advance(7), /COVER_NOT_READY/);
+  workerInstanceId = id(9);
+  assert.equal((await navigation.advance(7)).state, "identity-waiting");
+  workerInstanceId = id(10);
+  assert.equal((await navigation.advance(7)).state, "identity-waiting");
+  assert.equal(coverAttempts, 2);
+  assert.deepEqual(locators, [embeddedComment.embeddedLocator]);
   navigation.cancel(7);
 });
 

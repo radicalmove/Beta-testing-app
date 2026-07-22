@@ -50,12 +50,13 @@ const messages = [
   { ...base, type: "SCORM_SET_COMMENTS", payload: { comments: [comment] } },
   { ...base, type: "SCORM_COMMENTS_CHANGED", payload: {} },
   { ...base, type: "SCORM_COMMENT_NAVIGATION_REQUESTED", payload: { comment_id: commentId, page_url: "https://rise.example/activity#moodle-review-page=Lesson%20two" } },
+  { ...base, type: "SCORM_ACTIVATE_COVER", payload: {} },
   { ...base, type: "SCORM_APPLY_LOCATOR", payload: { embedded_locator: "#/lessons/two" } },
   { ...base, type: "SCORM_TAKE_TO_CONTEXT", payload: { comment_id: commentId } },
 ] as const;
 
 test("exports separate command and event discriminator families", () => {
-  const commands: Array<ScormCommand["type"]> = ["SCORM_START_SELECTION", "SCORM_START_MARKER", "SCORM_CANCEL_MARKER", "SCORM_SET_COMMENTS", "SCORM_APPLY_LOCATOR", "SCORM_TAKE_TO_CONTEXT"];
+  const commands: Array<ScormCommand["type"]> = ["SCORM_START_SELECTION", "SCORM_START_MARKER", "SCORM_CANCEL_MARKER", "SCORM_SET_COMMENTS", "SCORM_ACTIVATE_COVER", "SCORM_APPLY_LOCATOR", "SCORM_TAKE_TO_CONTEXT"];
   const events: Array<ScormEvent["type"]> = ["SCORM_SELECTION_CHANGED", "SCORM_ANCHOR_CAPTURED", "SCORM_PAGE_IDENTITY_CHANGED", "SCORM_COMMENTS_CHANGED", "SCORM_COMMENT_NAVIGATION_REQUESTED"];
   assert.deepEqual([...commands, ...events].sort(), [...new Set(messages.map(({ type }) => type))].sort());
 });
@@ -151,7 +152,7 @@ test("validates exact bounded whole-course comment projections", () => {
 });
 
 test("validates take-to-context comment identifiers", () => {
-  const message = messages[11];
+  const message = messages[12];
   assert.throws(() => validateScormMessage({ ...message, payload: { comment_id: "comment-3" } }), /Invalid SCORM message/);
 });
 

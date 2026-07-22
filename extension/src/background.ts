@@ -58,7 +58,7 @@ const cacheScormLaunchForEvent = async (tabId: number, event: ScormEvent) => {
   const cmid = Number(player.searchParams.get("cm")); if (!Number.isSafeInteger(cmid) || cmid <= 0) return;
   try { await scormLaunchCache.put({ courseId: context.id, configuredOrigin: new URL(context.course_url).origin, cmid, packageRoot: packageRootFromScormUrl(event.page_url), playerUrl: context.parent_activity_url }); } catch { /* non-package worker events are not cacheable */ }
 };
-const navigationCommand = async (tabId: number, type: "SCORM_APPLY_LOCATOR" | "SCORM_TAKE_TO_CONTEXT", payload: Record<string, string>): Promise<void> => {
+const navigationCommand = async (tabId: number, type: "SCORM_ACTIVATE_COVER" | "SCORM_APPLY_LOCATOR" | "SCORM_TAKE_TO_CONTEXT", payload: Record<string, string>): Promise<void> => {
   const owner = frameCoordination.currentOwner(tabId); const state = latestWorkerEvent.get(tabId); const context = reviewContexts.exportTab(tabId);
   if (!owner || !state || !context || state.worker_instance_id !== owner.workerInstanceId || state.generation !== owner.generation) throw new Error("SCORM worker is not ready");
   const command = validateScormMessage({ protocol: 1, type, request_id: crypto.randomUUID(), worker_instance_id: owner.workerInstanceId, generation: owner.generation, course_id: context.id, page_url: state.page_url, payload }) as ScormCommand;
@@ -68,6 +68,7 @@ const navigationCommand = async (tabId: number, type: "SCORM_APPLY_LOCATOR" | "S
 const embeddedNavigation = new EmbeddedCommentNavigation(chrome.storage.session, {
   current: (tabId) => { const context = reviewContexts.exportTab(tabId); const owner = frameCoordination.currentOwner(tabId); const state = latestWorkerEvent.get(tabId); return { courseId: context?.id, topUrl: context?.parent_activity_url ?? "", workerInstanceId: owner?.workerInstanceId, generation: owner?.generation, pageUrl: state?.page_url }; },
   navigateParent: async (tabId, url) => { await chrome.tabs.update(tabId, { url }); },
+  activateCover: (tabId) => navigationCommand(tabId, "SCORM_ACTIVATE_COVER", {}),
   applyLocator: (tabId, locator) => navigationCommand(tabId, "SCORM_APPLY_LOCATOR", { embedded_locator: locator }),
   projectionContains: (tabId, commentId, pageUrl) => { const projection = workerProjections.get(tabId); return projection?.pageUrl === pageUrl && projection.commentIds.has(commentId); },
   takeToContext: (tabId, commentId) => navigationCommand(tabId, "SCORM_TAKE_TO_CONTEXT", { comment_id: commentId }),

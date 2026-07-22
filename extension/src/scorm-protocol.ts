@@ -10,6 +10,7 @@ export const SCORM_MESSAGE_TYPES = [
   "SCORM_SET_COMMENTS",
   "SCORM_COMMENTS_CHANGED",
   "SCORM_COMMENT_NAVIGATION_REQUESTED",
+  "SCORM_ACTIVATE_COVER",
   "SCORM_APPLY_LOCATOR",
   "SCORM_TAKE_TO_CONTEXT",
 ] as const;
@@ -26,6 +27,7 @@ export const SCORM_ACK_TYPES = {
   SCORM_SET_COMMENTS: "SCORM_SET_COMMENTS_ACK",
   SCORM_COMMENTS_CHANGED: "SCORM_COMMENTS_CHANGED_ACK",
   SCORM_COMMENT_NAVIGATION_REQUESTED: "SCORM_COMMENT_NAVIGATION_REQUESTED_ACK",
+  SCORM_ACTIVATE_COVER: "SCORM_ACTIVATE_COVER_ACK",
   SCORM_APPLY_LOCATOR: "SCORM_APPLY_LOCATOR_ACK",
   SCORM_TAKE_TO_CONTEXT: "SCORM_TAKE_TO_CONTEXT_ACK",
 } as const satisfies Record<ScormMessageType, string>;
@@ -72,6 +74,7 @@ export type ScormCommand =
   | ScormEnvelope<"SCORM_START_MARKER", EmptyScormPayload>
   | ScormEnvelope<"SCORM_CANCEL_MARKER", EmptyScormPayload>
   | ScormEnvelope<"SCORM_SET_COMMENTS", ScormSetCommentsPayload>
+  | ScormEnvelope<"SCORM_ACTIVATE_COVER", EmptyScormPayload>
   | ScormEnvelope<"SCORM_APPLY_LOCATOR", ScormApplyLocatorPayload>
   | ScormEnvelope<"SCORM_TAKE_TO_CONTEXT", ScormTakeToContextPayload>;
 
@@ -221,6 +224,7 @@ export function validateScormMessage(value: unknown): ScormMessage {
     case "SCORM_START_SELECTION":
     case "SCORM_START_MARKER":
     case "SCORM_CANCEL_MARKER":
+    case "SCORM_ACTIVATE_COVER":
     case "SCORM_COMMENTS_CHANGED":
       if (!validEmptyPayload(value.payload)) return invalidMessage();
       break;

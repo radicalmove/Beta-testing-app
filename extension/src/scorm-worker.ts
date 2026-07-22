@@ -182,7 +182,7 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
       let command: ScormCommand;
       try {
         const parsed = validateScormMessage(value);
-        if (!parsed.type.startsWith("SCORM_") || !["SCORM_START_SELECTION", "SCORM_START_MARKER", "SCORM_CANCEL_MARKER", "SCORM_SET_COMMENTS", "SCORM_APPLY_LOCATOR", "SCORM_TAKE_TO_CONTEXT"].includes(parsed.type)) return invalidAcknowledgement(value);
+        if (!parsed.type.startsWith("SCORM_") || !["SCORM_START_SELECTION", "SCORM_START_MARKER", "SCORM_CANCEL_MARKER", "SCORM_SET_COMMENTS", "SCORM_ACTIVATE_COVER", "SCORM_APPLY_LOCATOR", "SCORM_TAKE_TO_CONTEXT"].includes(parsed.type)) return invalidAcknowledgement(value);
         command = parsed as ScormCommand;
       } catch { return invalidAcknowledgement(value); }
       if (command.worker_instance_id !== options.workerInstanceId || command.generation !== options.generation || command.course_id !== options.courseId || command.page_url !== identity.pageUrl) return acknowledgement(command, false, "STALE_CONTEXT");
@@ -203,9 +203,9 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
           renderer.setComments(comments);
           return acknowledgement(command, true);
         }
+        case "SCORM_ACTIVATE_COVER": return acknowledgement(command, activateRiseCover(document), "COVER_NOT_READY");
         case "SCORM_APPLY_LOCATOR": {
           try {
-            if (activateRiseCover(document)) return acknowledgement(command, true);
             const destination = new URL(command.payload.embedded_locator, window.location.href);
             if (destination.origin !== window.location.origin) return acknowledgement(command, false, "LOCATOR_ORIGIN_MISMATCH");
             const mode = command.payload.embedded_locator.startsWith("#") ? "hash" : "route";
