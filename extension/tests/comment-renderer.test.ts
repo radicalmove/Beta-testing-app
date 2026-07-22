@@ -194,9 +194,40 @@ test("contextual thread controls use the established button styles", () => {
   assert.ok(remove.querySelector('[data-review-icon="delete"]'));
   assert.match(root.querySelector("style")!.textContent!, /\.thread-delete\{[^}]*background:#d73b3d/);
   assert.match(root.querySelector("style")!.textContent!, /\.thread-delete:hover\{border-color:#d73b3d;background:#fff;color:#d73b3d\}/);
-  assert.match(root.querySelector("style")!.textContent!, /\.resolve-toggle\{right:50px;margin:0;border:2px solid #111;border-radius:2px;background:#fff\}/);
-  assert.match(root.querySelector("style")!.textContent!, /\.resolve-toggle:hover \.status-hover-tick\{opacity:\.28\}/);
+  assert.match(root.querySelector("style")!.textContent!, /button\.resolve-toggle\{right:50px;margin:0;border:2px solid #111;border-radius:2px;background:#fff\}/);
+  assert.match(root.querySelector("style")!.textContent!, /button\.resolve-toggle:hover \.status-hover-tick/);
   assert.match(document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")?.title ?? "", /Open comment/);
+});
+
+test("SME sharing uses a full-width action, resolved-style toggles, and an external save control", async () => {
+  const { document } = setup();
+  const renderer = createCommentRenderer(document, pageUrl, {
+    manageSme: async () => ({
+      available_recipients: [{ id: "sme-1", display_name: "Pilot SME" }],
+      selected_user_ids: [],
+    }),
+  });
+  renderer.setComments([comment({ capabilities: { ...comment().capabilities, can_share_with_sme: true } })]);
+  document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")!.click();
+  const root = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!;
+
+  root.querySelector<HTMLButtonElement>(".thread-share-sme")!.click();
+  await settle();
+
+  const share = root.querySelector<HTMLElement>(".thread-share-sme")!;
+  const access = root.querySelector<HTMLElement>("[data-sme-chooser]")!;
+  const chooser = access.querySelector<HTMLElement>(".thread-sme-chooser")!;
+  const toggle = root.querySelector<HTMLButtonElement>(".thread-sme-toggle")!;
+  const save = root.querySelector<HTMLElement>(".thread-sme-save")!;
+  assert.equal(share.parentElement?.previousElementSibling?.getAttribute("data-thread-navigation"), "true");
+  assert.ok(toggle.querySelector(".status-hover-tick"));
+  toggle.click();
+  assert.equal(toggle.getAttribute("aria-pressed"), "true");
+  assert.ok(toggle.querySelector(".status-resolved-tick"));
+  assert.equal(chooser.contains(save), false);
+  assert.equal(save.parentElement, access);
+  assert.match(root.querySelector("style")!.textContent!, /\.thread-share-sme\{grid-column:1\/-1/);
+  assert.doesNotMatch(root.querySelector("style")!.textContent!, /\.thread-sme-chooser\{[^}]*overflow:/);
 });
 
 test("contextual thread uses whole-course open numbering and the requested action layout", () => {
