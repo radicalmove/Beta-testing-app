@@ -14,10 +14,13 @@
 
 **Files:**
 - Modify: `extension/tests/overlay.test.ts`
+- Modify: `extension/tests/content.test.ts`
 
 - [ ] Add tests asserting that recovered current-page anchor ranks order group rows, the old `[data-comment-jump]` is absent, and `[data-collapse-groups]` initially reads `Collapse all` in the same 104px control footprint.
 - [ ] Add tests for a separate heading navigation button and chevron: heading navigation uses the first status/scope-matching comment even when rows are collapsed; the chevron toggles only its group and maintains `aria-expanded`/`aria-controls`.
 - [ ] Add tests proving individual chevrons never change the main label; only the main button changes `Collapse all` to `Expand all` and back. Assert the main control is disabled in Current page scope and with zero visible whole-course groups.
+- [ ] Add current-page heading navigation coverage proving it calls `renderer.takeToContext`, alongside the cross-page `navigateToComment` case. Assert collapsed groups do not cause the empty state, and that no listbox, page option, or Jump-to selector is rendered.
+- [ ] Remove or replace the legacy Jump-to helper and assertions in `extension/tests/overlay.test.ts`, and update `extension/tests/content.test.ts` so it no longer queries `[data-comment-page-option]`.
 - [ ] Run `npm test -- --test-name-pattern="page groups|Collapse all|heading navigation|chevron"`; confirm red failures.
 - [ ] Commit: `git add extension/tests/overlay.test.ts && git commit -m "test: cover comment-list page groups"`.
 
@@ -26,9 +29,11 @@
 **Files:**
 - Modify: `extension/src/overlay/root.ts:557-704`
 - Modify: `extension/src/overlay/root.ts:18-29`
+- Modify: `extension/src/overlay/root.ts:408`
 - Test: `extension/tests/overlay.test.ts`
 
-- [ ] Delete the Jump-to listbox, page selector, geometry, keyboard/outside-click handling, and `jumpOutsideListener` lifecycle. Leave course projection, renderer ordering, and `navigateToComment` unchanged.
+- [ ] Delete the Jump-to listbox, page selector, geometry, keyboard/outside-click handling, `jumpOutsideListener` lifecycle, `commentListPage`, selected-page filtering, and now-unused `pages`/`pageDestinations` setup. Leave course projection, renderer ordering, and `navigateToComment` unchanged.
+- [ ] Replace help-dialog copy that says “Filter and jump” with concise instructions for page heading links and group chevrons.
 - [ ] Render each `projection.groups` entry as a heading container with a `comment-group-link` button plus a separate `comment-group-toggle` button. Give the chevron an exact controlled row-container id, `aria-expanded`, and a label such as `Collapse 1.2.1 Participants and power comments`.
 - [ ] Heading clicks choose the first comment matching status/scope filters before considering collapse state. For the current page call `renderer.takeToContext(comment.id)`; otherwise call `options.navigateToComment(comment.id, group.pageUrl)`, preserving the current error/status treatment.
 - [ ] Add local `expandedGroups` state initialised to true on every list render. Main button starts `Collapse all`; clicking it sets all currently visible groups closed then changes its label to `Expand all`; the next click expands them then restores `Collapse all`. Chevron clicks do not mutate the main mode.
