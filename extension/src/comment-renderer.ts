@@ -8,6 +8,7 @@ export type UnresolvedAnchor = { id: string; label: string; quote?: string };
 
 export type CommentRenderer = {
   setComments(comments: PageComment[]): void;
+  setVisibleCommentIds?(commentIds: ReadonlySet<string> | null): void;
   setStatusFilter(filter: "open" | "resolved"): void;
   orderedCommentIds(): string[];
   takeToContext(commentId: string): boolean;
@@ -138,6 +139,7 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
   let applyComments: (next: PageComment[]) => void;
   let mutationDepth = 0;
   let statusFilter: "open" | "resolved" = "open";
+  let visibleCommentIds: ReadonlySet<string> | null = null;
   const repositioners = new Set<() => void>();
   let repositionFrame: number | undefined;
   let repositionListening = false;
@@ -310,8 +312,16 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
     const navigate = async (target: PageComment | undefined) => {
       if (!target) return;
       article.querySelector("[data-navigation-error]")?.remove();
-      if (target.page_url === pageUrl) { closeThread(); document.defaultView?.setTimeout(() => { (root.host as HTMLElement).isConnected && (markers.get(target.id) ? (() => { scrollCommentIntoView(target); const targetMarker = markers.get(target.id)!; targetMarker.focus({ preventScroll: true }); openThread(target, Array.from(comments.keys()).indexOf(target.id), targetMarker); })() : undefined); }, 0); }
-      else {
+      if (target.page_url === pageUrl && markers.has(target.id)) {
+        closeThread();
+        document.defaultView?.setTimeout(() => {
+          if (!(root.host as HTMLElement).isConnected || !markers.has(target.id)) return;
+          scrollCommentIntoView(target);
+          const targetMarker = markers.get(target.id)!;
+          targetMarker.focus({ preventScroll: true });
+          openThread(target, Array.from(comments.keys()).indexOf(target.id), targetMarker);
+        }, 0);
+      } else {
         try { await options.navigateToComment?.(target.id, target.page_url); }
         catch (error) { const message = document.createElement("p"); message.dataset.navigationError = "true"; message.className = "error"; message.setAttribute("role", "status"); message.textContent = error instanceof Error && error.message ? error.message : "Unable to open the next course page."; navigation.before(message); }
       }
@@ -350,7 +360,7 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
       clear();
       projectedComments = [...next];
       root.querySelectorAll("[data-recovery-status], [data-recovery-quote]").forEach((node) => node.remove());
-      const localAll = next.filter((comment) => comment.page_url === pageUrl);
+      const localAll = next.filter((comment) => comment.page_url === pageUrl && (!visibleCommentIds || visibleCommentIds.has(comment.id)));
       const local = localAll.filter((comment) => statusFilter === "resolved" ? comment.status === "resolved" : comment.status !== "resolved");
       const localOrder = new Map(localAll.map((comment, index) => ({ comment, index, position: anchorPosition(comment) })).sort((left, right) => {
         if (left.position && right.position) return left.position.top - right.position.top || left.position.left - right.position.left || left.index - right.index;
@@ -387,6 +397,9 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
   };
 
   return {
+    setVisibleCommentIds(commentIds) {
+      visibleCommentIds = commentIds ? new Set(commentIds) : null;
+    },
     setComments(next) {
       if (activeThreadId && root.querySelector("[data-thread-popover]")) {
         if (mutationDepth > 0 || root.querySelector("[data-edit-composer],[data-reply-composer]")) { pendingProjection = [...next]; return; }

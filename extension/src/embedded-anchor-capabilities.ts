@@ -66,12 +66,30 @@ function canonicalAnchor(anchor: EmbeddedAnchor): string {
     : JSON.stringify([anchor.anchor_type, anchor.css_selector, anchor.relative_x, anchor.relative_y]);
 }
 
+function canonicalInteractionContext(context: RiseInteractionContext): string {
+  return JSON.stringify([
+    context.version,
+    context.kind,
+    [
+      context.container.block_id,
+      context.container.ordinal,
+      context.container.fingerprint,
+    ],
+    [
+      context.item.ordinal,
+      context.item.count,
+      context.item.label,
+      context.item.control_key,
+    ],
+  ]);
+}
+
 function canonicalBinding(binding: EmbeddedAnchorBinding): string {
   return JSON.stringify([
     binding.tabId, binding.courseId, binding.frameId, binding.workerInstanceId, binding.generation,
     binding.pageUrl, binding.pageTitle, binding.parentActivityUrl, binding.courseUrl, binding.embeddedLocator,
     canonicalAnchor(binding.anchor),
-    binding.interactionContext === null ? null : JSON.stringify(binding.interactionContext),
+    binding.interactionContext === null ? null : canonicalInteractionContext(binding.interactionContext),
   ]);
 }
 

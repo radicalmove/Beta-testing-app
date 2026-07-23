@@ -46,10 +46,14 @@ function createHarness(navigate?: (destination: URL, mode: "hash" | "route") => 
   let refresh: (() => void) | undefined;
   let tornDown = false;
   const projections: PageComment[][] = [];
+  let visibleCommentIds: ReadonlySet<string> | null = null;
   let rendererDestroyed = 0;
   let takenToContext = "";
-  const createRenderer = (_document: Document, _pageUrl: string): CommentRenderer => ({
-    setComments: (comments) => { projections.push(comments); },
+  const createRenderer = (_document: Document, rendererPageUrl: string): CommentRenderer => ({
+    setVisibleCommentIds: (commentIds) => { visibleCommentIds = commentIds; },
+    setComments: (comments) => {
+      projections.push(comments.filter((comment) => comment.page_url !== rendererPageUrl || !visibleCommentIds || visibleCommentIds.has(comment.id)));
+    },
     setStatusFilter: () => {},
     orderedCommentIds: () => [],
     takeToContext: (commentId) => { takenToContext = commentId; return true; },
@@ -153,8 +157,8 @@ test("highlight capture retains the owning Rise tab context from the live Range"
   worker.destroy();
 });
 
-test("restore interaction activates a projected Rise process step before context opening", () => {
-  const { window, worker } = createHarness();
+test("restore interaction activates a projected Rise process step and follows later non-dot state changes", async () => {
+  const { window, projections, worker } = createHarness();
   const document = window.document as unknown as Document;
   window.document.querySelector("main")!.innerHTML = `
     <section data-block-id="process-1">
@@ -180,10 +184,87 @@ test("restore interaction activates a projected Rise process step before context
     replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false },
   };
   assert.equal(worker.handleCommand(command(window, "SCORM_SET_COMMENTS", { comments: [comment] })).ok, true);
+  assert.deepEqual(projections.at(-1), [], "the step-2 marker stays hidden while step 1 is active");
   const restore = worker.handleCommand({ ...command(window, "SCORM_RESTORE_INTERACTION", { comment_id: currentId }), request_id: "423e4567-e89b-42d3-a456-426614174000" });
   assert.equal(restore.ok, true);
   assert.equal(controls[1].getAttribute("aria-current"), "true");
   assert.equal(slides[1].hidden, false);
+  assert.deepEqual(projections.at(-1)?.map(({ id }) => id), [currentId]);
+  await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+
+  controls[0].setAttribute("aria-current", "true");
+  controls[1].setAttribute("aria-current", "false");
+  slides[0].hidden = false;
+  slides[1].hidden = true;
+  await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+  assert.deepEqual(projections.at(-1), [], "a previous/next or swipe state change hides the step-2 marker");
+  worker.destroy();
+});
+
+test("projects only comments for the active Rise tab and refreshes after restoring or manually changing tabs", async () => {
+  const { window, projections, worker } = createHarness();
+  const document = window.document as unknown as Document;
+  window.document.querySelector("main")!.innerHTML = `
+    <h2>Trade-offs: stability versus flexibility</h2>
+    <section data-block-id="cmq675swk02a207op9se1ay8q" class="noOutline">
+      <div role="tablist" class="blocks-tabs__header">
+        <button role="tab" aria-controls="written" aria-selected="true">Written (codified)</button>
+        <button role="tab" aria-controls="unwritten" aria-selected="false">Unwritten (uncodified)</button>
+      </div>
+      <div id="written" role="tabpanel" class="blocks-tabs__content-item blocks-tabs__content-item--active">Written copy</div>
+      <div id="unwritten" role="tabpanel" class="blocks-tabs__content-item">Unwritten copy</div>
+    </section>`;
+  const controls = Array.from(document.querySelectorAll<HTMLButtonElement>("[role=tab]"));
+  controls.forEach((control) => control.addEventListener("click", () => {
+    controls.forEach((candidate) => candidate.setAttribute("aria-selected", String(candidate === control)));
+  }));
+
+  const pageUrl = pageIdentity(window).pageUrl;
+  const makeComment = (id: string, body: string, interaction_context: PageComment["interaction_context"]): PageComment => ({
+    id, body, category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" },
+    page_url: pageUrl, page_title: "Embedded activity · Lesson 1", parent_activity_url: null, embedded_locator: null,
+    interaction_context, anchor_type: "visual_pin", selected_quote: null, prefix: null, suffix: null,
+    css_selector: "#area", dom_selector: null, relative_x: .5, relative_y: .5,
+    replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false },
+  });
+  const ordinaryId = "00000000-0000-4000-8000-000000000071";
+  const writtenId = "00000000-0000-4000-8000-000000000072";
+  const unwrittenId = "00000000-0000-4000-8000-000000000073";
+  const container = {
+    block_id: "cmq675swk02a207op9se1ay8q",
+    ordinal: 1,
+    fingerprint: "Written (codified) | Unwritten (uncodified)",
+  };
+  const comments = [
+    makeComment(ordinaryId, "Outside tabs", null),
+    makeComment(writtenId, "Written tab", {
+      version: 1, kind: "tabs", container,
+      item: { ordinal: 1, count: 2, label: "Written (codified)", control_key: "written" },
+    }),
+    makeComment(unwrittenId, "Unwritten tab", {
+      version: 1, kind: "tabs", container,
+      item: { ordinal: 2, count: 2, label: "Unwritten (uncodified)", control_key: "unwritten" },
+    }),
+  ];
+
+  assert.equal(worker.handleCommand(command(window, "SCORM_SET_COMMENTS", { comments })).ok, true);
+  assert.deepEqual(projections.at(-1)?.map(({ id }) => id), [ordinaryId, writtenId]);
+
+  const restore = worker.handleCommand({
+    ...command(window, "SCORM_RESTORE_INTERACTION", { comment_id: unwrittenId }),
+    request_id: "423e4567-e89b-42d3-a456-426614174000",
+  });
+  assert.equal(restore.ok, true);
+  assert.deepEqual(projections.at(-1)?.map(({ id }) => id), [ordinaryId, unwrittenId]);
+
+  controls[0].click();
+  await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+  assert.deepEqual(projections.at(-1)?.map(({ id }) => id), [ordinaryId, writtenId]);
+
+  controls[0].setAttribute("aria-selected", "false");
+  controls[1].setAttribute("aria-selected", "true");
+  await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+  assert.deepEqual(projections.at(-1)?.map(({ id }) => id), [ordinaryId, unwrittenId], "keyboard-driven tab state is observed without a click");
   worker.destroy();
 });
 

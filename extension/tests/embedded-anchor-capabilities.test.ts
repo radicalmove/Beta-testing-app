@@ -9,6 +9,22 @@ class MemoryStorage implements EmbeddedAnchorStorage {
   async set(value: Record<string, unknown>) { Object.assign(this.data, structuredClone(value)); }
 }
 
+function alphabetiseObjectKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(alphabetiseObjectKeys);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, child]) => [key, alphabetiseObjectKeys(child)]),
+  );
+}
+
+class ChromeLikeStorage extends MemoryStorage {
+  override async set(value: Record<string, unknown>) {
+    Object.assign(this.data, structuredClone(alphabetiseObjectKeys(value)));
+  }
+}
+
 const uuid = (n: number) => `123e4567-e89b-42d3-a456-${String(n).padStart(12, "0")}`;
 const binding = {
   tabId: 7, courseId: uuid(1), frameId: 12, workerInstanceId: uuid(2), generation: 4,
@@ -47,6 +63,73 @@ test("claim is exact, single-use, and survives a service-worker restart", async 
   assert.equal(await restarted.claim(token, { tabId: 7, courseId: uuid(9) }), undefined);
   assert.deepEqual(await restarted.claim(token, { tabId: 7, courseId: binding.courseId }), { ...binding, createdAt: 100, expiresAt: 300_100 });
   assert.equal(await restarted.claim(token, { tabId: 7, courseId: binding.courseId }), undefined);
+});
+
+test("claims a capability containing a real Rise process interaction context", async () => {
+  const storage = new MemoryStorage();
+  const processBinding = {
+    ...binding,
+    interactionContext: {
+      version: 1 as const,
+      kind: "process" as const,
+      container: {
+        block_id: "cmq675iis02u407kahhc34z6v",
+        ordinal: 1,
+        fingerprint: "Carousel",
+      },
+      item: {
+        ordinal: 3,
+        count: 5,
+        label: "Criminal justice agencies",
+        control_key: "Go to slide 3",
+      },
+    },
+  };
+  const token = await new EmbeddedAnchorCapabilities(storage, {
+    randomToken: () => "p".repeat(64),
+    now: () => 100,
+  }).issue(processBinding);
+
+  assert.deepEqual(
+    await new EmbeddedAnchorCapabilities(storage, { now: () => 101 }).claim(token, {
+      tabId: processBinding.tabId,
+      courseId: processBinding.courseId,
+    }),
+    { ...processBinding, createdAt: 100, expiresAt: 300_100 },
+  );
+});
+
+test("interaction capability digest survives Chrome storage reordering object keys", async () => {
+  const storage = new ChromeLikeStorage();
+  const processBinding = {
+    ...binding,
+    interactionContext: {
+      version: 1 as const,
+      kind: "process" as const,
+      container: {
+        block_id: "cmq675iis02u407kahhc34z6v",
+        ordinal: 1,
+        fingerprint: "Carousel",
+      },
+      item: {
+        ordinal: 3,
+        count: 5,
+        label: "Criminal justice agencies",
+        control_key: "Go to slide 3",
+      },
+    },
+  };
+  const token = await new EmbeddedAnchorCapabilities(storage, {
+    randomToken: () => "r".repeat(64),
+    now: () => 100,
+  }).issue(processBinding);
+
+  assert.ok(
+    await new EmbeddedAnchorCapabilities(storage, { now: () => 101 }).claim(token, {
+      tabId: processBinding.tabId,
+      courseId: processBinding.courseId,
+    }),
+  );
 });
 
 test("a pre-interaction-context capability survives an extension upgrade", async () => {

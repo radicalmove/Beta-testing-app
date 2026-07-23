@@ -419,6 +419,25 @@ test("next restores the previous marker to its unfocused teal colour", async () 
   assert.equal(firstMarker.style.borderColor, "#0b6261");
 });
 
+test("next requests same-page navigation when the target belongs to another hidden Rise interaction", async () => {
+  const { document } = setup();
+  const navigations: Array<[string, string]> = [];
+  const first = comment({ id: "00000000-0000-4000-8000-000000000036", body: "First tab" });
+  const second = comment({ id: "00000000-0000-4000-8000-000000000037", body: "Second tab" });
+  const renderer = createCommentRenderer(document, pageUrl, {
+    navigateToComment: async (id, url) => { navigations.push([id, url]); },
+  });
+  renderer.setVisibleCommentIds?.(new Set([first.id]));
+  renderer.setComments([first, second]);
+  document.querySelector<HTMLElement>(`[data-moodle-review-stored-pin="${first.id}"]`)!.click();
+  const root = document.querySelector<HTMLElement>("[data-moodle-review-renderer-root]")!.shadowRoot!;
+
+  root.querySelector<HTMLButtonElement>('[data-thread-navigation] [data-direction="next"]')!.click();
+  await settle();
+
+  assert.deepEqual(navigations, [[second.id, second.page_url]]);
+});
+
 test("next from the final anchor-ordered comment navigates to the following course page", async () => {
   const { document } = setup();
   const positions = [["first-on-page", 20], ["last-on-page", 220]] as const;

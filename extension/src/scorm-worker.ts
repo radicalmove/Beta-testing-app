@@ -4,7 +4,7 @@ import type { PageComment } from "./background-bridge.ts";
 import { createCommentRenderer, type CommentRenderer } from "./comment-renderer.ts";
 import { SCORM_ACK_TYPES, type ScormAck, type ScormCommand, type ScormEvent, validateScormMessage } from "./scorm-protocol.ts";
 import { COMMENT_MARKER_CURSOR } from "./ui/comment-cursor.ts";
-import { captureRiseInteractionContext, restoreRiseInteractionContext, type RiseInteractionContext } from "./rise-interaction-context.ts";
+import { captureRiseInteractionContext, isRiseInteractionContextActive, restoreRiseInteractionContext, type RiseInteractionContext } from "./rise-interaction-context.ts";
 
 type LifecycleController = { teardown(): void; flush(): void };
 type LifecycleFactory = (window: Window & typeof globalThis, document: Document, refresh: () => void) => LifecycleController;
@@ -70,6 +70,8 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
   let previousCursor = "";
   let previousCursorPriority = "";
   let projectedComments = new Map<string, PageComment>();
+  let latestComments: PageComment[] = [];
+  let interactionProjectionTimer: number | undefined;
   let armedCoverStart: HTMLAnchorElement | undefined;
   const isTrustedActivation = options.isTrustedActivation ?? ((event: Event) => event.isTrusted);
 
@@ -106,6 +108,41 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
     ? options.createRenderer(document, pageUrl)
     : createCommentRenderer(document, pageUrl, { editThread: (id, body) => mutation("edit", id, body), replyThread: (id, body) => mutation("reply", id, body), uploadAttachment: (id, dataUrl) => mutation("upload", id, dataUrl), changeStatus: (id, status) => mutation("status", id, status), deleteThread: (id) => mutation("delete", id), navigateToComment: (commentId, targetPageUrl) => { options.emit(envelope("SCORM_COMMENT_NAVIGATION_REQUESTED", { comment_id: commentId, page_url: targetPageUrl })); } });
   renderer = createRenderer(identity.pageUrl);
+
+  const applyInteractionProjection = () => {
+    if (destroyed) return;
+    const visibleIds = new Set(latestComments
+      .filter((comment) => comment.page_url === identity.pageUrl
+        && (!comment.interaction_context || isRiseInteractionContextActive(comment.interaction_context, document)))
+      .map((comment) => comment.id));
+    renderer.setVisibleCommentIds?.(visibleIds);
+    renderer.setComments(latestComments);
+  };
+  const scheduleInteractionProjection = () => {
+    if (interactionProjectionTimer !== undefined) window.clearTimeout(interactionProjectionTimer);
+    interactionProjectionTimer = window.setTimeout(() => {
+      interactionProjectionTimer = undefined;
+      applyInteractionProjection();
+    }, 0);
+  };
+  const onInteractionControlClick = (event: Event) => {
+    const target = event.target;
+    if (!(target instanceof window.Element)
+      || !target.closest('[role="tab"], .carousel-controls-item-btn, button[aria-label^="Go to slide "]')) return;
+    scheduleInteractionProjection();
+  };
+  document.addEventListener("click", onInteractionControlClick);
+  const interactionStateSelector = '[role="tab"], [role="tabpanel"], [role="tablist"], .carousel, .carousel-slide, .carousel-controls-item-btn';
+  const interactionStateObserver = new window.MutationObserver((records) => {
+    if (records.some((record) => record.target instanceof window.Element && record.target.matches(interactionStateSelector))) {
+      scheduleInteractionProjection();
+    }
+  });
+  interactionStateObserver.observe(document.documentElement, {
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["aria-selected", "aria-current", "aria-hidden", "hidden", "class"],
+  });
 
   const onSelectionChange = () => {
     if (destroyed) return;
@@ -152,6 +189,7 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
     renderer.setComments([]);
     renderer.destroy();
     projectedComments = new Map();
+    latestComments = [];
     identity = next;
     navigationSignature = nextNavigationSignature;
     renderer = createRenderer(identity.pageUrl);
@@ -225,8 +263,9 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
         case "SCORM_CANCEL_MARKER": stopMarker(); return acknowledgement(command, true);
         case "SCORM_SET_COMMENTS": {
           const comments = command.payload.comments;
+          latestComments = [...comments];
           projectedComments = new Map(comments.filter((comment) => comment.page_url === identity.pageUrl).map((comment) => [comment.id, comment]));
-          renderer.setComments(comments);
+          applyInteractionProjection();
           return acknowledgement(command, true);
         }
         case "SCORM_ACTIVATE_COVER": return armRiseCover()
@@ -245,7 +284,11 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
           if (!comment) return acknowledgement(command, false, "COMMENT_NOT_FOUND");
           if (!comment.interaction_context) return acknowledgement(command, true);
           const result = restoreRiseInteractionContext(comment.interaction_context, document);
-          return result === "ready" ? acknowledgement(command, true) : acknowledgement(command, false, result === "not-ready" ? "INTERACTION_NOT_READY" : "INTERACTION_MISMATCH");
+          if (result === "ready") {
+            applyInteractionProjection();
+            return acknowledgement(command, true);
+          }
+          return acknowledgement(command, false, result === "not-ready" ? "INTERACTION_NOT_READY" : "INTERACTION_MISMATCH");
         }
         case "SCORM_TAKE_TO_CONTEXT": return acknowledgement(command, projectedComments.has(command.payload.comment_id) && renderer.takeToContext(command.payload.comment_id), "COMMENT_NOT_FOUND");
       }
@@ -258,6 +301,10 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
       armedCoverStart?.removeEventListener("click", onCoverActivation);
       armedCoverStart = undefined;
       document.removeEventListener("selectionchange", onSelectionChange);
+      document.removeEventListener("click", onInteractionControlClick);
+      interactionStateObserver.disconnect();
+      if (interactionProjectionTimer !== undefined) window.clearTimeout(interactionProjectionTimer);
+      interactionProjectionTimer = undefined;
       lifecycle.teardown();
       renderer.setComments([]);
       projectedComments.clear();

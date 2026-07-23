@@ -5,6 +5,7 @@ import { Window } from "happy-dom";
 import {
   captureRiseInteractionContext,
   interactionContextLabel,
+  isRiseInteractionContextActive,
   restoreRiseInteractionContext,
   validateRiseInteractionContext,
 } from "../src/rise-interaction-context.ts";
@@ -65,6 +66,31 @@ test("captures and labels the owning Rise tab", () => {
   assert.equal(interactionContextLabel(context!), "Tab: Unwritten (uncodified)");
 });
 
+test("captures a real Rise tab block whose data-block container has no accessible label", () => {
+  const document = tabsFixture();
+  const section = document.querySelector("section")!;
+  section.removeAttribute("aria-label");
+  section.className = "noOutline";
+  section.setAttribute("data-block-id", "cmq675swk02a207op9se1ay8q");
+  document.querySelector("[role=tablist]")!.className = "blocks-tabs__header";
+  const panels = Array.from(document.querySelectorAll<HTMLElement>("[role=tabpanel]"));
+  panels[0].className = "blocks-tabs__content-item";
+  panels[1].className = "blocks-tabs__content-item blocks-tabs__content-item--active";
+
+  const context = captureRiseInteractionContext(document.querySelector("#target")!, document);
+
+  assert.deepEqual(context, {
+    version: 1,
+    kind: "tabs",
+    container: {
+      block_id: "cmq675swk02a207op9se1ay8q",
+      ordinal: 1,
+      fingerprint: "Written (codified) | Unwritten (uncodified)",
+    },
+    item: { ordinal: 2, count: 2, label: "Unwritten (uncodified)", control_key: "unwritten" },
+  });
+});
+
 test("captures and labels the owning Rise process step", () => {
   const document = processFixture();
   const context = captureRiseInteractionContext(document.querySelector("#target")!, document);
@@ -97,12 +123,42 @@ test("restores only the exact saved tab and verifies its visible state", () => {
   assert.equal((document.querySelector("#unwritten") as HTMLElement).hidden, false);
 });
 
+test("reports only the selected Rise tab context as active", () => {
+  const document = tabsFixture();
+  const unwritten = captureRiseInteractionContext(document.querySelector("#target")!, document)!;
+  const written = {
+    ...unwritten,
+    item: { ordinal: 1, count: 2, label: "Written (codified)", control_key: "written" },
+  };
+
+  assert.equal(isRiseInteractionContextActive(written, document), true);
+  assert.equal(isRiseInteractionContextActive(unwritten, document), false);
+  (document.querySelector('[aria-controls="unwritten"]') as HTMLButtonElement).click();
+  assert.equal(isRiseInteractionContextActive(written, document), false);
+  assert.equal(isRiseInteractionContextActive(unwritten, document), true);
+});
+
 test("restores only the exact saved process step", () => {
   const document = processFixture();
   const context = captureRiseInteractionContext(document.querySelector("#target")!, document)!;
   assert.equal(restoreRiseInteractionContext(context, document), "ready");
   assert.equal(document.querySelector('[aria-label="Go to slide 3"]')?.getAttribute("aria-current"), "true");
   assert.equal((document.querySelectorAll<HTMLElement>(".carousel-slide")[2]).hidden, false);
+});
+
+test("reports only the selected Rise process step context as active", () => {
+  const document = processFixture();
+  const third = captureRiseInteractionContext(document.querySelector("#target")!, document)!;
+  const first = {
+    ...third,
+    item: { ordinal: 1, count: 3, label: "Government and ministers", control_key: "Go to slide 1" },
+  };
+
+  assert.equal(isRiseInteractionContextActive(first, document), true);
+  assert.equal(isRiseInteractionContextActive(third, document), false);
+  (document.querySelector('[aria-label="Go to slide 3"]') as HTMLButtonElement).click();
+  assert.equal(isRiseInteractionContextActive(first, document), false);
+  assert.equal(isRiseInteractionContextActive(third, document), true);
 });
 
 test("returns not-ready before Rise renders and mismatch without clicking changed content", () => {
@@ -119,9 +175,13 @@ test("returns not-ready before Rise renders and mismatch without clicking change
   assert.equal(clicks, 0);
 });
 
-test("omits context when no deterministic container fingerprint exists", () => {
+test("omits context when neither the container nor its controls have a deterministic fingerprint", () => {
   const document = tabsFixture();
   const section = document.querySelector("section")!;
   section.removeAttribute("aria-label");
+  for (const control of Array.from(document.querySelectorAll<HTMLElement>("[role=tab]"))) {
+    control.textContent = "";
+    control.removeAttribute("aria-label");
+  }
   assert.equal(captureRiseInteractionContext(document.querySelector("#target")!, document), null);
 });

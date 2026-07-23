@@ -85,10 +85,21 @@ function precedingHeading(root: Element, interaction: Element): string {
   return normalise(before?.textContent);
 }
 
-function fingerprint(root: Element, interaction: Element, document: Document): string {
+function interactionControlFingerprint(kind: "tabs" | "process", interaction: Element): string {
+  const candidates = kind === "tabs"
+    ? Array.from(interaction.querySelectorAll<HTMLElement>('[role="tab"]'))
+    : Array.from(interaction.querySelectorAll<HTMLElement>(".carousel-slide"));
+  const labels = candidates.map((candidate) => kind === "tabs"
+    ? normalise(candidate.textContent || candidate.getAttribute("aria-label"))
+    : normalise(candidate.querySelector<HTMLElement>("h1,h2,h3,h4,h5,h6")?.textContent));
+  return labels.length > 0 && labels.every(Boolean) ? normalise(labels.join(" | ")) : "";
+}
+
+function fingerprint(kind: "tabs" | "process", root: Element, interaction: Element, document: Document): string {
   return labelledText(root, document)
     || labelledText(interaction, document)
-    || precedingHeading(root, interaction);
+    || precedingHeading(root, interaction)
+    || interactionControlFingerprint(kind, interaction);
 }
 
 function tabInteractions(document: Document): Array<{ root: Element; interaction: Element }> {
@@ -114,7 +125,7 @@ function containerIdentity(kind: "tabs" | "process", root: Element, interaction:
   const candidates = kind === "tabs" ? tabInteractions(document) : processInteractions(document);
   const ordinal = candidates.findIndex((entry) => entry.root === root) + 1;
   const blockId = root.getAttribute("data-block-id");
-  const resolvedFingerprint = fingerprint(root, interaction, document);
+  const resolvedFingerprint = fingerprint(kind, root, interaction, document);
   if (ordinal < 1 || ordinal > 100 || !resolvedFingerprint || (blockId !== null && !IDENTIFIER.test(blockId))) return null;
   return { block_id: blockId, ordinal, fingerprint: resolvedFingerprint };
 }
@@ -171,11 +182,40 @@ function resolveContainer(context: RiseInteractionContext, document: Document): 
   else matches = candidates.filter((_entry, index) => index + 1 === context.container.ordinal);
   if (matches.length !== 1) return "mismatch";
   const match = matches[0];
-  return normalisedEqual(fingerprint(match.root, match.interaction, document), context.container.fingerprint) ? match : "mismatch";
+  return normalisedEqual(fingerprint(context.kind, match.root, match.interaction, document), context.container.fingerprint) ? match : "mismatch";
 }
 
 function visible(element: HTMLElement): boolean {
   return !element.hidden && element.getAttribute("aria-hidden") !== "true";
+}
+
+export function isRiseInteractionContextActive(value: RiseInteractionContext, document: Document): boolean {
+  const context = validateRiseInteractionContext(value);
+  if (!context) return false;
+  const resolved = resolveContainer(context, document);
+  if (typeof resolved === "string") return false;
+
+  if (context.kind === "tabs") {
+    const controls = Array.from(resolved.interaction.querySelectorAll<HTMLElement>('[role="tab"]'));
+    const control = controls[context.item.ordinal - 1];
+    if (controls.length !== context.item.count || !control
+      || control.getAttribute("aria-controls") !== context.item.control_key
+      || !normalisedEqual(control.textContent || control.getAttribute("aria-label") || "", context.item.label)) return false;
+    const matchingPanels = Array.from(resolved.root.querySelectorAll<HTMLElement>('[role="tabpanel"]'))
+      .filter((panel) => panel.id === context.item.control_key);
+    return matchingPanels.length === 1 && control.getAttribute("aria-selected") === "true";
+  }
+
+  const slides = Array.from(resolved.interaction.querySelectorAll<HTMLElement>(".carousel-slide"));
+  const controls = Array.from(resolved.interaction.querySelectorAll<HTMLElement>(".carousel-controls-item-btn"));
+  const slide = slides[context.item.ordinal - 1];
+  const matchingControls = controls.filter((control) => control.getAttribute("aria-label") === context.item.control_key);
+  if (slides.length !== context.item.count || controls.length !== context.item.count || !slide || matchingControls.length !== 1) return false;
+  const label = normalise(slide.querySelector<HTMLElement>("h1,h2,h3,h4,h5,h6")?.textContent)
+    || normalise(slide.getAttribute("aria-label")).replace(/^\d+\s+of\s+\d+\s*/iu, "");
+  return normalisedEqual(label, context.item.label)
+    && matchingControls[0].getAttribute("aria-current") === "true"
+    && visible(slide);
 }
 
 export function restoreRiseInteractionContext(value: RiseInteractionContext, document: Document): RestoreRiseInteractionResult {
