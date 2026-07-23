@@ -7,7 +7,7 @@ from app.db import get_session
 from app.config import Settings, get_settings
 from app.dependencies import current_api_user, require_course_access
 from app.models import Comment, CommentReply, CommentStatusEvent, Course, CourseMembership, MembershipState, User, UserRole
-from app.schemas import CommentCreateRequest, CommentReplyRequest, CommentShareRequest, CommentSmeRecipientsRequest, CommentStatusRequest, CommentUpdateRequest
+from app.schemas import CommentCreateRequest, CommentReplyRequest, CommentShareRequest, CommentSmeRecipientsRequest, CommentStatusRequest, CommentUpdateRequest, RiseInteractionContext
 from app.services.attachments import delete_attachment_objects
 from app.services.comments import AuthorizationError, PageComment, comment_capabilities, course_role_for, create_comment, create_reply, delete_comment_thread, replace_sme_recipients, share_comment_with_user, sme_recipient_state, update_comment_body, update_comment_status, visible_comment_for, visible_comments_for, visible_page_comments_for
 
@@ -20,10 +20,11 @@ def _reply_json(reply: CommentReply) -> dict[str, str]:
 
 def _page_comment_json(projected: PageComment, viewer: User, db: DbSession) -> dict:
     comment, location, author = projected.comment, projected.location, projected.author
+    interaction_context = None if location.interaction_context is None else RiseInteractionContext.model_validate(location.interaction_context).model_dump(mode="json")
     return {
         "id": str(comment.id), "body": comment.body, "category": comment.category.value,
         "status": comment.status.value, "author": {"display_name": author.display_name, "role": projected.author_role.value}, "page_url": location.page_url, "page_title": location.page_title,
-        "parent_activity_url": location.parent_activity_url, "embedded_locator": location.embedded_locator,
+        "parent_activity_url": location.parent_activity_url, "embedded_locator": location.embedded_locator, "interaction_context": interaction_context,
         "anchor_type": location.anchor_type.value if hasattr(location.anchor_type, "value") else location.anchor_type, "selected_quote": location.selected_quote,
         "prefix": location.prefix, "suffix": location.suffix, "css_selector": location.css_selector,
         "dom_selector": location.dom_selector, "relative_x": location.relative_x, "relative_y": location.relative_y,

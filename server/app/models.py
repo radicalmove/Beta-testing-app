@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Enum, Float, ForeignKey, Index, String, Text, Uuid, UniqueConstraint
+from sqlalchemy import JSON, Boolean, CheckConstraint, DateTime, Enum, Float, ForeignKey, Index, String, Text, Uuid, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -220,6 +220,7 @@ class PageLocation(Base):
     relative_y: Mapped[float | None] = mapped_column(Float)
     parent_activity_url: Mapped[str | None] = mapped_column(Text)
     embedded_locator: Mapped[str | None] = mapped_column(Text)
+    interaction_context: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     __table_args__ = (

@@ -1,7 +1,10 @@
+import json
+import re
 import uuid
+from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.url_validation import canonical_https_url
 
@@ -13,6 +16,88 @@ def _absolute_http_url(value: str, field_name: str) -> str:
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise ValueError(f"{field_name} must be an absolute http or https URL")
     return value
+
+
+def _normalise_interaction_text(value: str) -> str:
+    normalised = " ".join(value.split())
+    if not normalised or any(ord(character) < 32 or ord(character) == 127 for character in normalised):
+        raise ValueError("interaction text must be nonblank and free of control characters")
+    return normalised
+
+
+class RiseInteractionContainer(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    block_id: str | None = Field(default=None, max_length=200)
+    ordinal: int = Field(ge=1, le=100)
+    fingerprint: str = Field(min_length=1, max_length=300)
+
+    @field_validator("block_id")
+    @classmethod
+    def valid_block_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,200}", value):
+            raise ValueError("block_id must be a bounded identifier")
+        return value
+
+    @field_validator("fingerprint")
+    @classmethod
+    def normalised_fingerprint(cls, value: str) -> str:
+        return _normalise_interaction_text(value)
+
+
+class RiseInteractionItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ordinal: int = Field(ge=1, le=100)
+    count: int = Field(ge=1, le=100)
+    label: str = Field(min_length=1, max_length=300)
+    control_key: str | None = Field(default=None, max_length=200)
+
+    @field_validator("label")
+    @classmethod
+    def normalised_label(cls, value: str) -> str:
+        return _normalise_interaction_text(value)
+
+    @field_validator("control_key")
+    @classmethod
+    def clean_control_key(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value or any(ord(character) < 32 or ord(character) == 127 for character in value):
+            raise ValueError("control_key must be a bounded clean string")
+        return value
+
+    @model_validator(mode="after")
+    def ordinal_is_within_count(self):
+        if self.ordinal > self.count:
+            raise ValueError("item ordinal cannot exceed item count")
+        return self
+
+
+class RiseInteractionContext(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: Literal[1]
+    kind: Literal["tabs", "process"]
+    container: RiseInteractionContainer
+    item: RiseInteractionItem
+
+    @model_validator(mode="after")
+    def valid_control_relationship(self):
+        key = self.item.control_key
+        if self.kind == "process":
+            if key != f"Go to slide {self.item.ordinal}":
+                raise ValueError("process control_key must match its slide ordinal")
+        elif key is None or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_.:-]{0,199}", key):
+            raise ValueError("tabs control_key must be a bounded panel identifier")
+        canonical = json.dumps(self.model_dump(mode="json"), ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
+        if len(canonical) > 4096:
+            raise ValueError("interaction_context exceeds 4096 bytes")
+        return self
 
 
 class RegistrationRequest(BaseModel):
@@ -144,6 +229,7 @@ class CommentCreateRequest(BaseModel):
     relative_y: float | None = Field(default=None, ge=0, le=1)
     parent_activity_url: str | None = Field(default=None, min_length=1, max_length=4096)
     embedded_locator: str | None = Field(default=None, min_length=1, max_length=2048)
+    interaction_context: RiseInteractionContext | None = None
 
     @field_validator("page_url")
     @classmethod

@@ -9,7 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.db import Base, get_session
 from app.main import create_app
-from app.models import Comment, Course, CourseMembership, MembershipState, Session, User, UserRole
+from app.models import Comment, Course, CourseMembership, MembershipState, PageLocation, Session, User, UserRole
 from app.security import token_hash, utc_now
 from app.services.accounts import create_extension_login_code, exchange_extension_login_code
 from app.services.courses import resolve_course
@@ -177,6 +177,11 @@ def test_embedded_navigation_metadata_round_trips_through_course_comment_list(cl
         "course_id": course.json()["id"], "page_url": "https://rise.example/scorm/index.html", "page_title": "Lesson 1", "body": "Clarify",
         "anchor_type": "visual_pin", "css_selector": "#main", "relative_x": .2, "relative_y": .3,
         "parent_activity_url": "https://moodle.example/mod/scorm/player.php?a=9", "embedded_locator": "/activity/index.html#/lessons/one",
+        "interaction_context": {
+            "version": 1, "kind": "tabs",
+            "container": {"block_id": "tabs-1", "ordinal": 1, "fingerprint": "Constitution types"},
+            "item": {"ordinal": 2, "count": 2, "label": "Unwritten (uncodified)", "control_key": "panel-unwritten"},
+        },
     }
     created = client.post("/api/comments", headers=headers, json=payload)
     assert created.status_code == 201
@@ -184,6 +189,26 @@ def test_embedded_navigation_metadata_round_trips_through_course_comment_list(cl
     assert listed.status_code == 200
     assert listed.json()[0]["parent_activity_url"] == payload["parent_activity_url"]
     assert listed.json()[0]["embedded_locator"] == payload["embedded_locator"]
+    assert listed.json()[0]["interaction_context"] == payload["interaction_context"]
+
+
+def test_course_comment_list_fails_closed_for_malformed_stored_interaction_context(client):
+    headers = extension_headers(client)
+    course = client.post("/api/courses/resolve", headers=headers, json={"course_url": "https://moodle.example/course/view.php?id=22", "title": "Law", "moodle_course_id": 22})
+    created = client.post("/api/comments", headers=headers, json={
+        "course_id": course.json()["id"], "page_url": "https://rise.example/index.html", "page_title": "Lesson", "body": "Clarify",
+        "anchor_type": "visual_pin", "css_selector": "#main", "relative_x": .2, "relative_y": .3,
+    })
+    check = client.db_factory()
+    comment = check.get(Comment, UUID(created.json()["id"]))
+    location = check.get(PageLocation, comment.location_id)
+    location.interaction_context = {"version": 99, "kind": "tabs"}
+    check.commit()
+    check.close()
+
+    listed = client.get(f"/api/comments?course_id={course.json()['id']}", headers=headers)
+
+    assert listed.status_code == 422
 
 
 def test_embedded_parent_with_out_of_range_port_returns_validation_error(client):

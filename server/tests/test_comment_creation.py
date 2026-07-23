@@ -12,6 +12,14 @@ from app.services.comments import create_comment
 from app.services.courses import resolve_course
 
 
+PROCESS_CONTEXT = {
+    "version": 1,
+    "kind": "process",
+    "container": {"block_id": "process-1", "ordinal": 1, "fingerprint": "Participants"},
+    "item": {"ordinal": 3, "count": 5, "label": "Criminal justice agencies", "control_key": "Go to slide 3"},
+}
+
+
 def test_text_highlight_persists_anchor_category_open_status_and_immutable_audit_event(db_session):
     author = User(email="tester@example.test", password_hash="hash", approved_at=datetime.now(UTC), created_at=datetime.now(UTC))
     db_session.add(author)
@@ -53,11 +61,51 @@ def test_embedded_navigation_metadata_round_trips_as_a_pair(db_session):
         db_session, author, course_id=course.id, page_url="https://rise.example/scorm/index.html", page_title="Lesson 1", body="Fix this",
         anchor_type="visual_pin", css_selector="#diagram", relative_x=0.25, relative_y=0.75,
         parent_activity_url="https://moodle.example/mod/scorm/player.php?a=9", embedded_locator="#/lessons/one",
+        interaction_context=PROCESS_CONTEXT,
     )
 
     location = db_session.get(PageLocation, comment.location_id)
     assert location.parent_activity_url == "https://moodle.example/mod/scorm/player.php?a=9"
     assert location.embedded_locator == "#/lessons/one"
+    assert location.interaction_context == PROCESS_CONTEXT
+
+
+def test_interaction_context_is_nullable_for_existing_comments():
+    request = CommentCreateRequest(
+        course_id="00000000-0000-0000-0000-000000000001",
+        page_url="https://rise.example/index.html",
+        page_title="Lesson",
+        body="Fix",
+        anchor_type="visual_pin",
+        css_selector="#main",
+        relative_x=.2,
+        relative_y=.3,
+    )
+    assert request.interaction_context is None
+
+
+@pytest.mark.parametrize("context", [
+    {**PROCESS_CONTEXT, "extra": True},
+    {**PROCESS_CONTEXT, "version": 2},
+    {**PROCESS_CONTEXT, "kind": "accordion"},
+    {**PROCESS_CONTEXT, "container": {**PROCESS_CONTEXT["container"], "ordinal": 0}},
+    {**PROCESS_CONTEXT, "container": {**PROCESS_CONTEXT["container"], "fingerprint": "  "}},
+    {**PROCESS_CONTEXT, "item": {**PROCESS_CONTEXT["item"], "ordinal": 6}},
+    {**PROCESS_CONTEXT, "item": {**PROCESS_CONTEXT["item"], "control_key": None}},
+])
+def test_interaction_context_rejects_unknown_unbounded_or_inconsistent_shapes(context):
+    with pytest.raises(ValidationError):
+        CommentCreateRequest(
+            course_id="00000000-0000-0000-0000-000000000001",
+            page_url="https://rise.example/index.html",
+            page_title="Lesson",
+            body="Fix",
+            anchor_type="visual_pin",
+            css_selector="#main",
+            relative_x=.2,
+            relative_y=.3,
+            interaction_context=context,
+        )
 
 
 @pytest.mark.parametrize("values", [

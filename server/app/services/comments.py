@@ -298,7 +298,7 @@ def replace_sme_recipients(db: DbSession, actor: User, comment_id: uuid.UUID, us
     return comment
 
 
-def create_comment(db: DbSession, author: User, *, course_id: uuid.UUID, page_url: str, page_title: str, body: str, category: str = "general", anchor_type: str = "", selected_quote: str | None = None, prefix: str | None = None, suffix: str | None = None, css_selector: str | None = None, dom_selector: str | None = None, relative_x: float | None = None, relative_y: float | None = None, parent_activity_url: str | None = None, embedded_locator: str | None = None) -> Comment:
+def create_comment(db: DbSession, author: User, *, course_id: uuid.UUID, page_url: str, page_title: str, body: str, category: str = "general", anchor_type: str = "", selected_quote: str | None = None, prefix: str | None = None, suffix: str | None = None, css_selector: str | None = None, dom_selector: str | None = None, relative_x: float | None = None, relative_y: float | None = None, parent_activity_url: str | None = None, embedded_locator: str | None = None, interaction_context: dict | None = None) -> Comment:
     if not body.strip():
         raise ValueError("body is required")
     if not page_title.strip():
@@ -330,7 +330,7 @@ def create_comment(db: DbSession, author: User, *, course_id: uuid.UUID, page_ur
     else:
         raise ValueError("Invalid anchor type")
     instant = utc_now()
-    location = PageLocation(course_id=course_id, page_url=page_url.strip(), page_title=page_title.strip(), anchor_type=anchor_type, selected_quote=selected_quote, prefix=prefix, suffix=suffix, css_selector=css_selector, dom_selector=dom_selector, relative_x=relative_x, relative_y=relative_y, parent_activity_url=parent_activity_url, embedded_locator=embedded_locator, created_at=instant)
+    location = PageLocation(course_id=course_id, page_url=page_url.strip(), page_title=page_title.strip(), anchor_type=anchor_type, selected_quote=selected_quote, prefix=prefix, suffix=suffix, css_selector=css_selector, dom_selector=dom_selector, relative_x=relative_x, relative_y=relative_y, parent_activity_url=parent_activity_url, embedded_locator=embedded_locator, interaction_context=interaction_context, created_at=instant)
     db.add(location)
     db.flush()
     comment = Comment(course_id=course_id, location_id=location.id, author_user_id=author.id, author_role=course_role_for(db, author, course_id), body=body.strip(), category=CommentCategory(category), status=CommentStatus.OPEN, created_at=instant, updated_at=instant)
