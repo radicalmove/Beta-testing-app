@@ -22,7 +22,7 @@
 - [ ] Add current-page heading navigation coverage proving it calls `renderer.takeToContext`, alongside the cross-page `navigateToComment` case. Assert collapsed groups do not cause the empty state, and that no listbox, page option, or Jump-to selector is rendered.
 - [ ] Remove or replace the legacy Jump-to helper and assertions in `extension/tests/overlay.test.ts`, and update `extension/tests/content.test.ts` so it no longer queries `[data-comment-page-option]`.
 - [ ] Run `npm test -- --test-name-pattern="page groups|Collapse all|heading navigation|chevron"`; confirm red failures.
-- [ ] Commit: `git add extension/tests/overlay.test.ts && git commit -m "test: cover comment-list page groups"`.
+- [ ] Commit: `git add extension/tests/overlay.test.ts extension/tests/content.test.ts && git commit -m "test: cover comment-list page groups"`.
 
 ### Task 2: Replace Jump to with collapsible page groups
 
