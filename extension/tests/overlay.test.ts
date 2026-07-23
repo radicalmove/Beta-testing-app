@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Window } from "happy-dom";
 
-import { approvedControlStyles, commentListLayoutStyles, commentsButtonStyles, controlAlignmentStyles, createOverlayMarkup, helpButtonStyles, mountReviewOverlay, OVERLAY_HOST_ID, overlayStyles, panelTransitionStyles, semanticFilterHoverStyles, stabilisationUxStyles, tealOverlayOverrides } from "../src/overlay/root.ts";
+import { approvedControlStyles, commentListLayoutStyles, commentsButtonStyles, controlAlignmentStyles, createOverlayMarkup, helpButtonStyles, isTransientInteractionNavigationError, mountReviewOverlay, OVERLAY_HOST_ID, overlayStyles, panelTransitionStyles, semanticFilterHoverStyles, stabilisationUxStyles, tealOverlayOverrides } from "../src/overlay/root.ts";
 import { COMMENT_MARKER_CURSOR } from "../src/ui/comment-cursor.ts";
 import type { PanelStateStorage } from "../src/ui/panel-state.ts";
 
@@ -969,6 +969,12 @@ test("whole-course page groups provide heading links and independent disclosure"
   collapse.click();
   assert.equal(collapse.textContent, "Expand all");
   assert.equal(targetToggle.getAttribute("aria-expanded"), "false");
+});
+
+test("transient Rise interaction readiness stays out of the visible navigation errors", () => {
+  assert.equal(isTransientInteractionNavigationError(new Error("INTERACTION_NOT_READY")), true);
+  assert.equal(isTransientInteractionNavigationError(new Error("INTERACTION_MISMATCH: changed")), false);
+  assert.equal(isTransientInteractionNavigationError(new Error("SCORM navigation failed")), false);
 });
 
 test("course group headings remove the embedded activity prefix and use the larger approved size", () => {

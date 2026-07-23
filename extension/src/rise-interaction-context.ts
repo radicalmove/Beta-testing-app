@@ -198,11 +198,11 @@ export function isRiseInteractionContextActive(value: RiseInteractionContext, do
   if (context.kind === "tabs") {
     const controls = Array.from(resolved.interaction.querySelectorAll<HTMLElement>('[role="tab"]'));
     const control = controls[context.item.ordinal - 1];
-    if (controls.length !== context.item.count || !control
-      || control.getAttribute("aria-controls") !== context.item.control_key
+    const livePanelId = control?.getAttribute("aria-controls");
+    if (controls.length !== context.item.count || !control || !livePanelId
       || !normalisedEqual(control.textContent || control.getAttribute("aria-label") || "", context.item.label)) return false;
     const matchingPanels = Array.from(resolved.root.querySelectorAll<HTMLElement>('[role="tabpanel"]'))
-      .filter((panel) => panel.id === context.item.control_key);
+      .filter((panel) => panel.id === livePanelId);
     return matchingPanels.length === 1 && control.getAttribute("aria-selected") === "true";
   }
 
@@ -229,11 +229,11 @@ export function restoreRiseInteractionContext(value: RiseInteractionContext, doc
     if (!controls.length) return "not-ready";
     if (controls.length !== context.item.count) return "mismatch";
     const control = controls[context.item.ordinal - 1];
-    if (!control || !normalisedEqual(control.textContent || control.getAttribute("aria-label") || "", context.item.label)
-      || control.getAttribute("aria-controls") !== context.item.control_key) return "mismatch";
+    const livePanelId = control?.getAttribute("aria-controls");
+    if (!control || !livePanelId || !normalisedEqual(control.textContent || control.getAttribute("aria-label") || "", context.item.label)) return "mismatch";
     const panels = Array.from(resolved.root.querySelectorAll<HTMLElement>('[role="tabpanel"]'));
-    const panel = panels.find((candidate) => candidate.id === context.item.control_key);
-    if (!panel || panels.filter((candidate) => candidate.id === context.item.control_key).length !== 1) return "mismatch";
+    const panel = panels.find((candidate) => candidate.id === livePanelId);
+    if (!panel || panels.filter((candidate) => candidate.id === livePanelId).length !== 1) return "mismatch";
     if (control.getAttribute("aria-selected") !== "true" || !visible(panel)) control.click();
     return control.getAttribute("aria-selected") === "true" && visible(panel) ? "ready" : "not-ready";
   }

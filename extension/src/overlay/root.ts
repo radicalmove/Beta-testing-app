@@ -31,6 +31,7 @@ export const stabilisationUxStyles = `.help-dialog{width:min(860px,calc(100vw - 
 export type ConnectionStatus = "connecting" | "connected" | "pending" | "signed-out" | "offline";
 const statusLabels: Record<ConnectionStatus, string> = { connecting: "Connecting", connected: "Connected", pending: "Waiting for approval — you can leave this page open or return later.", "signed-out": "Signed out", offline: "Service unavailable—retry" };
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
+export const isTransientInteractionNavigationError = (error: unknown) => error instanceof Error && error.message === "INTERACTION_NOT_READY";
 const authActionLabels: Partial<Record<ConnectionStatus, string>> = { "signed-out": "Sign in", pending: "Check approval", offline: "Retry" };
 
 function createStateActions(status: ConnectionStatus): string {
@@ -622,6 +623,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
             else if (options.navigateToComment) await options.navigateToComment(destination.id, destination.page_url);
             else ownerDocument.defaultView?.location.assign(destination.page_url);
           } catch (error) {
+            if (isTransientInteractionNavigationError(error)) return;
             const status = ownerDocument.createElement("p"); status.dataset.commentNavigationStatus = "true"; status.setAttribute("role", "status"); status.textContent = error instanceof Error && error.message ? error.message : "Unable to open this course page."; filterRow.after(status);
           }
         });
@@ -634,7 +636,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
           panelContent.querySelector("[data-comment-navigation-status]")?.remove();
           if (comment.page_url !== context.page_url) {
             try { if (options.navigateToComment) await options.navigateToComment(comment.id, comment.page_url); else ownerDocument.defaultView?.location.assign(comment.page_url); }
-            catch (error) { const status = ownerDocument.createElement("p"); status.dataset.commentNavigationStatus = "true"; status.setAttribute("role", "status"); status.textContent = error instanceof Error && error.message ? error.message : "Unable to open this comment in context."; filterRow.after(status); }
+            catch (error) { if (isTransientInteractionNavigationError(error)) return; const status = ownerDocument.createElement("p"); status.dataset.commentNavigationStatus = "true"; status.setAttribute("role", "status"); status.textContent = error instanceof Error && error.message ? error.message : "Unable to open this comment in context."; filterRow.after(status); }
             return;
           }
           renderer.takeToContext(comment.id);

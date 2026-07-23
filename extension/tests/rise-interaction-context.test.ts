@@ -123,6 +123,19 @@ test("restores only the exact saved tab and verifies its visible state", () => {
   assert.equal((document.querySelector("#unwritten") as HTMLElement).hidden, false);
 });
 
+test("restores a saved tab after Rise regenerates its panel identifier", () => {
+  const source = tabsFixture();
+  const context = captureRiseInteractionContext(source.querySelector("#target")!, source)!;
+  const reloaded = tabsFixture();
+  const panel = reloaded.querySelector("#unwritten") as HTMLElement;
+  panel.id = "rise-generated-unwritten";
+  reloaded.querySelector('[aria-controls="unwritten"]')!.setAttribute("aria-controls", panel.id);
+
+  assert.equal(restoreRiseInteractionContext(context, reloaded), "ready");
+  assert.equal(isRiseInteractionContextActive(context, reloaded), true);
+  assert.equal(panel.hidden, false);
+});
+
 test("reports only the selected Rise tab context as active", () => {
   const document = tabsFixture();
   const unwritten = captureRiseInteractionContext(document.querySelector("#target")!, document)!;
