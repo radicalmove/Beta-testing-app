@@ -24,7 +24,9 @@ data, filters, anchor recovery, or Moodle/SCORM navigation.
 - The former `Jump to` control initially reads `Collapse all`. Pressing it
   collapses all visible groups and changes its label to `Expand all`; pressing
   `Expand all` expands all visible groups and returns the label to `Collapse
-  all`. It occupies the same control position and dimensions.
+  all`. It occupies the exact former Jump to control position and dimensions;
+  its label may use a smaller font if necessary to fit without widening the
+  filter row.
 - Individual group chevrons never change the main control’s label or mode. The
   control is disabled in Current page scope and when no Whole course groups
   match the current filters.
