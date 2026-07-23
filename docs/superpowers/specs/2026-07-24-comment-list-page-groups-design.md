@@ -8,7 +8,11 @@ data, filters, anchor recovery, or Moodle/SCORM navigation.
 ## Behaviour
 
 - Within each page or SCORM group, comments appear in their saved physical
-  anchor order. Existing deterministic fallbacks apply when an anchor rank is
+  anchor order. A group is exactly one `page_url`; a Moodle-hosted SCORM
+  activity is therefore one group, not a separate group per Rise lesson/tab.
+  The currently loaded page uses recovered renderer anchor ranks. Other pages
+  retain the server's stable source order until they are opened and their local
+  ranks are available; existing deterministic fallbacks apply when a rank is
   unavailable.
 - Each group heading contains a page-navigation link. It opens the group’s
   first currently visible comment through the existing navigation callback,
@@ -20,16 +24,23 @@ data, filters, anchor recovery, or Moodle/SCORM navigation.
 - The former `Jump to` control becomes `Collapse all`. It collapses all
   visible groups and changes its label to `Expand all`; using it again expands
   all visible groups. It occupies the same control position and dimensions.
+- When any visible group is expanded, the control reads `Collapse all`; it
+  reads `Expand all` only when every visible group is collapsed. It is disabled
+  when no groups match the current filters.
 
 ## Filtering and navigation
 
 - Status and scope filters continue to decide which comment rows are visible.
   A group with no visible rows remains hidden.
+- Group headings and their chevrons remain a Whole course presentation. Current
+  page scope keeps its existing flat list with no redundant heading.
 - Collapsing is a presentation state only: it never alters filters, comment
   ordering, selected page state, or stored comments.
 - Heading navigation uses the group page URL plus the first visible comment id,
   rather than direct URL assignment, so an SCORM activity can still launch,
   restore Rise state, and scroll to the saved context.
+- The heading destination is selected from status/scope-filter matching comments
+  before collapse state is applied, so a collapsed group remains navigable.
 
 ## Implementation boundaries
 
