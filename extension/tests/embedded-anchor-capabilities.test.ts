@@ -20,6 +20,16 @@ const binding = {
   interactionContext: null,
 };
 
+async function legacyDigest(value: Omit<typeof binding, "interactionContext">): Promise<string> {
+  const anchor = JSON.stringify([value.anchor.anchor_type, value.anchor.css_selector, value.anchor.relative_x, value.anchor.relative_y]);
+  const canonical = JSON.stringify([
+    value.tabId, value.courseId, value.frameId, value.workerInstanceId, value.generation,
+    value.pageUrl, value.pageTitle, value.parentActivityUrl, value.courseUrl, value.embeddedLocator, anchor,
+  ]);
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical)));
+  return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 test("issues an opaque capability and stores no reviewer comment body", async () => {
   const storage = new MemoryStorage();
   const capabilities = new EmbeddedAnchorCapabilities(storage, { randomToken: () => "t".repeat(64), now: () => 100 });
@@ -37,6 +47,26 @@ test("claim is exact, single-use, and survives a service-worker restart", async 
   assert.equal(await restarted.claim(token, { tabId: 7, courseId: uuid(9) }), undefined);
   assert.deepEqual(await restarted.claim(token, { tabId: 7, courseId: binding.courseId }), { ...binding, createdAt: 100, expiresAt: 300_100 });
   assert.equal(await restarted.claim(token, { tabId: 7, courseId: binding.courseId }), undefined);
+});
+
+test("a pre-interaction-context capability survives an extension upgrade", async () => {
+  const storage = new MemoryStorage();
+  const token = "l".repeat(64);
+  const { interactionContext: _newField, ...legacyBinding } = binding;
+  storage.data.embeddedAnchorCapabilities = {
+    [token]: {
+      ...legacyBinding,
+      anchorDigest: await legacyDigest(legacyBinding),
+      createdAt: 100,
+      expiresAt: 300_100,
+    },
+  };
+  const upgraded = new EmbeddedAnchorCapabilities(storage, { now: () => 101 });
+  assert.deepEqual(await upgraded.claim(token, { tabId: 7, courseId: binding.courseId }), {
+    ...binding,
+    createdAt: 100,
+    expiresAt: 300_100,
+  });
 });
 
 test("tampered, expired, and malformed capabilities fail closed", async () => {

@@ -75,6 +75,14 @@ function canonicalBinding(binding: EmbeddedAnchorBinding): string {
   ]);
 }
 
+function canonicalLegacyBinding(binding: EmbeddedAnchorBinding): string {
+  return JSON.stringify([
+    binding.tabId, binding.courseId, binding.frameId, binding.workerInstanceId, binding.generation,
+    binding.pageUrl, binding.pageTitle, binding.parentActivityUrl, binding.courseUrl, binding.embeddedLocator,
+    canonicalAnchor(binding.anchor),
+  ]);
+}
+
 async function sha256(value: string): Promise<string> {
   const bytes = new TextEncoder().encode(value);
   const digest = new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", bytes));
@@ -90,7 +98,8 @@ function secureToken(): string {
 function validStoredClaim(value: unknown, now: number): value is StoredClaim {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const claim = value as StoredClaim;
-  try { validateBinding(claim); } catch { return false; }
+  const hasInteractionContext = Object.prototype.hasOwnProperty.call(claim, "interactionContext");
+  try { validateBinding(hasInteractionContext ? claim : { ...claim, interactionContext: null }); } catch { return false; }
   return Number.isFinite(claim.createdAt) && Number.isFinite(claim.expiresAt) && claim.expiresAt > now
     && typeof claim.anchorDigest === "string" && /^[0-9a-f]{64}$/.test(claim.anchorDigest);
 }
@@ -162,11 +171,12 @@ export class EmbeddedAnchorCapabilities {
     if (!TOKEN.test(token)) return Promise.resolve(undefined);
     return this.mutate(async (records) => {
       const claim = records[token];
+      const legacy = claim && !Object.prototype.hasOwnProperty.call(claim, "interactionContext");
       if (!claim || claim.tabId !== expected.tabId || claim.courseId !== expected.courseId
-        || claim.anchorDigest !== await sha256(canonicalBinding(claim))) return undefined;
+        || claim.anchorDigest !== await sha256(legacy ? canonicalLegacyBinding(claim) : canonicalBinding(claim))) return undefined;
       delete records[token];
       const { anchorDigest: _digest, ...result } = claim;
-      return result;
+      return { ...result, interactionContext: legacy ? null : result.interactionContext };
     });
   }
 

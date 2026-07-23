@@ -260,6 +260,8 @@ test("page comment response rejects extra fields and wrong pages", () => {
   const pageUrl = "https://example.test/page";
   const base = { id: "00000000-0000-4000-8000-000000000001", body: "Feedback", category: "general", status: "open", author: { display_name: "beta@example.test", role: "beta_tester" }, page_url: pageUrl, page_title: "Page", parent_activity_url: null, embedded_locator: null, interaction_context: null, anchor_type: "text_highlight", selected_quote: "words", prefix: "before", suffix: "after", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: true } };
   assert.equal(validatePageCommentsResponse([base], pageUrl).length, 1);
+  const { interaction_context: _missingOnOldServer, ...legacy } = base;
+  assert.deepEqual(validatePageCommentsResponse([legacy], pageUrl)[0]?.interaction_context, null);
   assert.throws(() => validatePageCommentsResponse([{ ...base, secret: true }], pageUrl), /Invalid page comments response/);
   assert.throws(() => validatePageCommentsResponse([{ ...base, page_url: "https://example.test/other" }], pageUrl), /Invalid page comments response/);
   assert.throws(() => validatePageCommentsResponse([{ ...base, parent_activity_url: undefined }], pageUrl), /Invalid page comments response/);

@@ -50,14 +50,15 @@ export function validatePageCommentsResponse(value: unknown, requestedPageUrl?: 
   return value.map((entry) => {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) return invalid();
     const row = entry as Record<string, unknown>;
+    const hasInteractionContext = Object.prototype.hasOwnProperty.call(row, "interaction_context");
     const author = row.author as Record<string, unknown>;
     const capabilities = row.capabilities as Record<string, unknown>;
-    if (!exactKeys(row, commentKeys) || !uuid.test(row.id as string) || !author || !exactKeys(author, ["display_name", "role"]) || !bounded(author.display_name, 100) || !(author.display_name as string).trim() || !roles.includes(author.role as string) || (requestedPageUrl !== undefined && row.page_url !== requestedPageUrl) || !exactHttpUrl(row.page_url) || !bounded(row.body, 10000) || !(row.body as string).trim() || !bounded(row.page_title, 512) || !(row.page_title as string).trim() || !statuses.includes(row.status as string) || !bounded(row.category, 64)) return invalid();
+    if (!(exactKeys(row, commentKeys) || (!hasInteractionContext && exactKeys(row, commentKeys.filter((key) => key !== "interaction_context")))) || !uuid.test(row.id as string) || !author || !exactKeys(author, ["display_name", "role"]) || !bounded(author.display_name, 100) || !(author.display_name as string).trim() || !roles.includes(author.role as string) || (requestedPageUrl !== undefined && row.page_url !== requestedPageUrl) || !exactHttpUrl(row.page_url) || !bounded(row.body, 10000) || !(row.body as string).trim() || !bounded(row.page_title, 512) || !(row.page_title as string).trim() || !statuses.includes(row.status as string) || !bounded(row.category, 64)) return invalid();
     if (!capabilities || ["can_reply", "can_change_status", "can_share_with_sme", "can_delete"].some((key) => typeof capabilities[key] !== "boolean") || (capabilities.can_edit !== undefined && typeof capabilities.can_edit !== "boolean") || (capabilities.allowed_statuses !== undefined && (!Array.isArray(capabilities.allowed_statuses) || capabilities.allowed_statuses.some((value) => !statuses.includes(value as string))))) return invalid();
     const pairedNavigation = row.parent_activity_url === null && row.embedded_locator === null;
     const validNavigation = exactHttpsUrl(row.parent_activity_url) && validEmbeddedLocator(row.embedded_locator);
     if (!pairedNavigation && !validNavigation) return invalid();
-    if (!(row.interaction_context === null || validateRiseInteractionContext(row.interaction_context))) return invalid();
+    if (hasInteractionContext && !(row.interaction_context === null || validateRiseInteractionContext(row.interaction_context))) return invalid();
     if (!["text_highlight", "visual_pin"].includes(row.anchor_type as string) || !bounded(row.selected_quote, 20000, true) || !bounded(row.prefix, 2000, true) || !bounded(row.suffix, 2000, true) || !bounded(row.css_selector, 4000, true) || !bounded(row.dom_selector, 4000, true)) return invalid();
     for (const coordinate of [row.relative_x, row.relative_y]) if (coordinate !== null && (typeof coordinate !== "number" || !Number.isFinite(coordinate) || coordinate < 0 || coordinate > 1)) return invalid();
     if (!Array.isArray(row.replies) || row.replies.length > 1000 || !Array.isArray(row.status_history) || row.status_history.length > 1000) return invalid();
@@ -70,7 +71,7 @@ export function validatePageCommentsResponse(value: unknown, requestedPageUrl?: 
       if (!item || typeof item !== "object" || Array.isArray(item)) return invalid(); const event = item as Record<string, unknown>;
       if (!exactKeys(event, ["status", "created_at", "actor"]) || !statuses.includes(event.status as string) || !bounded(event.created_at, 64) || !bounded(event.actor, 100)) return invalid();
     }
-    return row as PageComment;
+    return { ...row, interaction_context: hasInteractionContext ? row.interaction_context : null } as PageComment;
   });
 }
 
