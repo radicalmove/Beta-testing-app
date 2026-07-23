@@ -4,6 +4,7 @@ export type FixtureViewer = { role: FixtureRole; userId: string; email: string; 
 type Anchor = {
   page_url: string; page_title: string; body: string; category: string;
   parent_activity_url?: string | null; embedded_locator?: string | null;
+  interaction_context?: unknown | null;
   anchor_type: "text_highlight" | "visual_pin";
   selected_quote: string | null; prefix: string | null; suffix: string | null;
   css_selector: string | null; dom_selector: string | null;
@@ -26,7 +27,7 @@ export class StatefulCommentBackend {
   setViewer(viewer: FixtureViewer) { this.viewer = viewer; }
 
   create(input: Anchor) {
-    const comment: Comment = { parent_activity_url: null, embedded_locator: null, ...input, id: uuid(this.sequence++), status: "open", authorId: this.viewer.userId, author: this.publicAuthor(this.viewer), replies: [], status_history: [], sharedSmeIds: new Set() };
+    const comment: Comment = { parent_activity_url: null, embedded_locator: null, interaction_context: null, ...input, id: uuid(this.sequence++), status: "open", authorId: this.viewer.userId, author: this.publicAuthor(this.viewer), replies: [], status_history: [], sharedSmeIds: new Set() };
     if (this.viewer.role === "beta_tester") this.addReply(comment, { role: "ld_dcd", userId: uuid(2), email: "ld@example.test" }, "Fixture LD reply");
     this.comments.push(comment);
     return { id: comment.id, screenshot_available: false };
