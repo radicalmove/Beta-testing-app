@@ -26,7 +26,8 @@ data, filters, anchor recovery, or Moodle/SCORM navigation.
   `Expand all` expands all visible groups and returns the label to `Collapse
   all`. It occupies the same control position and dimensions.
 - Individual group chevrons never change the main control’s label or mode. The
-  control is disabled when no groups match the current filters.
+  control is disabled in Current page scope and when no Whole course groups
+  match the current filters.
 
 ## Filtering and navigation
 
