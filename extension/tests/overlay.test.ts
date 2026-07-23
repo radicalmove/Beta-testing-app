@@ -903,6 +903,9 @@ test("unselected comment controls keep their semantic hover colours", () => {
   assert.match(stabilisationUxStyles, /\.comment-collapse-groups:hover,\.comment-collapse-groups:focus-visible\{background:var\(--review-jump\);border-color:var\(--review-jump\);color:#fff\}/);
   assert.match(stabilisationUxStyles, /\.comment-group-toggle\{[^}]*order:-1[^}]*align-self:center/);
   assert.match(stabilisationUxStyles, /\.comment-collapse-groups\{[^}]*font-size:13px/);
+  assert.match(stabilisationUxStyles, /\.comment-group-heading\{[^}]*margin:7px 0 1px/);
+  assert.match(stabilisationUxStyles, /\.comment-group-toggle\{[^}]*margin-left:-5px/);
+  assert.match(stabilisationUxStyles, /\.comment-group-link\{[^}]*white-space:nowrap[^}]*text-overflow:ellipsis/);
 });
 
 test("comment filter buttons override dark fallback hover states", () => {
@@ -971,6 +974,7 @@ test("course group headings remove the embedded activity prefix and use the larg
   const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   overlay.setCommentList([{ id: "00000000-0000-4000-8000-000000000119", body: "Feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: "https://learn.example/scorm/1", page_title: "Embedded activity · 1.1.1 Foundations", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight", selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } }]);
   assert.equal(shadow.querySelector<HTMLElement>("[data-comment-group-link]")!.textContent, "1.1.1 Foundations");
+  assert.equal(shadow.querySelector<HTMLElement>("[data-comment-group-link]")!.getAttribute("title"), "1.1.1 Foundations");
   assert.match(approvedControlStyles, /\.comment-group-heading\{[^}]*font-size:13px/);
   overlay.destroy();
 });
