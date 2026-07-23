@@ -21,12 +21,12 @@ data, filters, anchor recovery, or Moodle/SCORM navigation.
   label and `aria-expanded` state describe the group it controls.
 - Groups start expanded whenever the list is freshly rendered; collapsed state
   is intentionally not persisted.
-- The former `Jump to` control becomes `Collapse all`. It collapses all
-  visible groups and changes its label to `Expand all`; using it again expands
-  all visible groups. It occupies the same control position and dimensions.
-- When any visible group is expanded, the control reads `Collapse all`; it
-  reads `Expand all` only when every visible group is collapsed. It is disabled
-  when no groups match the current filters.
+- The former `Jump to` control initially reads `Collapse all`. Pressing it
+  collapses all visible groups and changes its label to `Expand all`; pressing
+  `Expand all` expands all visible groups and returns the label to `Collapse
+  all`. It occupies the same control position and dimensions.
+- Individual group chevrons never change the main control’s label or mode. The
+  control is disabled when no groups match the current filters.
 
 ## Filtering and navigation
 
