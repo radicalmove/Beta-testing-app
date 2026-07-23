@@ -26,7 +26,7 @@ export const commentsButtonStyles = `.toolbar-actions [data-action="panel"]{back
 export const panelTransitionStyles = `.panel{max-height:calc(100vh - 96px);opacity:1;padding-top:16px;padding-bottom:16px;border-top-width:1px}.panel[data-panel-animate="true"]{transition:max-height 180ms ease,opacity 180ms ease,padding-top 180ms ease,padding-bottom 180ms ease,border-top-width 180ms ease}.panel[data-panel-state="closed"],.panel[data-panel-state="closing"]{max-height:0;opacity:0;padding-top:0;padding-bottom:0;border-top-width:0}@media(prefers-reduced-motion:reduce){.panel[data-panel-animate="true"]{transition:none}}`;
 export const creationComposerSpacingStyles = `.preview+.comment-composer{margin-top:10px}`;
 export const commentComposerStyles = `.comment-composer-field-row{display:grid;grid-template-columns:minmax(0,1fr) 34px;gap:8px;align-items:start}.comment-composer-field-row textarea{min-width:0;width:100%;min-height:110px}.comment-composer-save{box-sizing:border-box;width:34px;height:34px;min-height:34px!important;padding:2px;border:2px solid #176b43;border-radius:5px;background:#176b43;color:#fff}.comment-composer-save svg{display:block;width:100%;height:100%}.comment-composer-save:hover{background:#fff;color:#176b43}.comment-composer-actions{display:flex;justify-content:flex-end;margin-top:8px}.comment-composer-cancel{box-sizing:border-box;width:calc((100% - 16px)/3);height:34px;min-height:34px!important;padding:3px 9px;border:2px solid #d73b3d;border-radius:5px;background:#d73b3d;color:#fff;font:inherit;font-weight:650;line-height:1}.comment-composer-cancel:hover{background:#fff;color:#d73b3d}@media(max-width:420px){.comment-composer-actions button{flex:0 0 auto}}`;
-export const stabilisationUxStyles = `.help-dialog{width:min(860px,calc(100vw - 32px))}.comment-index-link{white-space:normal;overflow:hidden;text-overflow:ellipsis;display:-webkit-box!important;-webkit-line-clamp:2;-webkit-box-orient:vertical}.comment-interaction-label{display:block;white-space:normal;margin-top:2px;font-size:11px;line-height:1.3;font-weight:500;color:#0b6261}`;
+export const stabilisationUxStyles = `.help-dialog{width:min(860px,calc(100vw - 32px))}.comment-index-link{white-space:normal;overflow:hidden;text-overflow:ellipsis;display:-webkit-box!important;-webkit-line-clamp:2;-webkit-box-orient:vertical}.comment-interaction-label{display:block;white-space:normal;margin-top:2px;font-size:11px;line-height:1.3;font-weight:500;color:#0b6261}.comment-group-heading{display:flex;align-items:center;gap:4px}.comment-group-link{min-width:0;flex:1;padding:0;border:0;background:transparent;color:inherit;text-align:left;font:inherit;font-weight:inherit;letter-spacing:inherit;text-transform:inherit}.comment-group-link:hover,.comment-group-link:focus-visible{text-decoration:underline}.comment-group-toggle{box-sizing:border-box;width:28px;height:28px;min-height:28px!important;padding:0;border:0;background:transparent;color:var(--review-teal-dark);font-size:20px;line-height:1}.comment-group-toggle[aria-expanded="false"]{transform:rotate(-90deg)}.comment-collapse-groups{width:104px!important;height:38px!important;min-height:38px!important;padding:0 5px!important;font-size:12px}`;
 
 export type ConnectionStatus = "connecting" | "connected" | "pending" | "signed-out" | "offline";
 const statusLabels: Record<ConnectionStatus, string> = { connecting: "Connecting", connected: "Connected", pending: "Waiting for approval — you can leave this page open or return later.", "signed-out": "Signed out", offline: "Service unavailable—retry" };
@@ -109,8 +109,6 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   const transientStatuses = new Map<string, { original: PageComment; nextStatus: "open" | "resolved"; timer: number }>();
   let commentListFilter: "open" | "resolved" = "open";
   let commentListScope: "course" | "page" = "course";
-  let commentListPage = "";
-  let jumpOutsideListener: EventListener | undefined;
   let renderer: CommentRenderer;
   let rendererOrder = new Map<string, number>();
   let panelOpen = false;
@@ -407,6 +405,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   const openHelp = (trigger: HTMLElement) => {
     trigger.setAttribute("aria-expanded", "true"); returnFocus = trigger; const backdrop = ownerDocument.createElement("div"); backdrop.className = "backdrop";
     backdrop.innerHTML = `<div class="dialog help-dialog" role="dialog" aria-modal="true" aria-labelledby="review-help-title" aria-describedby="review-help-intro"><h2 id="review-help-title" tabindex="-1">How course review works</h2><p id="review-help-intro">Use the review toolbar to place feedback in context and follow each conversation through to resolution.</p><ol><li><strong>Highlight exact text</strong><span>Select words on the page first. The main button changes to Add comment to highlighted text. After saving, the selected words are highlighted yellow and a comment marker appears beside them.</span></li><li><strong>Place a comment marker</strong><span>Choose Add comment marker, then click the image, control, layout area, or other location you want to discuss. The button turns red and says Cancel marker while placement is active; press Escape or choose Cancel marker to stop.</span></li><li><strong>Moodle and SCORM</strong><span>The same two methods work in Moodle pages and supported Rise or SCORM activities. Wait briefly while embedded content connects. If the toolbar asks for access or a reload, follow that prompt before placing feedback.</span></li><li><strong>Open comments in context</strong><span>Choose a marker to open its conversation beside the referenced content; choose the marker again to close it. Comments opens the course comment list without losing your place.</span></li><li><strong>Filter and jump</strong><span>Switch between Whole course and Current page, then Open or Resolved. Jump to narrows the whole-course list to one page. Choosing a comment takes you to its Moodle page or SCORM activity and opens it at the saved location.</span></li><li><strong>Reply, edit, and attach</strong><span>Use Reply to continue a conversation. The pencil edits feedback you created. A file can be attached while creating a comment when an example or supporting document will help.</span></li><li><strong>Resolve or delete</strong><span>Use the tick control to resolve completed feedback; find it again with the Resolved filter and reopen it if needed. The red rubbish-bin control permanently deletes feedback after confirmation and is available only when your role permits it.</span></li><li><strong>Who can see feedback</strong><span>Beta testers see their own feedback and course-team replies. SMEs see SME feedback plus beta feedback an LD or DCD shares for clarification. LD, DCD, and administrator roles can review the complete course list.</span></li></ol><p class="help-version">Pilot ${escapeHtml(buildDiagnostics.version)} · build ${escapeHtml(buildDiagnostics.buildCommit.slice(0, 7))}</p><div class="actions"><button type="button" class="primary" data-close-help>Close help</button></div></div>`;
+    backdrop.innerHTML = backdrop.innerHTML.replace("<li><strong>Filter and jump</strong><span>Switch between Whole course and Current page, then Open or Resolved. Jump to narrows the whole-course list to one page. Choosing a comment takes you to its Moodle page or SCORM activity and opens it at the saved location.</span></li>", "<li><strong>Filter and organise</strong><span>Switch between Whole course and Current page, then Open or Resolved. In Whole course, select a page heading to open its first matching comment, use its chevron to collapse that page, or use Collapse all and Expand all to organise the list.</span></li>");
     const shell = shadow.querySelector<HTMLElement>(".shell")!; shell.inert = true;
     const close = () => { shell.inert = false; backdrop.remove(); const help = shadow.querySelector<HTMLElement>('[data-action="help"]'); help?.setAttribute("aria-expanded", "false"); (help ?? shell)?.focus(); };
     backdrop.addEventListener("keydown", (event) => { const focusable = Array.from(backdrop.querySelectorAll<HTMLElement>('h2,[data-close-help]')); const index = Math.max(0, focusable.indexOf(shadow.activeElement as HTMLElement)); const outcome = handleDialogKey({ key: event.key, shiftKey: event.shiftKey, activeIndex: index, focusableCount: focusable.length }); if (event.key === "Tab" || outcome.close) event.preventDefault(); if (outcome.close) close(); else if (event.key === "Tab") focusable[outcome.focusIndex]?.focus(); });
@@ -555,7 +554,6 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     },
     setViewer(viewer) { currentViewer = viewer; updateLabels(); },
     setCommentList(comments) {
-      if (jumpOutsideListener) shadow.removeEventListener("pointerdown", jumpOutsideListener);
       const previousResults = shadow.querySelector<HTMLElement>(".comment-results");
       const previousScrollTop = previousResults?.scrollTop ?? 0;
       const focusedCommentId = (shadow.activeElement as HTMLElement | null)?.closest<HTMLElement>("[data-comment-item]")?.dataset.commentItem;
@@ -566,81 +564,68 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
       const panelContent = panel.querySelector<HTMLElement>("[data-panel-content]")!;
       panelContent.replaceChildren();
       const projection = projectCourseComments(comments, rendererOrder);
-      const pages = new Map<string, string>();
-      const pageDestinations = new Map<string, PageComment>();
       const pageLabels = new Map<string, string>();
-      for (const group of projection.groups) for (const { comment } of group.comments) { pageLabels.set(comment.id, group.title); if (!pages.has(group.pageUrl)) pages.set(group.pageUrl, group.title); if (!pageDestinations.has(group.pageUrl)) pageDestinations.set(group.pageUrl, comment); }
-      if (commentListPage && !pages.has(commentListPage)) commentListPage = "";
+      for (const group of projection.groups) for (const { comment } of group.comments) pageLabels.set(comment.id, group.title);
       const currentPageHeading = ownerDocument.createElement("p"); currentPageHeading.className = "current-page-heading"; currentPageHeading.dataset.currentPageHeading = "true"; currentPageHeading.innerHTML = `<strong>Current page:</strong> ${escapeHtml(context.pageTitle.trim() || "Untitled page")}`;
       const filters = ownerDocument.createElement("div"); filters.className = "comment-filters"; filters.setAttribute("role", "group"); filters.setAttribute("aria-label", "Comment status filter");
       const scopes = ownerDocument.createElement("div"); scopes.className = "comment-filters"; scopes.setAttribute("role", "group"); scopes.setAttribute("aria-label", "Comment page scope");
       const filterRow = ownerDocument.createElement("div"); filterRow.className = "comment-filter-row";
       const pageField = ownerDocument.createElement("div"); pageField.className = "comment-page-field";
-      const jumpId = `comment-page-list-${Math.random().toString(36).slice(2)}`;
-      const jumpButton = ownerDocument.createElement("button"); jumpButton.type = "button"; jumpButton.dataset.commentJump = "true"; jumpButton.className = "comment-control comment-jump"; jumpButton.setAttribute("aria-expanded", "false"); jumpButton.setAttribute("aria-controls", jumpId); jumpButton.innerHTML = "<span>Jump to</span>";
-      const pageList = ownerDocument.createElement("div"); pageList.id = jumpId; pageList.className = "comment-page-list"; pageList.setAttribute("role", "listbox"); pageList.setAttribute("aria-label", "Jump to course page"); pageList.hidden = true;
-      const pageEntries: Array<[string, string]> = [["", "All pages"], ...pages];
-      for (const [pageUrl, pageTitle] of pageEntries) { const option = ownerDocument.createElement("button"); option.type = "button"; option.className = "comment-page-option"; option.dataset.commentPageOption = pageUrl; option.setAttribute("role", "option"); option.setAttribute("aria-selected", String(pageUrl === commentListPage)); option.textContent = pageUrl ? coursePageJumpLabel(pageTitle) : pageTitle; pageList.append(option); }
-      const resetJumpGeometry = () => { for (const property of ["position", "left", "top", "max-height", "overflow-y", "visibility"]) pageList.style.removeProperty(property); };
-      const closeJump = (restoreFocus = false) => { pageList.hidden = true; resetJumpGeometry(); jumpButton.setAttribute("aria-expanded", "false"); if (restoreFocus) jumpButton.focus(); };
-      const openJump = () => {
-        const view = ownerDocument.defaultView;
-        if (!view) return;
-        resetJumpGeometry();
-        pageList.style.position = "fixed";
-        pageList.style.visibility = "hidden";
-        pageList.style.overflowY = "auto";
-        pageList.hidden = false;
-        const trigger = jumpButton.getBoundingClientRect();
-        const viewportWidth = view.innerWidth;
-        const viewportHeight = view.innerHeight;
-        const margin = 8;
-        const menuWidth = Math.min(380, Math.max(1, viewportWidth - 32));
-        const desiredHeight = Math.max(1, pageList.scrollHeight);
-        const availableAbove = Math.max(0, trigger.top - margin);
-        const availableBelow = Math.max(0, viewportHeight - trigger.bottom - margin);
-        const openAbove = desiredHeight <= availableAbove || availableAbove >= availableBelow;
-        const maxHeight = Math.max(1, openAbove ? availableAbove : availableBelow);
-        const visibleHeight = Math.min(desiredHeight, maxHeight);
-        const unclampedTop = openAbove ? trigger.top - visibleHeight : trigger.bottom;
-        const top = Math.max(margin, Math.min(unclampedTop, viewportHeight - margin - visibleHeight));
-        const maxLeft = Math.max(margin, viewportWidth - margin - menuWidth);
-        const left = Math.max(margin, Math.min(trigger.right - menuWidth, maxLeft));
-        pageList.style.left = `${left}px`;
-        pageList.style.top = `${top}px`;
-        pageList.style.maxHeight = `${maxHeight}px`;
-        pageList.style.visibility = "visible";
-        jumpButton.setAttribute("aria-expanded", "true");
-        (pageList.querySelector<HTMLElement>('[aria-selected="true"]') ?? pageList.querySelector<HTMLElement>("[role=option]"))?.focus();
-      };
-      jumpOutsideListener = (event) => { if (!pageList.hidden && !pageField.contains(event.target as Node)) closeJump(); };
-      shadow.addEventListener("pointerdown", jumpOutsideListener);
-      jumpButton.addEventListener("click", () => pageList.hidden ? openJump() : closeJump());
-      jumpButton.addEventListener("keydown", (event) => { if (["ArrowDown", "Enter", " "].includes(event.key)) { event.preventDefault(); openJump(); } });
-      pageList.addEventListener("keydown", (event) => { const optionsList = Array.from(pageList.querySelectorAll<HTMLElement>("[role=option]")); const active = optionsList.indexOf(shadow.activeElement as HTMLElement); if (["ArrowDown", "ArrowUp"].includes(event.key)) { event.preventDefault(); optionsList[(active + (event.key === "ArrowDown" ? 1 : -1) + optionsList.length) % optionsList.length]?.focus(); } else if (event.key === "Escape") { event.preventDefault(); closeJump(true); } else if (event.key === "Tab") closeJump(); });
-      pageList.addEventListener("click", (event) => { void (async () => {
-        const option = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-comment-page-option]"); if (!option) return;
-        commentListPage = option.dataset.commentPageOption ?? ""; if (commentListPage) commentListScope = "course"; pageList.querySelectorAll("[role=option]").forEach((candidate) => candidate.setAttribute("aria-selected", String(candidate === option))); closeJump(true); applyFilter();
-        if (!commentListPage) return;
-        const destination = pageDestinations.get(commentListPage); if (!destination) return;
-        panelContent.querySelector("[data-comment-navigation-status]")?.remove();
-        try {
-          if (destination.page_url === context.page_url) renderer.takeToContext(destination.id);
-          else if (options.navigateToComment) await options.navigateToComment(destination.id, destination.page_url);
-          else ownerDocument.defaultView?.location.assign(destination.page_url);
-        } catch (error) {
-          const message = ownerDocument.createElement("p"); message.dataset.commentNavigationStatus = "true"; message.setAttribute("role", "status"); message.textContent = error instanceof Error && error.message ? error.message : "Unable to open this course page."; filterRow.after(message);
-        }
-      })(); });
-      pageField.append(jumpButton, pageList);
+      const collapseGroups = ownerDocument.createElement("button"); collapseGroups.type = "button"; collapseGroups.dataset.collapseGroups = "true"; collapseGroups.className = "comment-control comment-collapse-groups"; collapseGroups.textContent = "Collapse all";
+      pageField.append(collapseGroups);
       const results = ownerDocument.createElement("div"); results.className = "comment-results"; results.setAttribute("role", "list");
       const empty = ownerDocument.createElement("p"); empty.dataset.commentEmpty = "true"; empty.textContent = "No comments match these filters.";
-      const applyFilter = () => { let visibleCount = 0; results.querySelectorAll<HTMLElement>("[data-comment-item]").forEach((node) => { const pageUrl = node.dataset.commentPageUrl; node.hidden = node.dataset.commentGroup !== commentListFilter || (commentListScope === "page" ? pageUrl !== context.page_url : Boolean(commentListPage) && pageUrl !== commentListPage); node.parentElement!.hidden = node.hidden; if (!node.hidden) { visibleCount += 1; const comment = loadedComments.get(node.dataset.commentItem!); if (comment) { const shortBody = comment.body.replace(/\s+/g, " ").trim().slice(0, 112); const excerpt = node.querySelector<HTMLElement>(".comment-excerpt"); if (excerpt) excerpt.textContent = `“${shortBody}${comment.body.length > 112 ? "…" : ""}”`; else node.textContent = `“${shortBody}${comment.body.length > 112 ? "…" : ""}”`; } } }); results.querySelectorAll<HTMLElement>("[data-comment-group-heading]").forEach((heading) => { let sibling = heading.nextElementSibling as HTMLElement | null; let groupVisible = false; while (sibling && !sibling.dataset.commentGroupHeading) { if (sibling.getAttribute("role") === "listitem" && !sibling.hidden) groupVisible = true; sibling = sibling.nextElementSibling as HTMLElement | null; } heading.hidden = commentListScope === "page" || Boolean(commentListPage) || !groupVisible; }); empty.hidden = visibleCount > 0; filters.querySelectorAll<HTMLElement>("button").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.commentFilter === commentListFilter))); scopes.querySelectorAll<HTMLElement>("button").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.commentScope === commentListScope))); if (commentListScope === "page") commentListPage = ""; };
+      const groupContainers = new Map<string, HTMLElement>();
+      const groupRows = new Map<string, HTMLElement>();
+      const groupToggles = new Map<string, HTMLButtonElement>();
+      const expandedGroups = new Set(projection.groups.map((group) => group.pageUrl));
+      let mainCollapseMode = true;
+      const setGroupExpanded = (pageUrl: string, expanded: boolean) => { const rows = groupRows.get(pageUrl); const toggle = groupToggles.get(pageUrl); if (!rows || !toggle) return; if (expanded) expandedGroups.add(pageUrl); else expandedGroups.delete(pageUrl); rows.hidden = !expanded; toggle.setAttribute("aria-expanded", String(expanded)); toggle.setAttribute("aria-label", `${expanded ? "Collapse" : "Expand"} ${toggle.dataset.commentGroupTitle} comments`); };
+      const applyFilter = () => {
+        let visibleCount = 0;
+        for (const group of projection.groups) {
+          const container = groupContainers.get(group.pageUrl)!;
+          const matchesScope = commentListScope === "course" || group.pageUrl === context.page_url;
+          let groupVisible = false;
+          container.querySelectorAll<HTMLElement>("[data-comment-item]").forEach((node) => {
+            const visible = matchesScope && node.dataset.commentGroup === commentListFilter;
+            node.hidden = !visible;
+            node.closest<HTMLElement>("[role=listitem]")!.hidden = !visible;
+            if (visible) { groupVisible = true; visibleCount += 1; }
+          });
+          container.hidden = commentListScope === "page" || !groupVisible;
+          setGroupExpanded(group.pageUrl, expandedGroups.has(group.pageUrl));
+        }
+        empty.hidden = visibleCount > 0;
+        collapseGroups.disabled = commentListScope === "page" || !Array.from(groupContainers.values()).some((group) => !group.hidden);
+        filters.querySelectorAll<HTMLElement>("button").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.commentFilter === commentListFilter)));
+        scopes.querySelectorAll<HTMLElement>("button").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.commentScope === commentListScope)));
+      };
       for (const value of ["open", "resolved"] as const) { const filter = ownerDocument.createElement("button"); filter.type = "button"; filter.dataset.commentFilter = value; filter.className = "comment-control comment-status"; filter.innerHTML = `<span>${value === "open" ? "Open" : "Resolved"}</span>`; filter.addEventListener("click", () => { commentListFilter = value; renderer.setStatusFilter(value); applyFilter(); }); filters.append(filter); }
       for (const value of ["course", "page"] as const) { const scope = ownerDocument.createElement("button"); scope.type = "button"; scope.dataset.commentScope = value; scope.className = "comment-control comment-scope"; scope.innerHTML = `<span>${value === "course" ? "Whole course" : "Current page"}</span>`; scope.addEventListener("click", () => { commentListScope = value; applyFilter(); }); scopes.append(scope); }
+      collapseGroups.addEventListener("click", () => { const expanded = !mainCollapseMode; for (const [pageUrl, container] of groupContainers) if (!container.hidden) setGroupExpanded(pageUrl, expanded); mainCollapseMode = !mainCollapseMode; collapseGroups.textContent = mainCollapseMode ? "Collapse all" : "Expand all"; });
       filterRow.append(scopes, filters, pageField); panelContent.append(currentPageHeading, filterRow, results, empty);
-      for (const group of projection.groups) {
-        const heading = ownerDocument.createElement("h3"); heading.dataset.commentGroupHeading = "true"; heading.className = "comment-group-heading"; heading.textContent = coursePageJumpLabel(group.title); results.append(heading);
+      for (const [groupIndex, group] of projection.groups.entries()) {
+        const groupContainer = ownerDocument.createElement("section"); groupContainer.dataset.commentGroupContainer = group.pageUrl;
+        const heading = ownerDocument.createElement("h3"); heading.dataset.commentGroupHeading = "true"; heading.className = "comment-group-heading";
+        const label = coursePageJumpLabel(group.title);
+        const headingLink = ownerDocument.createElement("button"); headingLink.type = "button"; headingLink.className = "comment-group-link"; headingLink.dataset.commentGroupLink = group.pageUrl; headingLink.textContent = label;
+        const rows = ownerDocument.createElement("div"); rows.id = `comment-group-rows-${groupIndex}`; rows.dataset.commentGroupRows = group.pageUrl;
+        const toggle = ownerDocument.createElement("button"); toggle.type = "button"; toggle.className = "comment-group-toggle"; toggle.dataset.commentGroupToggle = group.pageUrl; toggle.dataset.commentGroupTitle = label; toggle.setAttribute("aria-controls", rows.id); toggle.textContent = "⌄";
+        toggle.addEventListener("click", () => { setGroupExpanded(group.pageUrl, !expandedGroups.has(group.pageUrl)); });
+        headingLink.addEventListener("click", async () => {
+          const destination = group.comments.find(({ comment }) => comment.status === commentListFilter && (commentListScope === "course" || comment.page_url === context.page_url))?.comment;
+          if (!destination) return;
+          panelContent.querySelector("[data-comment-navigation-status]")?.remove();
+          try {
+            if (destination.page_url === context.page_url) renderer.takeToContext(destination.id);
+            else if (options.navigateToComment) await options.navigateToComment(destination.id, destination.page_url);
+            else ownerDocument.defaultView?.location.assign(destination.page_url);
+          } catch (error) {
+            const status = ownerDocument.createElement("p"); status.dataset.commentNavigationStatus = "true"; status.setAttribute("role", "status"); status.textContent = error instanceof Error && error.message ? error.message : "Unable to open this course page."; filterRow.after(status);
+          }
+        });
+        heading.append(headingLink, toggle); groupContainer.append(heading, rows); groupContainers.set(group.pageUrl, groupContainer); groupRows.set(group.pageUrl, rows); groupToggles.set(group.pageUrl, toggle); results.append(groupContainer);
         for (const { comment, displayIndex } of group.comments) {
         const commentIndex = displayIndex - 1;
         const listItem = ownerDocument.createElement("div"); listItem.setAttribute("role", "listitem"); listItem.className = "comment-row"; listItem.dataset.commentRow = comment.id;
@@ -692,7 +677,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
           const action = ownerDocument.createElement("button"); action.type = "button"; action.className = "comment-row-action delete-action"; action.dataset.commentAction = "delete"; action.append(createReviewIcon(ownerDocument, "delete")); action.setAttribute("aria-label", `Delete comment ${conciseBody}`); action.title = `Delete comment ${conciseBody}`;
           action.disabled = rowMutations.get(mutationKey("delete"))?.pending === true; action.addEventListener("click", async () => { if (!await confirmAction(action, "Delete comment", "Delete this entire thread, including all replies and screenshots?", "Delete")) return; await runRowMutation("delete", async () => { const transient = transientStatuses.get(comment.id); if (transient) ownerDocument.defaultView?.clearTimeout(transient.timer); transientStatuses.delete(comment.id); await options.deleteThread!(comment.id); }, "Could not delete comment"); }); rowActions.append(action);
         }
-        listItem.append(item); if (rowActions.childElementCount) listItem.append(rowActions); results.append(listItem); for (const action of ["status", "delete"]) if (rowMutations.has(mutationKey(action))) showMutationState(action);
+        listItem.append(item); if (rowActions.childElementCount) listItem.append(rowActions); rows.append(listItem); for (const action of ["status", "delete"]) if (rowMutations.has(mutationKey(action))) showMutationState(action);
         }
       }
       if (!comments.length) { empty.textContent = "No comments in this course yet."; empty.hidden = false; }
@@ -725,6 +710,6 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     },
     presentationSize() { const shell = shadow.querySelector<HTMLElement>(".shell"); const rect = shell?.getBoundingClientRect(); return { width: rect?.width || shell?.offsetWidth || 600, height: rect?.height || shell?.offsetHeight || 150 }; },
     setUnresolvedAnchors(anchors) { renderUnresolvedAnchors(anchors); },
-    destroy() { clearPanelTransition(); clearAreaSelection(); closeChoice(false); if (jumpOutsideListener) shadow.removeEventListener("pointerdown", jumpOutsideListener); for (const transient of transientStatuses.values()) ownerDocument.defaultView?.clearTimeout(transient.timer); transientStatuses.clear(); ownerDocument.removeEventListener("focusin", rememberPageFocus, true); ownerDocument.removeEventListener("selectionchange", selectionListener); ownerDocument.documentElement.removeEventListener("moodle-review:embedded-anchor", embeddedAnchorListener); cleanupPreview(); renderer.destroy(); host.remove(); },
+    destroy() { clearPanelTransition(); clearAreaSelection(); closeChoice(false); for (const transient of transientStatuses.values()) ownerDocument.defaultView?.clearTimeout(transient.timer); transientStatuses.clear(); ownerDocument.removeEventListener("focusin", rememberPageFocus, true); ownerDocument.removeEventListener("selectionchange", selectionListener); ownerDocument.documentElement.removeEventListener("moodle-review:embedded-anchor", embeddedAnchorListener); cleanupPreview(); renderer.destroy(); host.remove(); },
   };
 }

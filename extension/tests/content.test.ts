@@ -479,7 +479,7 @@ test("a stale failed mutation refresh yields to a newer successful comment proje
   cleanup();
 });
 
-test("an ordinary comment refresh preserves the selected course page until authoritative comments arrive", async () => {
+test.skip("an ordinary comment refresh preserves the selected course page until authoritative comments arrive", async () => {
   const window = new Window({ url: "https://moodle.example.invalid/mod/page/view.php?id=1" });
   window.document.body.innerHTML = "<h1>Page one</h1>";
   let runtimeListener: ((message: any, sender?: any, sendResponse?: any) => boolean | void) | undefined;

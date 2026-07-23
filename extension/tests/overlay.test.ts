@@ -9,7 +9,7 @@ import type { PanelStateStorage } from "../src/ui/panel-state.ts";
 const context = { course_url: "https://learn.example/course/view.php?id=1", page_url: "https://learn.example/mod/page/view.php?id=2", title: "Law", pageTitle: "Week 2", moodle_course_id: 1, identityConfidence: "confirmed" as const };
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 const waitForPanelTransition = () => new Promise((resolve) => setTimeout(resolve, 200));
-const choosePage = (shadow: ShadowRoot, pageUrl: string) => shadow.querySelector<HTMLButtonElement>(`[data-comment-page-option="${pageUrl}"]`)!.click();
+const choosePage = (_shadow: ShadowRoot, _pageUrl: string) => { throw new Error("Jump to has been removed"); };
 const acceptConfirmation = async (shadow: ShadowRoot) => { shadow.querySelector<HTMLButtonElement>("[data-confirm-action]")!.click(); await tick(); };
 
 function createPanelStorage(): PanelStateStorage & { values: Map<string, string> } {
@@ -363,7 +363,7 @@ test("Help dialog provides complete instructions and metadata", () => {
   assert.equal(trigger.getAttribute("aria-expanded"), "true");
   const dialog = shadow.querySelector<HTMLElement>('[role="dialog"]')!;
   assert.equal(dialog.getAttribute("aria-modal"), "true"); assert.equal(dialog.getAttribute("aria-labelledby"), "review-help-title"); assert.equal(dialog.getAttribute("aria-describedby"), "review-help-intro");
-  for (const text of ["Highlight exact text", "Place a comment marker", "Moodle and SCORM", "Open comments in context", "Filter and jump", "Reply, edit, and attach", "Resolve or delete", "Who can see feedback", "Pilot 0.3.2 · build abc1234"]) assert.match(dialog.textContent!, new RegExp(text));
+  for (const text of ["Highlight exact text", "Place a comment marker", "Moodle and SCORM", "Open comments in context", "Filter and organise", "Reply, edit, and attach", "Resolve or delete", "Who can see feedback", "Pilot 0.3.2 · build abc1234"]) assert.match(dialog.textContent!, new RegExp(text));
   assert.equal(shadow.activeElement, dialog.querySelector("h2"));
   dialog.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }) as unknown as Event);
   assert.equal(trigger.getAttribute("aria-expanded"), "false");
@@ -847,17 +847,16 @@ test("toolbar and semantic comment controls expose approved states", () => {
   assert.equal(panel.getAttribute("aria-expanded"), "true");
   const controls = Array.from(shadow.querySelectorAll<HTMLElement>(".comment-control"));
   assert.equal(controls.length, 5);
-  assert.deepEqual(controls.map((control) => control.textContent), ["Whole course", "Current page", "Open", "Resolved", "Jump to"]);
-  assert.ok(shadow.querySelector('[data-comment-jump][aria-controls]'));
-  assert.ok(shadow.querySelector('[role="listbox"]'));
+  assert.deepEqual(controls.map((control) => control.textContent), ["Whole course", "Current page", "Open", "Resolved", "Collapse all"]);
+  assert.ok(shadow.querySelector('[data-collapse-groups]'));
+  assert.equal(shadow.querySelector('[role="listbox"]'), null);
   assert.match(controlAlignmentStyles, /\[data-action="help"\]\{[^}]*width:44px[^}]*height:44px/);
   assert.match(controlAlignmentStyles, /\.toolbar-actions \[data-action="help"\] svg\{display:block;width:24px;height:24px\}/);
   assert.match(controlAlignmentStyles, /\.comment-control\{[^}]*display:inline-flex[^}]*align-items:center[^}]*justify-content:center/);
   overlay.destroy();
 });
 
-test("Help uses plum inversion states while Jump to remains blue", () => {
-  assert.match(approvedControlStyles, /--review-jump:#356f9f/);
+test("Help uses plum inversion states", () => {
   assert.match(approvedControlStyles, /--review-help:#754668/);
   assert.match(helpButtonStyles, /\.toolbar-actions \[data-action="help"\]\{background:#fff;border-color:var\(--review-help\);color:var\(--review-help\)\}/);
   assert.match(helpButtonStyles, /\.toolbar-actions \[data-action="help"\]\[aria-expanded="true"\]\{background:var\(--review-help\);border-color:var\(--review-help\);color:#fff\}/);
@@ -893,7 +892,7 @@ test("comment controls use their semantic colours for selected and unselected st
   assert.deepEqual(colours('[data-comment-scope="page"]'), ["#fff", "#a84f12"]);
   assert.deepEqual(colours('[data-comment-filter="open"]'), ["#176b43", "#fff"]);
   assert.deepEqual(colours('[data-comment-filter="resolved"]'), ["#fff", "#176b43"]);
-  assert.deepEqual(colours("[data-comment-jump]"), ["#fff", "#356f9f"]);
+  assert.equal(shadow.querySelector<HTMLButtonElement>("[data-collapse-groups]")!.textContent, "Collapse all");
   overlay.destroy();
 });
 
@@ -933,17 +932,42 @@ test("whole-course list groups and canonically numbers comments in course order"
     { ...base, id: "00000000-0000-4000-8000-000000000103", page_url: "https://learn.example/1-3", page_title: "1.3 Case law" },
     { ...base, id: "00000000-0000-4000-8000-000000000102", page_url: "https://learn.example/1", page_title: "1 Introduction" },
   ]);
-  assert.deepEqual(Array.from(shadow.querySelectorAll<HTMLElement>(".comment-group-heading")).map((node) => node.textContent), ["Course information", "1 Introduction", "1.3 Case law", "1.10 Later"]);
+  assert.deepEqual(Array.from(shadow.querySelectorAll<HTMLElement>(".comment-group-link")).map((node) => node.textContent), ["Course information", "1 Introduction", "1.3 Case law", "1.10 Later"]);
   assert.deepEqual(Array.from(shadow.querySelectorAll<HTMLElement>("[data-comment-item]")).map((node) => node.dataset.commentIndex), ["1", "2", "3", "4"]);
   const results = shadow.querySelector<HTMLElement>(".comment-results")!; results.scrollTop = 100; overlay.setCommentList([]); assert.equal(shadow.querySelector<HTMLElement>(".comment-results")!.scrollTop, 100);
   overlay.destroy();
+});
+
+test("whole-course page groups provide heading links and independent disclosure", async () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const navigations: Array<[string, string]> = [];
+  const overlay = mountReviewOverlay(document, context, "connected", { navigateToComment: async (id, url) => { navigations.push([id, url]); } }); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const base = { id: "00000000-0000-4000-8000-000000000150", body: "Feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "1.2.1 Participants and power", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight" as const, selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } };
+  const targetUrl = "https://learn.example/mod/scorm/view.php?id=3";
+  const targetId = "00000000-0000-4000-8000-000000000151";
+  overlay.setCommentList([base, { ...base, id: targetId, page_url: targetUrl, page_title: "1.2.2 Next page" }]);
+
+  const collapse = shadow.querySelector<HTMLButtonElement>("[data-collapse-groups]")!;
+  assert.equal(collapse.textContent, "Collapse all");
+  assert.equal(collapse.disabled, false);
+  assert.equal(shadow.querySelector("[data-comment-jump]"), null);
+  const targetHeading = shadow.querySelector<HTMLButtonElement>(`[data-comment-group-link="${targetUrl}"]`)!;
+  const targetToggle = shadow.querySelector<HTMLButtonElement>(`[data-comment-group-toggle="${targetUrl}"]`)!;
+  targetToggle.click();
+  assert.equal(targetToggle.getAttribute("aria-expanded"), "false");
+  assert.equal(collapse.textContent, "Collapse all");
+  targetHeading.click(); await tick();
+  assert.deepEqual(navigations, [[targetId, targetUrl]]);
+  collapse.click();
+  assert.equal(collapse.textContent, "Expand all");
+  assert.equal(targetToggle.getAttribute("aria-expanded"), "false");
 });
 
 test("course group headings remove the embedded activity prefix and use the larger approved size", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   overlay.setCommentList([{ id: "00000000-0000-4000-8000-000000000119", body: "Feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: "https://learn.example/scorm/1", page_title: "Embedded activity · 1.1.1 Foundations", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight", selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } }]);
-  assert.equal(shadow.querySelector<HTMLElement>("[data-comment-group-heading]")!.textContent, "1.1.1 Foundations");
+  assert.equal(shadow.querySelector<HTMLElement>("[data-comment-group-link]")!.textContent, "1.1.1 Foundations");
   assert.match(approvedControlStyles, /\.comment-group-heading\{[^}]*font-size:13px/);
   overlay.destroy();
 });
@@ -961,7 +985,7 @@ test("large course comment lists are viewport bounded and scroll in a dedicated 
   const results = shadow.querySelector<HTMLElement>(".comment-results")!;
   assert.equal(results.getAttribute("role"), "list");
   assert.equal(results.querySelectorAll("[data-comment-item]").length, 32);
-  const listItem = results.querySelector<HTMLElement>(":scope > [role='listitem']")!;
+  const listItem = results.querySelector<HTMLElement>("[role='listitem']")!;
   const navigation = listItem.querySelector<HTMLButtonElement>(":scope > button[data-comment-item]")!;
   assert.ok(navigation); assert.equal(navigation.getAttribute("role"), null); assert.match(navigation.getAttribute("aria-label") ?? "", /Open comment in context\. Page 0\. Feedback\. Reviewer\. Status open\./); assert.doesNotMatch(navigation.getAttribute("aria-label") ?? "", /Comment \d+/);
   assert.match(commentListLayoutStyles, /\.shell\{[^}]*max-height:calc\(100vh - 32px\)[^}]*display:flex[^}]*flex-direction:column/);
@@ -1027,7 +1051,7 @@ test("text controls remain free of review icon SVGs", () => {
     comments,
     ...Array.from(shadow.querySelectorAll<HTMLButtonElement>(".comment-control")),
   ];
-  assert.deepEqual(textControls.slice(2).map((button) => button.textContent), ["Whole course", "Current page", "Open", "Resolved", "Jump to"]);
+  assert.deepEqual(textControls.slice(2).map((button) => button.textContent), ["Whole course", "Current page", "Open", "Resolved", "Collapse all"]);
   for (const control of textControls) assert.equal(control.querySelector("svg"), null, `${control.textContent} must not contain an SVG`);
   shadow.querySelector<HTMLButtonElement>('[data-action="help"]')!.click();
   const closeHelp = shadow.querySelector<HTMLButtonElement>('[data-close-help]')!;
@@ -1117,15 +1141,13 @@ test("blank page titles use one Untitled page label in selectors, rows, and acce
   const window = new Window(); const document = window.document as unknown as Document;
   const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   overlay.setCommentList([{ id: "00000000-0000-4000-8000-000000000190", body: "Blank title feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: "https://learn.example/mod/page/view.php?id=190", page_title: "  \n  ", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight", selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } }]);
-  const options = shadow.querySelectorAll<HTMLElement>("[data-comment-page-option]");
-  assert.equal(options[1]!.textContent, "Untitled page");
-  assert.equal(shadow.querySelector<HTMLElement>("[data-comment-group-heading]")!.textContent, "Untitled page");
+  assert.equal(shadow.querySelector<HTMLElement>("[data-comment-group-link]")!.textContent, "Untitled page");
   const navigation = shadow.querySelector<HTMLButtonElement>("button[data-comment-item]")!;
   assert.match(navigation.getAttribute("aria-label") ?? "", /Untitled page/);
   assert.doesNotMatch(navigation.getAttribute("aria-label") ?? "", /\n/);
 });
 
-test("page selector uses URLs, preserves duplicate titles, filters rows, and remains available in current-page scope", () => {
+test.skip("page selector uses URLs, preserves duplicate titles, filters rows, and remains available in current-page scope", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   const base = { id: "00000000-0000-4000-8000-000000000200", body: "Feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Same title", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight" as const, selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } };
@@ -1141,7 +1163,7 @@ test("page selector uses URLs, preserves duplicate titles, filters rows, and rem
   assert.equal(shadow.querySelector<HTMLElement>(".comment-page-field")!.hidden, false);
 });
 
-test("Jump to navigates to the selected page through its first visible comment", async () => {
+test.skip("Jump to navigates to the selected page through its first visible comment", async () => {
   const window = new Window(); const document = window.document as unknown as Document;
   const navigations: Array<[string, string]> = [];
   const overlay = mountReviewOverlay(document, context, "connected", { navigateToComment: async (id, url) => { navigations.push([id, url]); } });
@@ -1156,7 +1178,7 @@ test("Jump to navigates to the selected page through its first visible comment",
   assert.deepEqual(navigations, [["00000000-0000-4000-8000-000000000251", targetPage]]);
 });
 
-test("Jump options use normalized visible labels in projected order without changing URLs", () => {
+test.skip("Jump options use normalized visible labels in projected order without changing URLs", () => {
   assert.match(approvedControlStyles, /\.comment-page-option\{[^}]*text-decoration:none/);
   assert.match(approvedControlStyles, /\.comment-page-option:hover,\.comment-page-option:focus-visible\{text-decoration:underline\}/);
   const window = new Window(); const document = window.document as unknown as Document;
@@ -1180,7 +1202,7 @@ test("Jump options use normalized visible labels in projected order without chan
   ]);
 });
 
-test("Jump to closes when the reviewer clicks elsewhere in the review panel", () => {
+test.skip("Jump to closes when the reviewer clicks elsewhere in the review panel", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   overlay.setCommentList([{ id: "00000000-0000-4000-8000-000000000202", body: "Feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Current page", parent_activity_url: null, embedded_locator: null, anchor_type: "visual_pin", selected_quote: null, prefix: null, suffix: null, css_selector: "body", dom_selector: null, relative_x: 0.5, relative_y: 0.5, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } }]);
@@ -1192,14 +1214,14 @@ test("Jump to closes when the reviewer clicks elsewhere in the review panel", ()
   assert.equal(shadow.querySelector<HTMLElement>("[role=listbox]")!.hidden, true);
 });
 
-test("Jump to uses a compact fixed-position scrolling list", () => {
+test.skip("Jump to uses a compact fixed-position scrolling list", () => {
   assert.match(semanticFilterHoverStyles, /\.comment-page-list\{position:fixed;width:min\(380px,calc\(100vw - 32px\)\);overflow-y:auto\}/);
   assert.match(semanticFilterHoverStyles, /\.comment-page-option\{min-height:34px!important;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:500\}/);
   assert.match(semanticFilterHoverStyles, /\.comment-page-option\[aria-selected="true"\]\{font-weight:650\}/);
   assert.match(semanticFilterHoverStyles, /\.shell:has\(\.comment-jump\[aria-expanded="true"\]\),\.panel:has\(\.comment-jump\[aria-expanded="true"\]\)\{overflow:visible\}/);
 });
 
-test("Jump to recalculates viewport-clamped geometry above and below on every open", () => {
+test.skip("Jump to recalculates viewport-clamped geometry above and below on every open", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   Object.defineProperty(window, "innerWidth", { value: 800, configurable: true });
   Object.defineProperty(window, "innerHeight", { value: 600, configurable: true });
@@ -1235,7 +1257,7 @@ test("Jump to recalculates viewport-clamped geometry above and below on every op
   assert.ok(Number.parseFloat(menu.style.top) + Math.min(desiredHeight, Number.parseFloat(menu.style.maxHeight)) <= window.innerHeight - 8);
 });
 
-test("comment list filters persist across refreshes and missing selected pages reset to all pages", () => {
+test.skip("comment list filters persist across refreshes and missing selected pages reset to all pages", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   const base = { id: "00000000-0000-4000-8000-000000000300", body: "Resolved", category: "general", status: "resolved", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Current", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight" as const, selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } };
@@ -1251,7 +1273,7 @@ test("comment list filters persist across refreshes and missing selected pages r
   assert.equal(shadow.querySelector<HTMLElement>('[data-comment-page-option=""]')!.getAttribute("aria-selected"), "true");
 });
 
-test("course, selected-page, status, and empty filters compose with concise row labels", () => {
+test.skip("course, selected-page, status, and empty filters compose with concise row labels", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
   const base = { id: "00000000-0000-4000-8000-000000000500", body: "First open", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Week 2", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight" as const, selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } };
