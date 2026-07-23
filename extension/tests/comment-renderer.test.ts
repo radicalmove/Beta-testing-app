@@ -330,13 +330,14 @@ test("previous and next navigate through open comments across the whole course",
 });
 
 test("previous and next follow anchor order on the current page and scroll into context", async () => {
-  const { document } = setup();
+  const { window, document } = setup();
   const positions = [["early", 20], ["middle", 120], ["late", 220]] as const;
-  const scrolls: string[] = [];
+  Object.defineProperty(window, "innerHeight", { configurable: true, value: 600 });
+  const scrolls: ScrollToOptions[] = [];
+  window.scrollBy = ((options: ScrollToOptions) => { scrolls.push(options); }) as typeof window.scrollBy;
   for (const [id, top] of positions) {
     const target = document.createElement("div"); target.id = id;
     target.getBoundingClientRect = () => ({ x: 10, y: top, left: 10, top, right: 110, bottom: top + 40, width: 100, height: 40, toJSON() {} });
-    target.scrollIntoView = () => { scrolls.push(id); };
     document.body.append(target);
   }
   const early = comment({ id: "00000000-0000-4000-8000-000000000031", body: "Early", css_selector: "#early" });
@@ -352,11 +353,31 @@ test("previous and next follow anchor order on the current page and scroll into 
 
   assert.equal(root.querySelector<HTMLElement>("[data-thread-popover] div")?.textContent, "Early");
   assert.equal(root.querySelector<HTMLElement>("[data-thread-position]")?.textContent, "Comment 1 of 3");
-  assert.deepEqual(scrolls, ["early"]);
+  assert.deepEqual(scrolls, [{ top: -260, behavior: "smooth" }]);
+});
+
+test("top-level Moodle navigation scrolls to the exact visual-pin coordinate", () => {
+  const { window, document } = setup();
+  const target = document.querySelector<HTMLElement>("#target")!;
+  target.getBoundingClientRect = () => ({ x: 0, y: -1200, left: 0, top: -1200, right: 1000, bottom: 800, width: 1000, height: 2000, toJSON() {} });
+  let elementScrolls = 0;
+  target.scrollIntoView = () => { elementScrolls += 1; };
+  Object.defineProperty(window, "innerHeight", { configurable: true, value: 600 });
+  const windowScrolls: ScrollToOptions[] = [];
+  window.scrollBy = ((options: ScrollToOptions) => { windowScrolls.push(options); }) as typeof window.scrollBy;
+  const renderer = createCommentRenderer(document, pageUrl);
+  const targetComment = comment({ relative_x: 0.5, relative_y: 0.1 });
+  renderer.setComments([targetComment]);
+
+  assert.equal(renderer.takeToContext(targetComment.id), true);
+
+  assert.deepEqual(windowScrolls, [{ top: -1300, behavior: "smooth" }]);
+  assert.equal(elementScrolls, 0);
 });
 
 test("next scrolls a visual pin through its nested SCORM scroll container", async () => {
-  const { document } = setup();
+  const { window, document } = setup();
+  Object.defineProperty(window, "top", { configurable: true, value: {} });
   const scroller = document.createElement("div");
   const later = document.createElement("div"); later.id = "later-in-scorm";
   later.getBoundingClientRect = () => ({ x: 10, y: 720, left: 10, top: 720, right: 210, bottom: 820, width: 200, height: 100, toJSON() {} });

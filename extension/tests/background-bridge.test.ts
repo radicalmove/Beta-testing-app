@@ -150,7 +150,7 @@ test("unknown rejection values have safe useful response messages", () => {
 });
 
 test("create comment bridge accepts only normalized context and anchor fields", () => {
-  const payload = { course_id: "123e4567-e89b-12d3-a456-426614174000", page_url: "https://learn.example/mod/page/view.php?id=9", page_title: "Week 2", body: "Needs clarification", category: "general", anchor_type: "text_highlight", selected_quote: "this phrase", prefix: "before ", suffix: " after" };
+  const payload = { course_id: "123e4567-e89b-12d3-a456-426614174000", page_url: "https://learn.example/mod/page/view.php?id=9", page_title: "Week 2", body: "Needs clarification", category: "general", anchor_type: "text_highlight", selected_quote: "this phrase", prefix: "before ", suffix: " after", css_selector: "#intro" };
   assert.deepEqual(validateCreateCommentMessage({ type: "CREATE_COMMENT", payload }), { payload });
   assert.deepEqual(validateCreateCommentMessage({ type: "CREATE_COMMENT", payload, screenshot_requested: true }), { payload, screenshotRequested: true });
   assert.throws(() => validateCreateCommentMessage({ type: "CREATE_COMMENT", payload: { ...payload, token: "secret" } }), /Invalid CREATE_COMMENT/);
@@ -165,18 +165,22 @@ test("cancel screenshot messages have an exact UUID envelope", () => {
 });
 
 test("create comment preserves an embedded activity hash route", () => {
-  const payload = { course_id: "123e4567-e89b-12d3-a456-426614174000", page_url: "https://rise.example/activity#/lesson/2", page_title: "Lesson 2", body: "Review this", category: "general", anchor_type: "text_highlight", selected_quote: "phrase", prefix: "", suffix: "" };
+  const payload = { course_id: "123e4567-e89b-12d3-a456-426614174000", page_url: "https://rise.example/activity#/lesson/2", page_title: "Lesson 2", body: "Review this", category: "general", anchor_type: "text_highlight", selected_quote: "phrase", prefix: "", suffix: "", css_selector: "#copy" };
   assert.equal(validateCreateCommentMessage({ type: "CREATE_COMMENT", payload }).payload.page_url, payload.page_url);
 });
 
 test("create comment validation trims bounded common fields and enforces exact text anchor shape", () => {
-  const payload = { course_id: "123e4567-e89b-12d3-a456-426614174000", page_url: "https://learn.example/mod/page/view.php?id=9", page_title: "  Week 2  ", body: "  Needs clarification  ", category: "  general  ", anchor_type: "text_highlight", selected_quote: "  this phrase  ", prefix: "before ", suffix: " after" };
+  const payload = { course_id: "123e4567-e89b-12d3-a456-426614174000", page_url: "https://learn.example/mod/page/view.php?id=9", page_title: "  Week 2  ", body: "  Needs clarification  ", category: "  general  ", anchor_type: "text_highlight", selected_quote: "  this phrase  ", prefix: "before ", suffix: " after", css_selector: "  #intro  " };
   const result = validateCreateCommentMessage({ type: "CREATE_COMMENT", payload });
-  assert.deepEqual(result.payload, { ...payload, page_title: "Week 2", body: "Needs clarification", category: "general", selected_quote: "this phrase" });
+  assert.deepEqual(result.payload, { ...payload, page_title: "Week 2", body: "Needs clarification", category: "general", selected_quote: "this phrase", css_selector: "#intro" });
+  const { css_selector: _selector, ...withoutSelector } = payload;
   for (const invalid of [
+    withoutSelector,
     { ...payload, selected_quote: "   " },
     { ...payload, prefix: 4 },
-    { ...payload, css_selector: "#mixed" },
+    { ...payload, css_selector: "   " },
+    { ...payload, css_selector: "x".repeat(4001) },
+    { ...payload, css_selector: 4 },
     { ...payload, relative_x: 0.2 },
     { ...payload, body: "x".repeat(10001) },
   ]) assert.throws(() => validateCreateCommentMessage({ type: "CREATE_COMMENT", payload: invalid }), /Invalid CREATE_COMMENT/);
@@ -216,7 +220,7 @@ test("upload screenshot messages have an exact UUID and data URL envelope", () =
 });
 
 test("valid create is denied before API access when cached course identity does not match", async () => {
-  const payload = { course_id: "123e4567-e89b-12d3-a456-426614174000", page_url: "https://learn.example/mod/page/view.php?id=9", page_title: "Week 2", body: "No", category: "general", anchor_type: "text_highlight", selected_quote: "phrase", prefix: "", suffix: "" };
+  const payload = { course_id: "123e4567-e89b-12d3-a456-426614174000", page_url: "https://learn.example/mod/page/view.php?id=9", page_title: "Week 2", body: "No", category: "general", anchor_type: "text_highlight", selected_quote: "phrase", prefix: "", suffix: "", css_selector: "#copy" };
   let creates = 0;
   await assert.rejects(() => handleCreateCommentBridge({ type: "CREATE_COMMENT", payload }, { id: "ours", url: payload.page_url }, { authorize: async () => true, contextMatches: () => false, create: async () => { creates += 1; } }), /context mismatch/);
   assert.equal(creates, 0);

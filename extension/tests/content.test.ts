@@ -68,7 +68,7 @@ test("non-SCORM navigation stays pending until the late anchor scroll succeeds",
   assert.equal(completed, false);
   assert.ok(timers.length > 0, "an unresolved navigation must schedule another attempt");
   const target = window.document.createElement("section"); target.id = "late-target"; window.document.body.append(target);
-  let scrolls = 0; target.scrollIntoView = () => { scrolls += 1; };
+  let scrolls = 0; window.scrollBy = (() => { scrolls += 1; }) as typeof window.scrollBy;
   const retries = timers.splice(0); for (const retry of retries) retry();
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(completed, true);

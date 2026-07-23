@@ -208,7 +208,14 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
           if (!cachedSelection) return acknowledgement(command, false, "SELECTION_UNAVAILABLE");
           const anchor = cachedSelection; cachedSelection = undefined;
           window.getSelection()?.removeAllRanges();
-          options.emit(envelope("SCORM_ANCHOR_CAPTURED", { page_title: identity.pageTitle, embedded_locator: identity.embeddedLocator, anchor_type: "text_highlight", ...anchor }));
+          options.emit(envelope("SCORM_ANCHOR_CAPTURED", {
+            page_title: identity.pageTitle,
+            embedded_locator: identity.embeddedLocator,
+            anchor_type: "text_highlight",
+            selected_quote: anchor.selected_quote,
+            prefix: anchor.prefix,
+            suffix: anchor.suffix,
+          }));
           emitSelectionState();
           return acknowledgement(command, true);
         }

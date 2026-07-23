@@ -12,7 +12,7 @@ Second, visual-pin recovery calculates the pin's exact viewport coordinates but 
 
 ### Text highlights
 
-`captureTextAnchor` will add a stable CSS selector for the nearest eligible element containing the selected range. It will reuse the existing bounded `selectorFor` algorithm used by visual pins and reject extension-owned UI.
+`captureTextAnchor` will add a stable CSS selector for the nearest eligible element containing the selected range. It will reuse the existing bounded `selectorFor` algorithm used by visual pins and reject extension-owned UI. New capture fails closed if it cannot produce a non-empty selector of at most 4,000 characters, so the composer never presents a newly captured highlight that the API would reject.
 
 Top-page text-highlight create messages will include `css_selector` alongside `selected_quote`, `prefix`, and `suffix`. The bridge will accept only that exact bounded shape. The API already supports this field, so no server code or deployment is required. Existing stored highlights without selectors remain valid and continue to recover from quote context.
 

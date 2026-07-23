@@ -14,7 +14,38 @@ test("captures selected quote with surrounding text without changing content", (
   assert.equal(anchor.selected_quote, "selected phrase");
   assert.equal(anchor.prefix, "Before words ");
   assert.equal(anchor.suffix, " after words");
+  assert.equal(anchor.css_selector, "body > p");
   assert.equal(window.document.body.innerHTML, before);
+});
+
+test("captures a stable selector when whole-element highlight context is only whitespace", () => {
+  const window = new Window();
+  window.document.body.innerHTML = `   <p id="intro">Please introduce yourself to your peers and share a little about yourself.</p>   `;
+  const text = window.document.querySelector("#intro")!.firstChild!;
+  const range = window.document.createRange(); range.selectNodeContents(text);
+  const before = window.document.body.innerHTML;
+
+  const anchor = captureTextAnchor(range as unknown as Range, window.document as unknown as Document)!;
+
+  assert.equal(anchor.selected_quote, text.textContent);
+  assert.equal(anchor.prefix.trim(), "");
+  assert.equal(anchor.suffix.trim(), "");
+  assert.equal(anchor.css_selector, "#intro");
+  assert.equal(window.document.body.innerHTML, before);
+});
+
+test("spanning highlights use their nearest common eligible element", () => {
+  const window = new Window();
+  window.document.body.innerHTML = `<section id="lesson"><span>selected </span><strong>words</strong></section>`;
+  const section = window.document.querySelector("#lesson")!;
+  const range = window.document.createRange();
+  range.setStart(section.querySelector("span")!.firstChild!, 0);
+  range.setEnd(section.querySelector("strong")!.firstChild!, 5);
+
+  const anchor = captureTextAnchor(range as unknown as Range, window.document as unknown as Document)!;
+
+  assert.equal(anchor.selected_quote, "selected words");
+  assert.equal(anchor.css_selector, "#lesson");
 });
 
 test("restores a quote after a small DOM split", () => {

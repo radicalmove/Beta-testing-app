@@ -132,7 +132,7 @@ export function validateCreateCommentMessage(message: unknown): { payload: Creat
   const payload = record.payload as Record<string, unknown>;
   const common = ["course_id", "page_url", "page_title", "body", "category", "anchor_type"];
   const expected = payload.anchor_type === "text_highlight"
-    ? [...common, "selected_quote", "prefix", "suffix"]
+    ? [...common, "selected_quote", "prefix", "suffix", "css_selector"]
     : payload.anchor_type === "visual_pin"
       ? [...common, "css_selector", "relative_x", "relative_y"]
       : [];
@@ -150,9 +150,9 @@ export function validateCreateCommentMessage(message: unknown): { payload: Creat
   const category = payload.category.trim(); payload.category = category;
   if (!categories.includes(category)) return invalid();
   if (payload.anchor_type === "text_highlight") {
-    if (typeof payload.selected_quote !== "string" || typeof payload.prefix !== "string" || typeof payload.suffix !== "string") return invalid();
-    const selectedQuote = payload.selected_quote.trim(); const prefix = payload.prefix; const suffix = payload.suffix; payload.selected_quote = selectedQuote;
-    if (!selectedQuote || selectedQuote.length > 20000 || prefix.length > 2000 || suffix.length > 2000) return invalid();
+    if (typeof payload.selected_quote !== "string" || typeof payload.prefix !== "string" || typeof payload.suffix !== "string" || typeof payload.css_selector !== "string") return invalid();
+    const selectedQuote = payload.selected_quote.trim(); const prefix = payload.prefix; const suffix = payload.suffix; const selector = payload.css_selector.trim(); payload.selected_quote = selectedQuote; payload.css_selector = selector;
+    if (!selectedQuote || selectedQuote.length > 20000 || prefix.length > 2000 || suffix.length > 2000 || !selector || selector.length > 4000) return invalid();
   } else if (payload.anchor_type === "visual_pin") {
     if (typeof payload.css_selector !== "string" || typeof payload.relative_x !== "number" || typeof payload.relative_y !== "number") return invalid();
     const selector = payload.css_selector.trim(); const relativeX = payload.relative_x; const relativeY = payload.relative_y; payload.css_selector = selector;
