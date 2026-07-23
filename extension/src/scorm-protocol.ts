@@ -1,4 +1,5 @@
 import { validatePageCommentsResponse, type PageComment } from "./background-bridge.ts";
+import { validateRiseInteractionContext, type RiseInteractionContext } from "./rise-interaction-context.ts";
 
 export const SCORM_MESSAGE_TYPES = [
   "SCORM_SELECTION_CHANGED",
@@ -13,6 +14,7 @@ export const SCORM_MESSAGE_TYPES = [
   "SCORM_COVER_ACTIVATED",
   "SCORM_ACTIVATE_COVER",
   "SCORM_APPLY_LOCATOR",
+  "SCORM_RESTORE_INTERACTION",
   "SCORM_TAKE_TO_CONTEXT",
 ] as const;
 
@@ -31,6 +33,7 @@ export const SCORM_ACK_TYPES = {
   SCORM_COVER_ACTIVATED: "SCORM_COVER_ACTIVATED_ACK",
   SCORM_ACTIVATE_COVER: "SCORM_ACTIVATE_COVER_ACK",
   SCORM_APPLY_LOCATOR: "SCORM_APPLY_LOCATOR_ACK",
+  SCORM_RESTORE_INTERACTION: "SCORM_RESTORE_INTERACTION_ACK",
   SCORM_TAKE_TO_CONTEXT: "SCORM_TAKE_TO_CONTEXT_ACK",
 } as const satisfies Record<ScormMessageType, string>;
 
@@ -44,6 +47,7 @@ export type ScormTextAnchorPayload = {
   selected_quote: string;
   prefix: string;
   suffix: string;
+  interaction_context: RiseInteractionContext | null;
 };
 export type ScormPinAnchorPayload = {
   page_title: string;
@@ -52,12 +56,14 @@ export type ScormPinAnchorPayload = {
   css_selector: string;
   relative_x: number;
   relative_y: number;
+  interaction_context: RiseInteractionContext | null;
 };
 export type ScormAnchorCapturedPayload = ScormTextAnchorPayload | ScormPinAnchorPayload;
 export type ScormPageIdentityPayload = { page_title: string; embedded_locator: string };
 export type ScormSetCommentsPayload = { comments: PageComment[] };
 export type ScormApplyLocatorPayload = { embedded_locator: string };
 export type ScormTakeToContextPayload = { comment_id: string };
+export type ScormRestoreInteractionPayload = { comment_id: string };
 export type ScormCommentNavigationPayload = { comment_id: string; page_url: string };
 
 export type ScormEnvelope<T extends ScormMessageType, P> = {
@@ -78,6 +84,7 @@ export type ScormCommand =
   | ScormEnvelope<"SCORM_SET_COMMENTS", ScormSetCommentsPayload>
   | ScormEnvelope<"SCORM_ACTIVATE_COVER", EmptyScormPayload>
   | ScormEnvelope<"SCORM_APPLY_LOCATOR", ScormApplyLocatorPayload>
+  | ScormEnvelope<"SCORM_RESTORE_INTERACTION", ScormRestoreInteractionPayload>
   | ScormEnvelope<"SCORM_TAKE_TO_CONTEXT", ScormTakeToContextPayload>;
 
 export type ScormEvent =
@@ -176,8 +183,10 @@ function validIdentity(payload: Record<string, unknown>, pageUrl: string): boole
 
 function validAnchor(payload: unknown, pageUrl: string): payload is ScormAnchorCapturedPayload {
   if (!isRecord(payload) || !validIdentity(payload, pageUrl)) return false;
+  const interaction = payload.interaction_context === null || validateRiseInteractionContext(payload.interaction_context) !== null;
+  if (!interaction) return false;
   if (payload.anchor_type === "text_highlight") {
-    return exactKeys(payload, ["page_title", "embedded_locator", "anchor_type", "selected_quote", "prefix", "suffix"])
+    return exactKeys(payload, ["page_title", "embedded_locator", "anchor_type", "selected_quote", "prefix", "suffix", "interaction_context"])
       && typeof payload.selected_quote === "string"
       && payload.selected_quote.length <= 20_000
       && Boolean(payload.selected_quote.trim())
@@ -187,7 +196,7 @@ function validAnchor(payload: unknown, pageUrl: string): payload is ScormAnchorC
       && payload.suffix.length <= 2_000;
   }
   if (payload.anchor_type === "visual_pin") {
-    return exactKeys(payload, ["page_title", "embedded_locator", "anchor_type", "css_selector", "relative_x", "relative_y"])
+    return exactKeys(payload, ["page_title", "embedded_locator", "anchor_type", "css_selector", "relative_x", "relative_y", "interaction_context"])
       && typeof payload.css_selector === "string"
       && payload.css_selector.length >= 1
       && payload.css_selector.length <= 4_000
@@ -248,6 +257,7 @@ export function validateScormMessage(value: unknown): ScormMessage {
       if (!isRecord(value.payload) || !exactKeys(value.payload, ["embedded_locator"]) || !validEmbeddedLocator(value.payload.embedded_locator, pageUrl)) return invalidMessage();
       break;
     case "SCORM_TAKE_TO_CONTEXT":
+    case "SCORM_RESTORE_INTERACTION":
       if (!isRecord(value.payload) || !exactKeys(value.payload, ["comment_id"]) || !validUuid(value.payload.comment_id)) return invalidMessage();
       break;
     default:

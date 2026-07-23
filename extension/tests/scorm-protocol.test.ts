@@ -26,6 +26,7 @@ const comment = {
   page_title: "Embedded activity · Lesson one",
   parent_activity_url: null,
   embedded_locator: null,
+  interaction_context: null,
   anchor_type: "text_highlight",
   selected_quote: "important phrase",
   prefix: "Before ",
@@ -44,8 +45,8 @@ const messages = [
   { ...base, type: "SCORM_START_SELECTION", payload: {} },
   { ...base, type: "SCORM_START_MARKER", payload: {} },
   { ...base, type: "SCORM_CANCEL_MARKER", payload: {} },
-  { ...base, type: "SCORM_ANCHOR_CAPTURED", payload: { page_title: "Embedded activity · Lesson one", embedded_locator: "#/lessons/one", anchor_type: "text_highlight", selected_quote: "important phrase", prefix: "Before ", suffix: " after" } },
-  { ...base, type: "SCORM_ANCHOR_CAPTURED", payload: { page_title: "Embedded activity · Lesson one", embedded_locator: "/activity/index.html#/lessons/one", anchor_type: "visual_pin", css_selector: "[data-region=\"continue\"]", relative_x: 0, relative_y: 1 } },
+  { ...base, type: "SCORM_ANCHOR_CAPTURED", payload: { page_title: "Embedded activity · Lesson one", embedded_locator: "#/lessons/one", anchor_type: "text_highlight", selected_quote: "important phrase", prefix: "Before ", suffix: " after", interaction_context: null } },
+  { ...base, type: "SCORM_ANCHOR_CAPTURED", payload: { page_title: "Embedded activity · Lesson one", embedded_locator: "/activity/index.html#/lessons/one", anchor_type: "visual_pin", css_selector: "[data-region=\"continue\"]", relative_x: 0, relative_y: 1, interaction_context: null } },
   { ...base, type: "SCORM_PAGE_IDENTITY_CHANGED", payload: { page_title: "Embedded activity · Lesson one", embedded_locator: "#/lessons/one" } },
   { ...base, type: "SCORM_SET_COMMENTS", payload: { comments: [comment] } },
   { ...base, type: "SCORM_COMMENTS_CHANGED", payload: {} },
@@ -53,11 +54,12 @@ const messages = [
   { ...base, type: "SCORM_COVER_ACTIVATED", payload: {} },
   { ...base, type: "SCORM_ACTIVATE_COVER", payload: {} },
   { ...base, type: "SCORM_APPLY_LOCATOR", payload: { embedded_locator: "#/lessons/two" } },
+  { ...base, type: "SCORM_RESTORE_INTERACTION", payload: { comment_id: commentId } },
   { ...base, type: "SCORM_TAKE_TO_CONTEXT", payload: { comment_id: commentId } },
 ] as const;
 
 test("exports separate command and event discriminator families", () => {
-  const commands: Array<ScormCommand["type"]> = ["SCORM_START_SELECTION", "SCORM_START_MARKER", "SCORM_CANCEL_MARKER", "SCORM_SET_COMMENTS", "SCORM_ACTIVATE_COVER", "SCORM_APPLY_LOCATOR", "SCORM_TAKE_TO_CONTEXT"];
+  const commands: Array<ScormCommand["type"]> = ["SCORM_START_SELECTION", "SCORM_START_MARKER", "SCORM_CANCEL_MARKER", "SCORM_SET_COMMENTS", "SCORM_ACTIVATE_COVER", "SCORM_APPLY_LOCATOR", "SCORM_RESTORE_INTERACTION", "SCORM_TAKE_TO_CONTEXT"];
   const events: Array<ScormEvent["type"]> = ["SCORM_SELECTION_CHANGED", "SCORM_ANCHOR_CAPTURED", "SCORM_PAGE_IDENTITY_CHANGED", "SCORM_COMMENTS_CHANGED", "SCORM_COMMENT_NAVIGATION_REQUESTED", "SCORM_COVER_ACTIVATED"];
   assert.deepEqual([...commands, ...events].sort(), [...new Set(messages.map(({ type }) => type))].sort());
 });
@@ -139,6 +141,17 @@ test("validates both anchor variants exactly and within existing anchor bounds",
     { ...pin.payload, relative_x: Number.NaN },
     { ...pin.payload, selected_quote: "mixed" },
   ]) assert.throws(() => validateScormMessage({ ...pin, payload }), /Invalid SCORM message/);
+});
+
+test("validates an exact Rise interaction context on captured anchors", () => {
+  const anchor = messages[4];
+  const interaction_context = {
+    version: 1, kind: "process",
+    container: { block_id: "process-1", ordinal: 1, fingerprint: "Participants" },
+    item: { ordinal: 3, count: 5, label: "Criminal justice agencies", control_key: "Go to slide 3" },
+  };
+  assert.doesNotThrow(() => validateScormMessage({ ...anchor, payload: { ...anchor.payload, interaction_context } }));
+  assert.throws(() => validateScormMessage({ ...anchor, payload: { ...anchor.payload, interaction_context: { ...interaction_context, extra: true } } }), /Invalid SCORM message/);
 });
 
 test("validates exact bounded whole-course comment projections", () => {

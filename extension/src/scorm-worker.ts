@@ -4,6 +4,7 @@ import type { PageComment } from "./background-bridge.ts";
 import { createCommentRenderer, type CommentRenderer } from "./comment-renderer.ts";
 import { SCORM_ACK_TYPES, type ScormAck, type ScormCommand, type ScormEvent, validateScormMessage } from "./scorm-protocol.ts";
 import { COMMENT_MARKER_CURSOR } from "./ui/comment-cursor.ts";
+import { captureRiseInteractionContext, restoreRiseInteractionContext, type RiseInteractionContext } from "./rise-interaction-context.ts";
 
 type LifecycleController = { teardown(): void; flush(): void };
 type LifecycleFactory = (window: Window & typeof globalThis, document: Document, refresh: () => void) => LifecycleController;
@@ -63,12 +64,12 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
   let identity = embeddedPageIdentity(window, document);
   let navigationSignature = `${window.location.href}\n${document.title}`;
   let renderer: CommentRenderer;
-  let cachedSelection: TextAnchor | undefined;
+  let cachedSelection: { anchor: TextAnchor; interactionContext: RiseInteractionContext | null } | undefined;
   let markerActive = false;
   let destroyed = false;
   let previousCursor = "";
   let previousCursorPriority = "";
-  let projectedCommentIds = new Set<string>();
+  let projectedComments = new Map<string, PageComment>();
   let armedCoverStart: HTMLAnchorElement | undefined;
   const isTrustedActivation = options.isTrustedActivation ?? ((event: Event) => event.isTrusted);
 
@@ -111,7 +112,7 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
     const selection = window.getSelection();
     const range = selection && selection.rangeCount === 1 ? selection.getRangeAt(0) : undefined;
     const nextSelection = range ? captureTextAnchor(range, document) ?? undefined : undefined;
-    if (nextSelection) cachedSelection = nextSelection;
+    if (nextSelection && range) cachedSelection = { anchor: nextSelection, interactionContext: captureRiseInteractionContext(range.commonAncestorContainer, document) };
     emitSelectionState();
   };
   document.addEventListener("selectionchange", onSelectionChange);
@@ -129,7 +130,7 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
     if (!anchor) return;
     event.preventDefault(); event.stopPropagation();
     stopMarker();
-    options.emit(envelope("SCORM_ANCHOR_CAPTURED", { page_title: identity.pageTitle, embedded_locator: identity.embeddedLocator, anchor_type: "visual_pin", ...anchor }));
+    options.emit(envelope("SCORM_ANCHOR_CAPTURED", { page_title: identity.pageTitle, embedded_locator: identity.embeddedLocator, anchor_type: "visual_pin", ...anchor, interaction_context: captureRiseInteractionContext(event.target, document) }));
   };
 
   const startMarker = () => {
@@ -150,7 +151,7 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
     stopMarker();
     renderer.setComments([]);
     renderer.destroy();
-    projectedCommentIds = new Set();
+    projectedComments = new Map();
     identity = next;
     navigationSignature = nextNavigationSignature;
     renderer = createRenderer(identity.pageUrl);
@@ -199,22 +200,23 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
       let command: ScormCommand;
       try {
         const parsed = validateScormMessage(value);
-        if (!parsed.type.startsWith("SCORM_") || !["SCORM_START_SELECTION", "SCORM_START_MARKER", "SCORM_CANCEL_MARKER", "SCORM_SET_COMMENTS", "SCORM_ACTIVATE_COVER", "SCORM_APPLY_LOCATOR", "SCORM_TAKE_TO_CONTEXT"].includes(parsed.type)) return invalidAcknowledgement(value);
+        if (!parsed.type.startsWith("SCORM_") || !["SCORM_START_SELECTION", "SCORM_START_MARKER", "SCORM_CANCEL_MARKER", "SCORM_SET_COMMENTS", "SCORM_ACTIVATE_COVER", "SCORM_APPLY_LOCATOR", "SCORM_RESTORE_INTERACTION", "SCORM_TAKE_TO_CONTEXT"].includes(parsed.type)) return invalidAcknowledgement(value);
         command = parsed as ScormCommand;
       } catch { return invalidAcknowledgement(value); }
       if (command.worker_instance_id !== options.workerInstanceId || command.generation !== options.generation || command.course_id !== options.courseId || command.page_url !== identity.pageUrl) return acknowledgement(command, false, "STALE_CONTEXT");
       switch (command.type) {
         case "SCORM_START_SELECTION": {
           if (!cachedSelection) return acknowledgement(command, false, "SELECTION_UNAVAILABLE");
-          const anchor = cachedSelection; cachedSelection = undefined;
+          const cached = cachedSelection; cachedSelection = undefined;
           window.getSelection()?.removeAllRanges();
           options.emit(envelope("SCORM_ANCHOR_CAPTURED", {
             page_title: identity.pageTitle,
             embedded_locator: identity.embeddedLocator,
             anchor_type: "text_highlight",
-            selected_quote: anchor.selected_quote,
-            prefix: anchor.prefix,
-            suffix: anchor.suffix,
+            selected_quote: cached.anchor.selected_quote,
+            prefix: cached.anchor.prefix,
+            suffix: cached.anchor.suffix,
+            interaction_context: cached.interactionContext,
           }));
           emitSelectionState();
           return acknowledgement(command, true);
@@ -223,7 +225,7 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
         case "SCORM_CANCEL_MARKER": stopMarker(); return acknowledgement(command, true);
         case "SCORM_SET_COMMENTS": {
           const comments = command.payload.comments;
-          projectedCommentIds = new Set(comments.filter((comment) => comment.page_url === identity.pageUrl).map((comment) => comment.id));
+          projectedComments = new Map(comments.filter((comment) => comment.page_url === identity.pageUrl).map((comment) => [comment.id, comment]));
           renderer.setComments(comments);
           return acknowledgement(command, true);
         }
@@ -238,7 +240,14 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
             return acknowledgement(command, navigate(destination, mode), "NAVIGATION_FAILED");
           } catch { return acknowledgement(command, false, "NAVIGATION_FAILED"); }
         }
-        case "SCORM_TAKE_TO_CONTEXT": return acknowledgement(command, projectedCommentIds.has(command.payload.comment_id) && renderer.takeToContext(command.payload.comment_id), "COMMENT_NOT_FOUND");
+        case "SCORM_RESTORE_INTERACTION": {
+          const comment = projectedComments.get(command.payload.comment_id);
+          if (!comment) return acknowledgement(command, false, "COMMENT_NOT_FOUND");
+          if (!comment.interaction_context) return acknowledgement(command, true);
+          const result = restoreRiseInteractionContext(comment.interaction_context, document);
+          return result === "ready" ? acknowledgement(command, true) : acknowledgement(command, false, result === "not-ready" ? "INTERACTION_NOT_READY" : "INTERACTION_MISMATCH");
+        }
+        case "SCORM_TAKE_TO_CONTEXT": return acknowledgement(command, projectedComments.has(command.payload.comment_id) && renderer.takeToContext(command.payload.comment_id), "COMMENT_NOT_FOUND");
       }
     },
     destroy() {
@@ -251,7 +260,7 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
       document.removeEventListener("selectionchange", onSelectionChange);
       lifecycle.teardown();
       renderer.setComments([]);
-      projectedCommentIds.clear();
+      projectedComments.clear();
       renderer.destroy();
     },
   };

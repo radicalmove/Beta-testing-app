@@ -58,7 +58,7 @@ const cacheScormLaunchForEvent = async (tabId: number, event: ScormEvent) => {
   const cmid = Number(player.searchParams.get("cm")); if (!Number.isSafeInteger(cmid) || cmid <= 0) return;
   try { await scormLaunchCache.put({ courseId: context.id, configuredOrigin: new URL(context.course_url).origin, cmid, packageRoot: packageRootFromScormUrl(event.page_url), playerUrl: context.parent_activity_url }); } catch { /* non-package worker events are not cacheable */ }
 };
-const navigationCommand = async (tabId: number, type: "SCORM_ACTIVATE_COVER" | "SCORM_APPLY_LOCATOR" | "SCORM_TAKE_TO_CONTEXT", payload: Record<string, string>): Promise<void> => {
+const navigationCommand = async (tabId: number, type: "SCORM_ACTIVATE_COVER" | "SCORM_APPLY_LOCATOR" | "SCORM_RESTORE_INTERACTION" | "SCORM_TAKE_TO_CONTEXT", payload: Record<string, string>): Promise<void> => {
   const owner = frameCoordination.currentOwner(tabId); const state = latestWorkerEvent.get(tabId); const context = reviewContexts.exportTab(tabId);
   if (!owner || !state || !context || state.worker_instance_id !== owner.workerInstanceId || state.generation !== owner.generation) throw new Error("SCORM worker is not ready");
   const command = validateScormMessage({ protocol: 1, type, request_id: crypto.randomUUID(), worker_instance_id: owner.workerInstanceId, generation: owner.generation, course_id: context.id, page_url: state.page_url, payload }) as ScormCommand;
@@ -68,6 +68,8 @@ const navigationCommand = async (tabId: number, type: "SCORM_ACTIVATE_COVER" | "
       chrome.tabs.sendMessage(tabId, { type: "REVIEW_SCORM_START_REQUIRED" }, { frameId: 0 }, () => void chrome.runtime.lastError);
       throw new Error("Start this lesson using the flashing arrow or Tab+Enter to continue to the comment.");
     }
+    if (acknowledgement.error_code === "INTERACTION_NOT_READY") throw new Error("INTERACTION_NOT_READY");
+    if (acknowledgement.error_code === "INTERACTION_MISMATCH") throw new Error("INTERACTION_MISMATCH: This Rise tab or process step has changed. Please locate the comment manually.");
     throw new Error(acknowledgement.error_code === "COMMENT_NOT_FOUND" ? "Comment projection is not ready" : "SCORM navigation failed");
   }
 };
@@ -77,6 +79,7 @@ const embeddedNavigation = new EmbeddedCommentNavigation(chrome.storage.session,
   activateCover: (tabId) => navigationCommand(tabId, "SCORM_ACTIVATE_COVER", {}),
   applyLocator: (tabId, locator) => navigationCommand(tabId, "SCORM_APPLY_LOCATOR", { embedded_locator: locator }),
   projectionContains: (tabId, commentId, pageUrl) => { const projection = workerProjections.get(tabId); return projection?.pageUrl === pageUrl && projection.commentIds.has(commentId); },
+  restoreInteraction: (tabId, commentId) => navigationCommand(tabId, "SCORM_RESTORE_INTERACTION", { comment_id: commentId }),
   takeToContext: (tabId, commentId) => navigationCommand(tabId, "SCORM_TAKE_TO_CONTEXT", { comment_id: commentId }),
 });
 const resumeEmbeddedNavigation = (tabId: number) => void embeddedNavigation.advance(tabId).catch(() => undefined);

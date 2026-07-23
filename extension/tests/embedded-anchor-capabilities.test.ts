@@ -17,6 +17,7 @@ const binding = {
   courseUrl: "https://my.uconline.ac.nz/course/view.php?id=896",
   embeddedLocator: "#/pages/one",
   anchor: { anchor_type: "visual_pin" as const, css_selector: "#card", relative_x: 0.25, relative_y: 0.75 },
+  interactionContext: null,
 };
 
 test("issues an opaque capability and stores no reviewer comment body", async () => {
@@ -55,6 +56,7 @@ test("stored page, title, parent, locator, and anchor claims are digest-bound", 
     (claim: any) => { claim.parentActivityUrl = "https://my.uconline.ac.nz/mod/scorm/player.php?a=10"; },
     (claim: any) => { claim.embeddedLocator = "#/forged"; },
     (claim: any) => { claim.anchor.relative_x = 0.9; },
+    (claim: any) => { claim.interactionContext = { version: 1, kind: "process", container: { block_id: "p", ordinal: 1, fingerprint: "Process" }, item: { ordinal: 2, count: 3, label: "Changed", control_key: "Go to slide 2" } }; },
   ]) {
     const storage = new MemoryStorage();
     const capabilities = new EmbeddedAnchorCapabilities(storage, { randomToken: () => "e".repeat(64), now: () => 100 });

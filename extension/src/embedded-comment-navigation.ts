@@ -8,7 +8,7 @@ export type EmbeddedNavigationStorage = {
 
 export type EmbeddedNavigationState =
   | "prepared" | "parent-loading" | "worker-loading" | "locator-applying"
-  | "cover-activating" | "identity-waiting" | "projection-waiting" | "context-opening" | "complete";
+  | "cover-activating" | "identity-waiting" | "projection-waiting" | "interaction-restoring" | "context-opening" | "complete";
 
 export type EmbeddedNavigationTarget = {
   id: string;
@@ -40,6 +40,7 @@ type Dependencies = {
   activateCover?(tabId: number): Promise<void>;
   applyLocator(tabId: number, locator: string): Promise<void>;
   projectionContains(tabId: number, commentId: string, pageUrl: string): boolean;
+  restoreInteraction?(tabId: number, commentId: string): Promise<void>;
   takeToContext(tabId: number, commentId: string): Promise<void>;
 };
 
@@ -103,7 +104,10 @@ export class EmbeddedCommentNavigation {
       return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
-      if (/course context changed|navigation expired|original SCORM activity first|navigation unavailable/.test(message)) this.cancelRetry(tabId);
+      if (/INTERACTION_MISMATCH/.test(message)) {
+        this.cancelRetry(tabId);
+        await this.storage.remove(keyFor(tabId));
+      } else if (/course context changed|navigation expired|original SCORM activity first|navigation unavailable/.test(message)) this.cancelRetry(tabId);
       else await this.scheduleRetryIfRecoverable(tabId);
       throw error;
     }
@@ -190,6 +194,9 @@ export class EmbeddedCommentNavigation {
       await this.save(key, record);
       return { state: record.state };
     }
+    record.state = "interaction-restoring";
+    await this.save(key, record);
+    await this.dependencies.restoreInteraction?.(record.tabId, record.id);
     record.state = "context-opening";
     await this.save(key, record);
     await this.dependencies.takeToContext(record.tabId, record.id);

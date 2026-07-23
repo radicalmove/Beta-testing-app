@@ -783,6 +783,20 @@ test("whole-course comment links use concise bodies without dynamic list numbers
   assert.doesNotMatch(links[1]!.getAttribute("aria-label") ?? "", /Comment \d+/);
 });
 
+test("whole-course comments show their saved Rise tab or process step", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const base = { id: "00000000-0000-4000-8000-000000000033", body: "Check this", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Week 2", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight" as const, selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: true } };
+  overlay.setCommentList([
+    { ...base, interaction_context: { version: 1 as const, kind: "tabs" as const, container: { block_id: "tabs-1", ordinal: 1, fingerprint: "Types" }, item: { ordinal: 2, count: 2, label: "Unwritten", control_key: "unwritten" } } },
+    { ...base, id: "00000000-0000-4000-8000-000000000034", interaction_context: { version: 1 as const, kind: "process" as const, container: { block_id: "process-1", ordinal: 1, fingerprint: "Participants" }, item: { ordinal: 3, count: 5, label: "Criminal justice agencies", control_key: "Go to slide 3" } } },
+  ]);
+  const labels = Array.from(shadow.querySelectorAll<HTMLElement>(".comment-interaction-label"));
+  assert.deepEqual(labels.map((label) => label.textContent), ["Tab: Unwritten", "Step 3 of 5: Criminal justice agencies"]);
+  assert.match(shadow.querySelector<HTMLElement>("[data-comment-item]")!.getAttribute("aria-label") ?? "", /Tab: Unwritten/);
+  assert.match(stabilisationUxStyles, /\.comment-interaction-label\{[^}]*white-space:normal/);
+});
+
 test("clicking a comment keeps the list open and scrolls its course content into view", () => {
   const window = new Window(); const document = window.document as unknown as Document;
   document.body.innerHTML = '<section id="target">Course content</section>'; const target = document.querySelector<HTMLElement>("#target")!;

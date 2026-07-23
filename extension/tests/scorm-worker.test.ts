@@ -94,6 +94,7 @@ test("selectionchange caches a valid range and start-selection consumes its stab
     selected_quote: "Meaningful",
     prefix: "Lesson 1",
     suffix: " Rise lesson content.Area",
+    interaction_context: null,
   });
   assert.equal(captured?.page_url, pageIdentity(window).pageUrl);
   assert.deepEqual(events.at(-1)?.payload, { has_selection: false });
@@ -129,6 +130,63 @@ test("a new valid selection replaces the previously cached Rise selection", () =
   worker.destroy();
 });
 
+test("highlight capture retains the owning Rise tab context from the live Range", () => {
+  const { window, events, worker } = createHarness();
+  window.document.querySelector("main")!.innerHTML = `
+    <section data-block-id="tabs-1" aria-label="Constitution types">
+      <div role="tablist">
+        <button role="tab" aria-controls="written">Written</button>
+        <button role="tab" aria-controls="unwritten" aria-selected="true">Unwritten</button>
+      </div>
+      <div id="written" role="tabpanel" hidden>Written copy</div>
+      <div id="unwritten" role="tabpanel"><p id="tab-copy">Flexible constitution</p></div>
+    </section>`;
+  const text = window.document.querySelector("#tab-copy")!.firstChild as unknown as Text;
+  selectText(window, text, 0, 8);
+  assert.equal(worker.handleCommand(command(window, "SCORM_START_SELECTION", {})).ok, true);
+  const captured = events.find((event) => event.type === "SCORM_ANCHOR_CAPTURED");
+  assert.deepEqual(captured?.type === "SCORM_ANCHOR_CAPTURED" ? captured.payload.interaction_context : null, {
+    version: 1, kind: "tabs",
+    container: { block_id: "tabs-1", ordinal: 1, fingerprint: "Constitution types" },
+    item: { ordinal: 2, count: 2, label: "Unwritten", control_key: "unwritten" },
+  });
+  worker.destroy();
+});
+
+test("restore interaction activates a projected Rise process step before context opening", () => {
+  const { window, worker } = createHarness();
+  const document = window.document as unknown as Document;
+  window.document.querySelector("main")!.innerHTML = `
+    <section data-block-id="process-1">
+      <div class="carousel" role="region" aria-label="Participants">
+        <div class="carousel-slide"><h2>Government</h2></div>
+        <div class="carousel-slide" hidden><h2>Criminal justice agencies</h2><p>Target</p></div>
+        <button class="carousel-controls-item-btn" aria-label="Go to slide 1" aria-current="true"></button>
+        <button class="carousel-controls-item-btn" aria-label="Go to slide 2" aria-current="false"></button>
+      </div>
+    </section>`;
+  const slides = Array.from(document.querySelectorAll<HTMLElement>(".carousel-slide"));
+  const controls = Array.from(document.querySelectorAll<HTMLButtonElement>(".carousel-controls-item-btn"));
+  controls[1].addEventListener("click", () => {
+    controls[0].setAttribute("aria-current", "false"); controls[1].setAttribute("aria-current", "true");
+    slides[0].hidden = true; slides[1].hidden = false;
+  });
+  const currentId = "00000000-0000-4000-8000-000000000011";
+  const comment: PageComment = {
+    id: currentId, body: "Fix", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" },
+    page_url: pageIdentity(window).pageUrl, page_title: "Embedded activity · Lesson 1", parent_activity_url: null, embedded_locator: null,
+    interaction_context: { version: 1, kind: "process", container: { block_id: "process-1", ordinal: 1, fingerprint: "Participants" }, item: { ordinal: 2, count: 2, label: "Criminal justice agencies", control_key: "Go to slide 2" } },
+    anchor_type: "visual_pin", selected_quote: null, prefix: null, suffix: null, css_selector: "#area", dom_selector: null, relative_x: .5, relative_y: .5,
+    replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false },
+  };
+  assert.equal(worker.handleCommand(command(window, "SCORM_SET_COMMENTS", { comments: [comment] })).ok, true);
+  const restore = worker.handleCommand({ ...command(window, "SCORM_RESTORE_INTERACTION", { comment_id: currentId }), request_id: "423e4567-e89b-42d3-a456-426614174000" });
+  assert.equal(restore.ok, true);
+  assert.equal(controls[1].getAttribute("aria-current"), "true");
+  assert.equal(slides[1].hidden, false);
+  worker.destroy();
+});
+
 test("marker mode changes the cursor, captures one stable pin, and cancel removes the mode", () => {
   const { window, events, worker } = createHarness();
   const area = window.document.querySelector("#area") as unknown as HTMLElement;
@@ -138,7 +196,7 @@ test("marker mode changes the cursor, captures one stable pin, and cancel remove
   assert.equal(window.document.documentElement.style.cursor, COMMENT_MARKER_CURSOR);
   area.dispatchEvent(new window.MouseEvent("click", { bubbles: true, clientX: 60, clientY: 30 }) as any);
   const captured = events.find((event) => event.type === "SCORM_ANCHOR_CAPTURED");
-  assert.deepEqual(captured?.payload, { page_title: "Embedded activity · Lesson 1", embedded_locator: "#/lesson/1", anchor_type: "visual_pin", css_selector: "#area", relative_x: 0.5, relative_y: 0.25 });
+  assert.deepEqual(captured?.payload, { page_title: "Embedded activity · Lesson 1", embedded_locator: "#/lesson/1", anchor_type: "visual_pin", css_selector: "#area", relative_x: 0.5, relative_y: 0.25, interaction_context: null });
   assert.equal(window.document.documentElement.style.cursor, "");
 
   worker.handleCommand({ ...command(window, "SCORM_START_MARKER", {}), request_id: "423e4567-e89b-42d3-a456-426614174000" });
@@ -186,7 +244,7 @@ test("comment renderer receives whole-course comments while take-to-context rema
   const other = "https://rise.example/activity#moodle-review-page=Lesson%202";
   const makeComment = (id: string, pageUrl: string): PageComment => ({
     id, body: "Feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" },
-    page_url: pageUrl, page_title: "Embedded activity · Lesson 1", parent_activity_url: null, embedded_locator: null, anchor_type: "visual_pin", selected_quote: null, prefix: null, suffix: null,
+    page_url: pageUrl, page_title: "Embedded activity · Lesson 1", parent_activity_url: null, embedded_locator: null, interaction_context: null, anchor_type: "visual_pin", selected_quote: null, prefix: null, suffix: null,
     css_selector: "#area", dom_selector: null, relative_x: 0.5, relative_y: 0.5, replies: [], status_history: [],
     capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false },
   });
