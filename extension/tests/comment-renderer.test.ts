@@ -657,10 +657,12 @@ test("a deferred thread request is cleared when the mutation confirms that threa
 test("resolved confirmation survives a callback projection refresh until its three-second timeout", async () => {
   const { window, document } = setup();
   let delayed: (() => void) | undefined;
+  let refreshes = 0;
   window.setTimeout = ((callback: TimerHandler, delay?: number) => { assert.equal(delay, 3000); delayed = callback as () => void; return 1; }) as unknown as typeof window.setTimeout;
   let renderer: ReturnType<typeof createCommentRenderer>;
   renderer = createCommentRenderer(document, pageUrl, {
     changeStatus: async () => { renderer.setComments([comment({ status: "resolved" })]); },
+    refreshComments: async () => { refreshes += 1; },
   });
   renderer.setComments([comment()]);
   document.querySelector<HTMLElement>("[data-moodle-review-stored-pin]")!.click();
@@ -671,8 +673,11 @@ test("resolved confirmation survives a callback projection refresh until its thr
   assert.ok(root.querySelector<HTMLElement>('[aria-label="Resolve this comment"] svg path'), "resolved confirmation uses the green pen tick");
   assert.equal(root.querySelector<HTMLElement>("[data-thread-status]")?.textContent, "Comment resolved. Moving to Resolved.", "popover confirmation matches the comments-list status message");
   assert.ok(root.querySelector("[data-thread-popover]"));
+  assert.equal(refreshes, 0, "the Open list remains visible for the confirmation period");
 
   delayed?.();
+  await settle();
+  assert.equal(refreshes, 1, "the comment list refreshes as soon as the confirmation period ends");
   assert.equal(root.querySelector("[data-thread-popover]"), null);
   assert.equal(document.querySelector("[data-moodle-review-stored-pin]"), null, "resolved projection must leave the default Open view after confirmation closes");
 });

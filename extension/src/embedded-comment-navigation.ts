@@ -112,6 +112,17 @@ export class EmbeddedCommentNavigation {
 
   cancel(tabId: number): void { this.cancelRetry(tabId); }
 
+  async confirmCover(tabId: number): Promise<boolean> {
+    await (this.operations.get(tabId) ?? Promise.resolve({ state: "prepared" as const })).catch(() => undefined);
+    const key = keyFor(tabId);
+    const record = (await this.storage.get(key))[key] as RecordValue | undefined;
+    if (!record || record.tabId !== tabId || this.now() >= record.expiresAt || !record.targetPlayerNavigationRequested) return false;
+    record.coverConfirmed = true;
+    record.state = "identity-waiting";
+    await this.save(key, record);
+    return true;
+  }
+
   private async advanceOne(tabId: number): Promise<{ state: EmbeddedNavigationState }> {
     const key = keyFor(tabId);
     const record = (await this.storage.get(key))[key] as RecordValue | undefined;
@@ -241,7 +252,14 @@ export async function handleCommentNavigationMessage(message: unknown, sender: N
       if (stored && (typeof stored.created_at !== "number" || now() - stored.created_at > 300_000)) await dependencies.storage.remove(key);
       return {};
     }
-    await dependencies.storage.remove(key); return { comment_id: stored.comment_id };
+    return { comment_id: stored.comment_id };
+  }
+  if (record.type === "COMPLETE_COMMENT_NAVIGATION") {
+    if (Object.keys(record).sort().join() !== "comment_id,type" || typeof record.comment_id !== "string" || !UUID.test(record.comment_id)) throw new Error("Invalid comment navigation completion");
+    const stored = (await dependencies.storage.get(key))[key] as { comment_id?: unknown; course_id?: unknown; page_url?: unknown; created_at?: unknown } | undefined;
+    if (!stored || stored.comment_id !== record.comment_id || stored.course_id !== courseId || stored.page_url !== sender.url || typeof stored.created_at !== "number" || now() - stored.created_at > 300_000) throw new Error("Invalid comment navigation completion");
+    await dependencies.storage.remove(key);
+    return {};
   }
   if (record.type !== "PREPARE_COMMENT_NAVIGATION" || Object.keys(record).sort().join() !== "comment_id,page_url,type"
     || typeof record.comment_id !== "string" || !UUID.test(record.comment_id) || typeof record.page_url !== "string" || record.page_url.length > 4096) throw new Error("Invalid comment navigation");

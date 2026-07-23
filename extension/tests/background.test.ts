@@ -68,7 +68,7 @@ test("embedded navigation follows the bounded state machine and consumes only th
     now: () => now,
     current: () => ({ courseId: id(3), topUrl, ...worker }),
     navigateParent: async (_tabId, url) => { topUrl = url; },
-    activateCover: async () => { commands.push("cover"); },
+    activateCover: async () => { commands.push("cover"); throw new Error("USER_ACTION_REQUIRED"); },
     applyLocator: async () => { commands.push("locator"); },
     projectionContains: () => projected,
     takeToContext: async (_tabId, commentId) => { commands.push("context"); opened.push(commentId); },
@@ -77,8 +77,9 @@ test("embedded navigation follows the bounded state machine and consumes only th
   assert.equal((await navigation.advance(7)).state, "parent-loading");
   assert.equal(topUrl, context.parent_activity_url);
   worker = { workerInstanceId: id(8), generation: 5, pageUrl: worker.pageUrl };
-  assert.equal((await navigation.advance(7)).state, "identity-waiting");
+  await assert.rejects(() => navigation.advance(7), /USER_ACTION_REQUIRED/);
   assert.deepEqual(commands, ["cover"]);
+  assert.equal(await navigation.confirmCover(7), true);
   assert.equal((await navigation.advance(7)).state, "identity-waiting");
   assert.deepEqual(commands, ["cover", "locator"]);
   worker.pageUrl = event.page_url;
@@ -91,22 +92,22 @@ test("embedded navigation follows the bounded state machine and consumes only th
   navigation.cancel(7);
 });
 
-test("a different SCORM retries an unconfirmed cover but never reactivates it after confirmation", async () => {
+test("a different SCORM waits for trusted cover confirmation and never reactivates after it", async () => {
   const storage = new NavigationStorage(); let topUrl = "https://moodle.example/mod/scorm/player.php?cm=99"; let workerInstanceId = id(2); let coverAttempts = 0; const locators: string[] = [];
   const navigation = new EmbeddedCommentNavigation(storage, {
     current: () => ({ courseId: id(3), topUrl, workerInstanceId, generation: 4, pageUrl: "https://rise.example/index.html#moodle-review-page=Loading" }),
     navigateParent: async (_tabId, url) => { topUrl = url; },
-    activateCover: async () => { coverAttempts += 1; if (coverAttempts === 1) throw new Error("COVER_NOT_READY"); },
+    activateCover: async () => { coverAttempts += 1; throw new Error("USER_ACTION_REQUIRED"); },
     applyLocator: async (_tabId, locator) => { locators.push(locator); }, projectionContains: () => false, takeToContext: async () => undefined,
   });
   await navigation.prepare(7, embeddedComment);
   assert.equal((await navigation.advance(7)).state, "parent-loading");
-  await assert.rejects(() => navigation.advance(7), /COVER_NOT_READY/);
+  await assert.rejects(() => navigation.advance(7), /USER_ACTION_REQUIRED/);
   workerInstanceId = id(9);
-  assert.equal((await navigation.advance(7)).state, "identity-waiting");
+  assert.equal(await navigation.confirmCover(7), true);
   workerInstanceId = id(10);
   assert.equal((await navigation.advance(7)).state, "identity-waiting");
-  assert.equal(coverAttempts, 2);
+  assert.equal(coverAttempts, 1);
   assert.deepEqual(locators, [embeddedComment.embeddedLocator]);
   navigation.cancel(7);
 });
@@ -254,7 +255,7 @@ test("comment navigation boundary accepts only exact frame-zero configured Moodl
   assert.equal(calls.length, 2, "unauthorized senders are rejected before course API access");
 });
 
-test("consume navigation requires an exact envelope and removes expired top-page records", async () => {
+test("top-page navigation remains pending until its exact successful completion", async () => {
   const storage = new NavigationStorage(); let now = 10_000;
   const dependencies = {
     extensionId: "extension", authorizeMoodle: async () => true, courseId: () => id(3), listCourseComments: async () => [], storage,
@@ -263,6 +264,12 @@ test("consume navigation requires an exact envelope and removes expired top-page
   };
   const trusted = { id: "extension", tab: { id: 7 }, frameId: 0, url: "https://my.uconline.ac.nz/course/view.php?id=896" };
   await assert.rejects(() => handleCommentNavigationMessage({ type: "CONSUME_COMMENT_NAVIGATION", extra: true }, trusted, dependencies), /Invalid/);
+  await storage.set({ "commentNavigation:7": { comment_id: id(21), course_id: id(3), page_url: trusted.url, created_at: now } });
+  assert.deepEqual(await handleCommentNavigationMessage({ type: "CONSUME_COMMENT_NAVIGATION" }, trusted, dependencies), { comment_id: id(21) });
+  assert.notEqual((await storage.get("commentNavigation:7"))["commentNavigation:7"], undefined);
+  await assert.rejects(() => handleCommentNavigationMessage({ type: "COMPLETE_COMMENT_NAVIGATION", comment_id: id(22) }, trusted, dependencies), /Invalid/);
+  assert.deepEqual(await handleCommentNavigationMessage({ type: "COMPLETE_COMMENT_NAVIGATION", comment_id: id(21) }, trusted, dependencies), {});
+  assert.equal((await storage.get("commentNavigation:7"))["commentNavigation:7"], undefined);
   await storage.set({ "commentNavigation:7": { comment_id: id(21), course_id: id(3), page_url: trusted.url, created_at: now - 300_001 } });
   assert.deepEqual(await handleCommentNavigationMessage({ type: "CONSUME_COMMENT_NAVIGATION" }, trusted, dependencies), {});
   assert.equal((await storage.get("commentNavigation:7"))["commentNavigation:7"], undefined);

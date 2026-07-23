@@ -45,6 +45,38 @@ test("comment navigation does not retry a substantive destination failure", asyn
   assert.equal(calls, 1);
 });
 
+test("non-SCORM navigation stays pending until the late anchor scroll succeeds", async () => {
+  const window = new Window({ url: "https://moodle.example.invalid/mod/page/view.php?id=2" });
+  window.document.body.innerHTML = "<h1>Page two</h1>";
+  const timers: Array<() => void> = []; const nativeTimeout = window.setTimeout.bind(window);
+  window.setTimeout = ((handler: TimerHandler, delay?: number, ...args: any[]) => {
+    if (delay === 250) { timers.push(handler as () => void); return 91 + timers.length; }
+    return nativeTimeout(handler as Function, delay, ...args);
+  }) as typeof window.setTimeout;
+  const comment = { id: "00000000-0000-4000-8000-000000000081", body: "Late target", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: window.location.href, page_title: "Page two", parent_activity_url: null, embedded_locator: null, anchor_type: "visual_pin", selected_quote: null, prefix: null, suffix: null, css_selector: "#late-target", dom_selector: null, relative_x: .5, relative_y: .5, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } };
+  const messages: any[] = []; let completed = false;
+  const runtime = { sendMessage: (message: any, callback: (response: any) => void) => {
+    messages.push(message);
+    if (message.type === "RESOLVE_COURSE") callback({ ok: true, data: { id: "123e4567-e89b-12d3-a456-426614174000" } });
+    else if (message.type === "LIST_COURSE_COMMENTS") callback({ ok: true, data: [comment] });
+    else if (message.type === "CONSUME_COMMENT_NAVIGATION") callback({ ok: true, data: completed ? {} : { comment_id: comment.id } });
+    else if (message.type === "COMPLETE_COMMENT_NAVIGATION") { completed = true; callback({ ok: true, data: {} }); }
+    else callback({ ok: true, data: {} });
+  } };
+  const cleanup = startCourseReview(window as unknown as globalThis.Window & typeof globalThis, window.document as unknown as Document, runtime);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(completed, false);
+  assert.ok(timers.length > 0, "an unresolved navigation must schedule another attempt");
+  const target = window.document.createElement("section"); target.id = "late-target"; window.document.body.append(target);
+  let scrolls = 0; target.scrollIntoView = () => { scrolls += 1; };
+  const retries = timers.splice(0); for (const retry of retries) retry();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(completed, true);
+  assert.equal(scrolls, 1);
+  assert.equal(messages.some((message) => message.type === "COMPLETE_COMMENT_NAVIGATION" && message.comment_id === comment.id), true);
+  cleanup();
+});
+
 test("content activates on configured Moodle patterns", () => {
   assert.equal(isConfiguredFrame("https://moodle.example.invalid/course/view.php?id=1", ["https://moodle.example.invalid/*"], []), true);
   assert.equal(isConfiguredFrame("https://unrelated.example/course/view.php?id=1", ["https://moodle.example.invalid/*"], []), false);

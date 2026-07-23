@@ -20,6 +20,7 @@ export type CommentRendererOptions = {
   replyThread?: (commentId: string, body: string) => Promise<void>;
   uploadAttachment?: (commentId: string, dataUrl: string) => Promise<void>;
   changeStatus?: (commentId: string, status: string) => Promise<void>;
+  refreshComments?: () => Promise<void>;
   manageSme?: (commentId: string, userIds?: string[]) => Promise<{ available_recipients: Array<{ id: string; display_name: string }>; selected_user_ids: string[] }>;
   deleteThread?: (commentId: string) => Promise<void>;
   navigateToComment?: (commentId: string, pageUrl: string) => Promise<void> | void;
@@ -291,7 +292,7 @@ export function createCommentRenderer(document: Document, pageUrl: string, optio
     if (comment.capabilities.can_change_status && options.changeStatus) {
       const target = comment.status === "resolved" ? "open" : "resolved";
       const button = document.createElement("button"); button.type = "button"; button.className = `resolve-toggle${comment.status === "resolved" ? " resolved" : ""}`; button.append(statusIcon(document, comment.status === "resolved")); button.setAttribute("aria-label", target === "resolved" ? "Resolve this comment" : "Reopen this resolved comment"); button.title = target === "resolved" ? "Resolve comment" : "Reopen comment";
-      button.addEventListener("click", async () => { const verb = target === "resolved" ? "Resolve" : "Reopen"; if (options.confirmAction && !await options.confirmAction(button, `${verb} comment`, `${verb} this comment? It will move to the ${target === "resolved" ? "Resolved" : "Open"} list.`, verb)) return; button.disabled = true; try { await runMutation(() => options.changeStatus!(comment.id, target)); button.replaceChildren(statusIcon(document, target === "resolved")); button.classList.remove("resolved"); showStatus(article, target === "resolved" ? "Comment resolved. Moving to Resolved." : "Comment reopened. Moving to Open."); document.defaultView?.setTimeout(() => { if (activeThreadId === comment.id) closeThread(); else article.remove(); }, 3000); } catch (error) { button.disabled = false; showError(article, error, "Could not update status"); } });
+      button.addEventListener("click", async () => { const verb = target === "resolved" ? "Resolve" : "Reopen"; if (options.confirmAction && !await options.confirmAction(button, `${verb} comment`, `${verb} this comment? It will move to the ${target === "resolved" ? "Resolved" : "Open"} list.`, verb)) return; button.disabled = true; try { await runMutation(() => options.changeStatus!(comment.id, target)); button.replaceChildren(statusIcon(document, target === "resolved")); button.classList.remove("resolved"); showStatus(article, target === "resolved" ? "Comment resolved. Moving to Resolved." : "Comment reopened. Moving to Open."); document.defaultView?.setTimeout(() => { if (activeThreadId === comment.id) closeThread(); else article.remove(); void options.refreshComments?.(); }, 3000); } catch (error) { button.disabled = false; showError(article, error, "Could not update status"); } });
       topActions.append(button);
     }
 

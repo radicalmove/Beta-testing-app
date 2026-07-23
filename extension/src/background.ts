@@ -63,7 +63,13 @@ const navigationCommand = async (tabId: number, type: "SCORM_ACTIVATE_COVER" | "
   if (!owner || !state || !context || state.worker_instance_id !== owner.workerInstanceId || state.generation !== owner.generation) throw new Error("SCORM worker is not ready");
   const command = validateScormMessage({ protocol: 1, type, request_id: crypto.randomUUID(), worker_instance_id: owner.workerInstanceId, generation: owner.generation, course_id: context.id, page_url: state.page_url, payload }) as ScormCommand;
   const acknowledgement = await frameCoordination.sendCommand(tabId, command);
-  if (!acknowledgement.ok) throw new Error(acknowledgement.error_code === "COMMENT_NOT_FOUND" ? "Comment projection is not ready" : "SCORM navigation failed");
+  if (!acknowledgement.ok) {
+    if (acknowledgement.error_code === "USER_ACTION_REQUIRED") {
+      chrome.tabs.sendMessage(tabId, { type: "REVIEW_SCORM_START_REQUIRED" }, { frameId: 0 }, () => void chrome.runtime.lastError);
+      throw new Error("Start this lesson using the flashing arrow or Tab+Enter to continue to the comment.");
+    }
+    throw new Error(acknowledgement.error_code === "COMMENT_NOT_FOUND" ? "Comment projection is not ready" : "SCORM navigation failed");
+  }
 };
 const embeddedNavigation = new EmbeddedCommentNavigation(chrome.storage.session, {
   current: (tabId) => { const context = reviewContexts.exportTab(tabId); const owner = frameCoordination.currentOwner(tabId); const state = latestWorkerEvent.get(tabId); return { courseId: context?.id, topUrl: context?.parent_activity_url ?? "", workerInstanceId: owner?.workerInstanceId, generation: owner?.generation, pageUrl: state?.page_url }; },
@@ -377,7 +383,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       chrome.tabs.sendMessage(sender.tab.id, { type: "SCORM_WORKER_EVENT", event: message, capability }, { frameId: 0 }, () => void chrome.runtime.lastError);
       return { capability };
     })();
-  } else if (message && typeof message === "object" && ["SCORM_SELECTION_CHANGED", "SCORM_PAGE_IDENTITY_CHANGED", "SCORM_COMMENTS_CHANGED", "SCORM_COMMENT_NAVIGATION_REQUESTED"].includes((message as { type?: string }).type ?? "")) {
+  } else if (message && typeof message === "object" && ["SCORM_SELECTION_CHANGED", "SCORM_PAGE_IDENTITY_CHANGED", "SCORM_COMMENTS_CHANGED", "SCORM_COMMENT_NAVIGATION_REQUESTED", "SCORM_COVER_ACTIVATED"].includes((message as { type?: string }).type ?? "")) {
     operation = (async () => {
       if (typeof sender.tab?.id !== "number" || typeof sender.frameId !== "number") throw new Error("Invalid SCORM event sender");
       const event = validateScormMessage(message) as ScormEvent; rememberWorkerEvent(sender.tab.id, event.request_id); const owner = frameCoordination.currentOwner(sender.tab.id); const courseId = reviewContexts.courseId(sender);
@@ -385,7 +391,12 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       latestWorkerEvent.set(sender.tab.id, event);
       await cacheScormLaunchForEvent(sender.tab.id, event);
       chrome.tabs.sendMessage(sender.tab.id, { type: "SCORM_WORKER_EVENT", event }, { frameId: 0 }, () => void chrome.runtime.lastError);
-      if (event.type === "SCORM_PAGE_IDENTITY_CHANGED") resumeEmbeddedNavigation(sender.tab.id);
+      if (event.type === "SCORM_COVER_ACTIVATED") {
+        if (await embeddedNavigation.confirmCover(sender.tab.id)) {
+          chrome.tabs.sendMessage(sender.tab.id, { type: "REVIEW_SCORM_START_COMPLETE" }, { frameId: 0 }, () => void chrome.runtime.lastError);
+          resumeEmbeddedNavigation(sender.tab.id);
+        }
+      } else if (event.type === "SCORM_PAGE_IDENTITY_CHANGED") resumeEmbeddedNavigation(sender.tab.id);
       return {};
     })();
   } else if (message && typeof message === "object" && (message as { type?: unknown }).type === "CREATE_EMBEDDED_COMMENT") {
@@ -434,7 +445,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender: ReviewSender & {
       authorize: (candidate) => authorizeResolveSender(candidate, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, optionalPatterns: __OPTIONAL_FRAME_PATTERNS__, hasPermission: (pattern) => chrome.permissions.contains({ origins: [pattern] }) }),
       courseId: () => reviewContexts.courseId(sender), list: listCourseComments,
     });
-  } else if (message && typeof message === "object" && ["PREPARE_COMMENT_NAVIGATION", "CONSUME_COMMENT_NAVIGATION"].includes((message as { type?: string }).type ?? "")) {
+  } else if (message && typeof message === "object" && ["PREPARE_COMMENT_NAVIGATION", "CONSUME_COMMENT_NAVIGATION", "COMPLETE_COMMENT_NAVIGATION"].includes((message as { type?: string }).type ?? "")) {
     operation = handleCommentNavigationMessage(message, sender, {
       extensionId: chrome.runtime.id,
       authorizeMoodle: (candidate) => authorizeAuthenticateSender(candidate, { extensionId: chrome.runtime.id, moodlePatterns: __MOODLE_PATTERNS__, hasPermission: async () => false }),

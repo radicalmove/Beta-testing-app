@@ -38,7 +38,7 @@ function selectText(window: Window, text: Text, start: number, end: number) {
   window.document.dispatchEvent(new window.Event("selectionchange"));
 }
 
-function createHarness(navigate?: (destination: URL, mode: "hash" | "route") => boolean) {
+function createHarness(navigate?: (destination: URL, mode: "hash" | "route") => boolean, isTrustedActivation?: (event: Event) => boolean) {
   const window = new Window({ url: "https://rise.example/activity#/lesson/1" });
   window.document.title = "Lesson 1";
   window.document.body.innerHTML = "<main><h1>Lesson 1</h1><p id='copy'>Meaningful Rise lesson content.</p><button id='area'>Area</button></main>";
@@ -64,6 +64,7 @@ function createHarness(navigate?: (destination: URL, mode: "hash" | "route") => 
     emit: (event) => { events.push(event); },
     createRenderer,
     navigate,
+    isTrustedActivation,
     createLifecycle: (_window, _document, callback) => { refresh = callback; return { teardown: () => { tornDown = true; }, flush: callback }; },
   });
   return { window, events, projections, worker, refresh: () => refresh?.(), rendererDestroyed: () => rendererDestroyed, tornDown: () => tornDown, takenToContext: () => takenToContext };
@@ -238,17 +239,25 @@ test("apply-locator retains hash-only Rise navigation on the current document", 
   worker.destroy();
 });
 
-test("a confirmed Rise cover activation cannot trap the following locator while Start persists", () => {
+test("Rise cover waits for trusted user activation before allowing the following locator", () => {
   let navigations = 0;
-  const { window, worker, refresh } = createHarness(() => { navigations += 1; return true; });
+  let trustEvents = false;
+  const { window, worker, refresh, events } = createHarness(() => { navigations += 1; return true; }, () => trustEvents);
   window.document.body.innerHTML = '<main><h1>Course cover</h1><a class="one-page-cover__start-link" aria-label="Start" href="#/lessons/first">Start</a></main>';
   const start = window.document.querySelector(".one-page-cover__start-link") as unknown as HTMLAnchorElement;
   let starts = 0; start.addEventListener("click", (event: Event) => { event.preventDefault(); starts += 1; window.location.hash = "/lessons/first"; window.document.title = "Lesson 1"; window.document.querySelector("h1")!.textContent = "Lesson 1"; });
 
   const first = worker.handleCommand(command(window, "SCORM_ACTIVATE_COVER", {}));
-  assert.equal(first.ok, true);
-  assert.equal(starts, 1);
+  assert.equal(first.ok, false);
+  assert.equal(first.ok ? undefined : first.error_code, "USER_ACTION_REQUIRED");
+  assert.equal(starts, 0);
   assert.equal(navigations, 0);
+
+  start.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }) as unknown as Event);
+  assert.equal(events.some((event) => event.type === "SCORM_COVER_ACTIVATED"), false);
+  trustEvents = true;
+  start.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }) as unknown as Event);
+  assert.equal(events.at(-1)?.type, "SCORM_COVER_ACTIVATED");
 
   refresh();
   const second = worker.handleCommand({ ...command(window, "SCORM_APPLY_LOCATOR", { embedded_locator: "#/lessons/saved" }), request_id: "423e4567-e89b-42d3-a456-426614174000" });

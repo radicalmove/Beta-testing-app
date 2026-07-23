@@ -25,6 +25,7 @@ export type ScormWorkerOptions = {
   createRenderer?: (document: Document, pageUrl: string) => CommentRenderer;
   mutate?: (type: "edit" | "reply" | "status" | "delete" | "upload", commentId: string, value?: string) => Promise<void>;
   navigate?: (destination: URL, mode: "hash" | "route") => boolean;
+  isTrustedActivation?: (event: Event) => boolean;
 };
 
 type PageIdentity = { pageUrl: string; pageTitle: string; embeddedLocator: string };
@@ -42,13 +43,11 @@ export function embeddedPageIdentity(window: Window & typeof globalThis, documen
   return { pageUrl: identity.href, pageTitle: `Embedded activity · ${label}`, embeddedLocator };
 }
 
-function activateRiseCover(document: Document): boolean {
+function riseCoverStart(document: Document): HTMLAnchorElement | undefined {
   const candidates = document.querySelectorAll<HTMLAnchorElement>('a.one-page-cover__start-link[aria-label="Start"]');
-  if (candidates.length !== 1) return false;
+  if (candidates.length !== 1) return undefined;
   const start = candidates[0];
-  if (!/^#\/lessons\/[A-Za-z0-9_-]{1,256}$/.test(start.getAttribute("href") ?? "")) return false;
-  start.click();
-  return true;
+  return /^#\/lessons\/[A-Za-z0-9_-]{1,256}$/.test(start.getAttribute("href") ?? "") ? start : undefined;
 }
 
 export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
@@ -70,6 +69,8 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
   let previousCursor = "";
   let previousCursorPriority = "";
   let projectedCommentIds = new Set<string>();
+  let armedCoverStart: HTMLAnchorElement | undefined;
+  const isTrustedActivation = options.isTrustedActivation ?? ((event: Event) => event.isTrusted);
 
   const envelope = <T extends ScormEvent["type"]>(type: T, payload: Extract<ScormEvent, { type: T }>["payload"]): Extract<ScormEvent, { type: T }> => ({
     protocol: 1,
@@ -83,6 +84,22 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
   }) as Extract<ScormEvent, { type: T }>;
 
   const emitSelectionState = () => options.emit(envelope("SCORM_SELECTION_CHANGED", { has_selection: Boolean(cachedSelection) }));
+  const onCoverActivation = (event: Event) => {
+    if (!armedCoverStart || event.currentTarget !== armedCoverStart || !isTrustedActivation(event)) return;
+    armedCoverStart.removeEventListener("click", onCoverActivation);
+    armedCoverStart = undefined;
+    options.emit(envelope("SCORM_COVER_ACTIVATED", {}));
+  };
+  const armRiseCover = () => {
+    const start = riseCoverStart(document);
+    if (!start) return false;
+    if (armedCoverStart !== start) {
+      armedCoverStart?.removeEventListener("click", onCoverActivation);
+      armedCoverStart = start;
+      armedCoverStart.addEventListener("click", onCoverActivation);
+    }
+    return true;
+  };
   const mutation = async (type: "edit" | "reply" | "status" | "delete" | "upload", commentId: string, value?: string) => { await options.mutate?.(type, commentId, value); options.emit(envelope("SCORM_COMMENTS_CHANGED", {})); };
   const createRenderer = (pageUrl: string) => options.createRenderer
     ? options.createRenderer(document, pageUrl)
@@ -203,7 +220,9 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
           renderer.setComments(comments);
           return acknowledgement(command, true);
         }
-        case "SCORM_ACTIVATE_COVER": return acknowledgement(command, activateRiseCover(document), "COVER_NOT_READY");
+        case "SCORM_ACTIVATE_COVER": return armRiseCover()
+          ? acknowledgement(command, false, "USER_ACTION_REQUIRED")
+          : acknowledgement(command, false, "COVER_NOT_READY");
         case "SCORM_APPLY_LOCATOR": {
           try {
             const destination = new URL(command.payload.embedded_locator, window.location.href);
@@ -220,6 +239,8 @@ export function createScormWorker(options: ScormWorkerOptions): ScormWorker {
       destroyed = true;
       cachedSelection = undefined;
       stopMarker();
+      armedCoverStart?.removeEventListener("click", onCoverActivation);
+      armedCoverStart = undefined;
       document.removeEventListener("selectionchange", onSelectionChange);
       lifecycle.teardown();
       renderer.setComments([]);

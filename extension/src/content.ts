@@ -269,6 +269,8 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
   let embeddedHasSelection = false;
   let embeddedMarkerActive = false;
   let overlay: ReviewOverlay;
+  let commentNavigationRetryTimer: number | undefined;
+  let commentNavigationAttempting = false;
   const waitingForApproval = "Waiting for approval — you can leave this page open or return later.";
   const checkPendingApproval = (): Promise<AuthenticationOutcome> => {
     if (!courseHandle) return Promise.resolve({ status: "signed-out", message: "Enter your invitation code to join this course review." });
@@ -301,7 +303,24 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
   const optionalFramePatterns = typeof __OPTIONAL_FRAME_PATTERNS__ !== "undefined" ? __OPTIONAL_FRAME_PATTERNS__ : [];
   let permissionOrigin = inaccessibleFrameOrigins(targetDocument).find((origin) => optionalFramePatterns.some((pattern) => matchPattern(`${origin}/`, pattern)));
   let latestCommentsSignature = "";
-  const loadPageComments = async (pageUrl: string, preserveOnError = false) => { const sequence = ++commentSequence; try { const comments = await send<PageComment[]>({ type: "LIST_COURSE_COMMENTS" }); if (sequence === commentSequence && context.page_url === pageUrl) { const signature = JSON.stringify(comments); latestComments = comments; if (signature !== latestCommentsSignature) { latestCommentsSignature = signature; if (scormRoute) { overlay.setRendererComments([]); overlay.setCommentList(comments); } else overlay.setPageComments(comments); if (scormRoute && embeddedPageUrl) void sendScormCommand("SCORM_SET_COMMENTS", { comments }).catch(() => undefined); } const pending: { comment_id?: string } = await send<{ comment_id?: string }>({ type: "CONSUME_COMMENT_NAVIGATION" }).catch(() => ({})); if (pending.comment_id) overlay.takeToContext(pending.comment_id); } } catch (error) { const current = sequence === commentSequence && context.page_url === pageUrl; if (preserveOnError && current) throw error; } };
+  const clearCommentNavigationRetry = () => { if (commentNavigationRetryTimer !== undefined) targetWindow.clearTimeout(commentNavigationRetryTimer); commentNavigationRetryTimer = undefined; };
+  const scheduleCommentNavigationRetry = () => {
+    if (stopped || commentNavigationRetryTimer !== undefined) return;
+    commentNavigationRetryTimer = targetWindow.setTimeout(() => { commentNavigationRetryTimer = undefined; void attemptPendingCommentNavigation(); }, 250);
+  };
+  const attemptPendingCommentNavigation = async () => {
+    if (stopped || commentNavigationAttempting) return;
+    commentNavigationAttempting = true;
+    try {
+      const pending = await send<{ comment_id?: string }>({ type: "CONSUME_COMMENT_NAVIGATION" });
+      if (!pending.comment_id) { clearCommentNavigationRetry(); return; }
+      if (!overlay.takeToContext(pending.comment_id)) { scheduleCommentNavigationRetry(); return; }
+      await send({ type: "COMPLETE_COMMENT_NAVIGATION", comment_id: pending.comment_id });
+      clearCommentNavigationRetry();
+    } catch { scheduleCommentNavigationRetry(); }
+    finally { commentNavigationAttempting = false; }
+  };
+  const loadPageComments = async (pageUrl: string, preserveOnError = false) => { const sequence = ++commentSequence; try { const comments = await send<PageComment[]>({ type: "LIST_COURSE_COMMENTS" }); if (sequence === commentSequence && context.page_url === pageUrl) { const signature = JSON.stringify(comments); latestComments = comments; if (signature !== latestCommentsSignature) { latestCommentsSignature = signature; if (scormRoute) { overlay.setRendererComments([]); overlay.setCommentList(comments); } else overlay.setPageComments(comments); if (scormRoute && embeddedPageUrl) void sendScormCommand("SCORM_SET_COMMENTS", { comments }).catch(() => undefined); } void attemptPendingCommentNavigation(); } } catch (error) { const current = sequence === commentSequence && context.page_url === pageUrl; if (preserveOnError && current) throw error; } };
   const refreshAfterMutation = async () => { try { await loadPageComments(context.page_url, true); } catch { throw new Error("Change saved, but comments could not be refreshed. Reload the page."); } };
   overlay = mountReviewOverlay(targetDocument, context, "connecting", { onRequestInteraction: (intent) => { interactionController.request(intent); }, onRequestPermission: () => new Promise<boolean>((resolve) => {
     if (!permissionOrigin) { resolve(false); return; }
@@ -346,6 +365,8 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
   const topMessageListener: RuntimeListener = (message) => {
     const record = message as { type?: unknown; event?: any; capability?: unknown };
     if (record.type === "SCORM_PERMISSION_REVOKED") { interactionController.permissionRevoked(); return; }
+    if (record.type === "REVIEW_SCORM_START_REQUIRED") { overlay.setCommentNavigationStatus("Start this lesson using the flashing arrow or Tab+Enter to continue to the comment."); return; }
+    if (record.type === "REVIEW_SCORM_START_COMPLETE") { overlay.setCommentNavigationStatus(); return; }
     if (record.type === "REVIEW_WORKER_READY") { interactionController.workerReady(); if (embeddedPageUrl) void sendScormCommand("SCORM_SET_COMMENTS", { comments: latestComments }).catch(() => undefined); return; }
     if (record.type !== "SCORM_WORKER_EVENT" || !record.event) return;
     const event = record.event; embeddedPageUrl = typeof event.page_url === "string" ? event.page_url : embeddedPageUrl;
@@ -450,7 +471,7 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
   const onFrameReady = (event: MessageEvent) => { if (event.data?.type === "MOODLE_REVIEW_FRAME_READY") checkFrames(); };
   targetWindow.addEventListener("message", onFrameReady);
   refresh();
-  return () => { stopped = true; interactionController.destroy(); runtime.onMessage?.removeListener(topMessageListener); clearApprovalTimer(); targetDocument.removeEventListener("visibilitychange", onVisibility); targetDocument.removeEventListener("visibilitychange", refreshVisibleComments); targetWindow.removeEventListener("focus", refreshVisibleComments); cancelTimeout(fallbackTimer); cancelFramePoll(framePoll); cancelFramePoll(commentPoll); targetWindow.removeEventListener("message", onFrameReady); for (const eventName of ["popstate", "hashchange", "moodle-review:navigate"]) targetWindow.removeEventListener(eventName, clearNavigatedPage); lifecycle.teardown(); overlay.destroy(); };
+  return () => { stopped = true; clearCommentNavigationRetry(); interactionController.destroy(); runtime.onMessage?.removeListener(topMessageListener); clearApprovalTimer(); targetDocument.removeEventListener("visibilitychange", onVisibility); targetDocument.removeEventListener("visibilitychange", refreshVisibleComments); targetWindow.removeEventListener("focus", refreshVisibleComments); cancelTimeout(fallbackTimer); cancelFramePoll(framePoll); cancelFramePoll(commentPoll); targetWindow.removeEventListener("message", onFrameReady); for (const eventName of ["popstate", "hashchange", "moodle-review:navigate"]) targetWindow.removeEventListener(eventName, clearNavigatedPage); lifecycle.teardown(); overlay.destroy(); };
 }
 
 type RuntimeResponse = { ok?: boolean; status?: ConnectionStatus; error?: string; data?: unknown } | undefined;

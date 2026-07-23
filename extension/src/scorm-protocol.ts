@@ -10,6 +10,7 @@ export const SCORM_MESSAGE_TYPES = [
   "SCORM_SET_COMMENTS",
   "SCORM_COMMENTS_CHANGED",
   "SCORM_COMMENT_NAVIGATION_REQUESTED",
+  "SCORM_COVER_ACTIVATED",
   "SCORM_ACTIVATE_COVER",
   "SCORM_APPLY_LOCATOR",
   "SCORM_TAKE_TO_CONTEXT",
@@ -27,6 +28,7 @@ export const SCORM_ACK_TYPES = {
   SCORM_SET_COMMENTS: "SCORM_SET_COMMENTS_ACK",
   SCORM_COMMENTS_CHANGED: "SCORM_COMMENTS_CHANGED_ACK",
   SCORM_COMMENT_NAVIGATION_REQUESTED: "SCORM_COMMENT_NAVIGATION_REQUESTED_ACK",
+  SCORM_COVER_ACTIVATED: "SCORM_COVER_ACTIVATED_ACK",
   SCORM_ACTIVATE_COVER: "SCORM_ACTIVATE_COVER_ACK",
   SCORM_APPLY_LOCATOR: "SCORM_APPLY_LOCATOR_ACK",
   SCORM_TAKE_TO_CONTEXT: "SCORM_TAKE_TO_CONTEXT_ACK",
@@ -83,6 +85,7 @@ export type ScormEvent =
   | ScormEnvelope<"SCORM_ANCHOR_CAPTURED", ScormAnchorCapturedPayload>
   | ScormEnvelope<"SCORM_PAGE_IDENTITY_CHANGED", ScormPageIdentityPayload>
   | ScormEnvelope<"SCORM_COMMENTS_CHANGED", EmptyScormPayload>
+  | ScormEnvelope<"SCORM_COVER_ACTIVATED", EmptyScormPayload>
   | ScormEnvelope<"SCORM_COMMENT_NAVIGATION_REQUESTED", ScormCommentNavigationPayload>;
 
 export type ScormMessage = ScormCommand | ScormEvent;
@@ -226,6 +229,7 @@ export function validateScormMessage(value: unknown): ScormMessage {
     case "SCORM_CANCEL_MARKER":
     case "SCORM_ACTIVATE_COVER":
     case "SCORM_COMMENTS_CHANGED":
+    case "SCORM_COVER_ACTIVATED":
       if (!validEmptyPayload(value.payload)) return invalidMessage();
       break;
     case "SCORM_COMMENT_NAVIGATION_REQUESTED":
