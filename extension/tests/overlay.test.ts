@@ -903,8 +903,10 @@ test("unselected comment controls keep their semantic hover colours", () => {
   assert.match(stabilisationUxStyles, /\.comment-collapse-groups:hover,\.comment-collapse-groups:focus-visible\{background:var\(--review-jump\);border-color:var\(--review-jump\);color:#fff\}/);
   assert.match(stabilisationUxStyles, /\.comment-group-toggle\{[^}]*order:-1[^}]*align-self:center/);
   assert.match(stabilisationUxStyles, /\.comment-collapse-groups\{[^}]*font-size:13px/);
-  assert.match(stabilisationUxStyles, /\.comment-group-heading\{[^}]*margin:7px 0 1px/);
+  assert.match(stabilisationUxStyles, /\.comment-group-heading\{[^}]*margin:5px 0 0/);
   assert.match(stabilisationUxStyles, /\.comment-group-toggle\{[^}]*margin-left:-5px/);
+  assert.match(stabilisationUxStyles, /\.comment-group-toggle\{[^}]*translate:-5px -3px/);
+  assert.match(stabilisationUxStyles, /\.comment-group-link\{[^}]*margin-left:-5px/);
   assert.match(stabilisationUxStyles, /\.comment-group-link\{[^}]*white-space:nowrap[^}]*text-overflow:ellipsis/);
 });
 
