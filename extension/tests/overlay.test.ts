@@ -900,6 +900,9 @@ test("unselected comment controls keep their semantic hover colours", () => {
   assert.match(approvedControlStyles, /\.comment-filters \.comment-scope:hover\{background:var\(--review-scope\);color:#fff\}/);
   assert.match(approvedControlStyles, /\.comment-filters \.comment-status:hover\{background:var\(--review-status\);color:#fff\}/);
   assert.match(approvedControlStyles, /\.comment-page-field \.comment-jump:hover\{background:var\(--review-jump\);color:#fff\}/);
+  assert.match(stabilisationUxStyles, /\.comment-collapse-groups:hover,\.comment-collapse-groups:focus-visible\{background:var\(--review-jump\);border-color:var\(--review-jump\);color:#fff\}/);
+  assert.match(stabilisationUxStyles, /\.comment-group-toggle\{[^}]*order:-1[^}]*align-self:center/);
+  assert.match(stabilisationUxStyles, /\.comment-collapse-groups\{[^}]*font-size:13px/);
 });
 
 test("comment filter buttons override dark fallback hover states", () => {
