@@ -18,7 +18,7 @@
 
 - [ ] **Step 1: Write failing storage tests**
 
-Cover a versioned record containing `course_url`, `page_url`, `comment_id`, `status`, `created_at`, and `token`; overwrite behavior; non-destructive peek; token-checked clear; five-minute expiry; malformed data; and throwing storage.
+Cover a versioned record containing `course_url`, `page_url`, `comment_id`, `status`, `created_at`, and `token`; overwrite behavior; non-destructive peek; token-checked clear; and five-minute expiry. Validate `undefined` and throwing storage, exact `version: 1`, non-empty string fields, finite numeric `created_at`, only `open`/`resolved`, a non-empty unique default token, and exact URL preservation without normalization.
 
 - [ ] **Step 2: Run the focused test and verify RED**
 
@@ -58,7 +58,7 @@ export function clearCommentListArrival(
 ): void;
 ```
 
-All operations catch storage/JSON failures. `peek` removes malformed or expired records but never removes a valid record.
+All operations catch storage/JSON failures. `peek` removes malformed or expired records but never removes a valid record. The default token source uses `crypto.randomUUID()` and is dependency-injected in tests.
 
 - [ ] **Step 4: Run the focused test and verify GREEN**
 
@@ -106,7 +106,9 @@ Add to `ReviewOverlay`:
 restoreCommentListGroup(pageUrl: string, status: "open" | "resolved"): boolean;
 ```
 
-Inside the controller, locate the current rendered group and its heading, set course scope and status, apply the existing filter, expand the group, compute:
+Add a controller-level `restoreRenderedCommentListGroup` callback. Replace it on every `setCommentList` render with a closure over that render's `applyFilter`, `setGroupExpanded`, group maps, and results element; clear it during destroy. The public method delegates to the current callback and returns `false` when no current rendered group exists.
+
+Inside the render-scoped callback, locate the group and heading, set course scope and status, apply the existing filter, expand the group, compute:
 
 ```ts
 const desired = results.scrollTop
@@ -115,13 +117,13 @@ const desired = results.scrollTop
 results.scrollTop = Math.max(0, Math.min(desired, results.scrollHeight - results.clientHeight));
 ```
 
-Return `true` only after positioning succeeds. Do not access arrival storage here.
+Return `true` only after positioning succeeds. Clamp safely to zero when `scrollHeight < clientHeight`. Do not access arrival storage here.
 
 - [ ] **Step 4: Run the focused overlay test and verify GREEN**
 
 Run: `npm test -- --test-name-pattern="restores the comment list arrival|ordinary comment refresh"`
 
-Expected: focused tests pass.
+Expected: focused tests pass. Assertions cover both clamp boundaries, including content shorter than the list viewport, and prove the outer document/window scroll coordinates remain unchanged.
 
 - [ ] **Step 5: Commit**
 
@@ -144,7 +146,13 @@ Test the top-frame controller with injected/Happy DOM session storage:
 - preparation failure writes nothing;
 - assignment failure token-clears only that record;
 - same-page navigation writes nothing;
-- a fresh controller retains a matching SCORM/Rise record through an initial authoritative response without the target, then restores and consumes it after a later response contains the exact comment/page/status;
+- overlay mount/startup calls `sessionStorage.getItem` and `removeItem` zero times and leaves storage untouched until the first authoritative `LIST_COURSE_COMMENTS` response has rendered;
+- Moodle logical page URLs restore independently;
+- Rise hash/SCORM logical page URLs restore when `page_url !== navigation.destination_url`;
+- exact comment-ID, page-URL, and status mismatches are each rejected;
+- a course mismatch is token-cleared;
+- a valid exact-course record is retained when the comment tuple or rendered group is absent, including through an initial SCORM response without the target, then restored and consumed after a later exact response;
+- malformed and expired records are removed;
 - storage exceptions do not block navigation, overlay mounting, or comment rendering.
 
 - [ ] **Step 2: Run focused content tests and verify RED**
@@ -155,9 +163,9 @@ Expected: FAIL because content navigation does not write or restore arrival reco
 
 - [ ] **Step 3: Implement the minimal content integration**
 
-Create the session-storage dependency with a guarded getter. In `navigateToComment`, locate the selected comment in `latestComments`, await `prepareCommentNavigationWithRetry`, and, only when it returns `destination_url`, write the record and call `location.assign`. If assignment throws, token-clear and rethrow.
+Create the session-storage dependency with a guarded getter. In `navigateToComment`, before awaiting preparation, snapshot the selected comment by exact `id + pageUrl` from `latestComments` and snapshot `context.course_url`. Await `prepareCommentNavigationWithRetry`; only when it returns `destination_url`, write those exact snapshotted values and call `location.assign`. Never use a later mutable context or substitute `navigation.destination_url` for the logical page URL. If the tuple/status is invalid or storage fails, navigation continues without a record. If assignment throws, token-clear only that record and rethrow.
 
-After every authoritative `LIST_COURSE_COMMENTS` response is rendered, peek at the record. Remove invalid course records. For exact comment/page/status matches, call `overlay.restoreCommentListGroup`; token-clear only when it returns `true`. Leave valid missing-target records for a later response.
+After every authoritative `LIST_COURSE_COMMENTS` response is rendered, peek at the record. `peek` removes malformed or expired data. Token-clear an exact `course_url` mismatch. For an exact-course record, require an exact comment ID/page URL/status match before calling `overlay.restoreCommentListGroup`; token-clear only when it returns `true`. Retain every valid exact-course record when its tuple or rendered group is absent. Every explicit clear is token-checked.
 
 - [ ] **Step 4: Run focused content and overlay tests and verify GREEN**
 
@@ -215,7 +223,13 @@ git push
 
 - [ ] **Step 4: Publish the signed pilot**
 
-Run the existing `deploy/scripts/release-pilot-extension.sh` with the approved external key path and service origin. Verify every entry in the published `SHA256SUMS`.
+Run the existing `deploy/scripts/release-pilot-extension.sh` with the approved external key path and service origin. This script is the required production build; the earlier `npm run build` is development verification only. Require the script's internal:
+
+```bash
+(cd "$DELIVERY_ROOT" && shasum -a 256 -c SHA256SUMS)
+```
+
+to report every published entry `OK`.
 
 - [ ] **Step 5: Confirm the browser-test package**
 
