@@ -8,6 +8,7 @@ import { canonicalCourseUrlFromDocument, courseTitleFromDocument, detectCourseCo
 import { resolveScormLaunchUrl } from "./scorm-launch.ts";
 import { mountReviewOverlay, type AuthenticationOutcome, type BuildDiagnostics, type ConnectionStatus, type ReviewOverlay } from "./overlay/root.ts";
 import type { PageComment } from "./background-bridge.ts";
+import { clearCommentListArrival, peekCommentListArrival, writeCommentListArrival } from "./comment-list-arrival.ts";
 import { measureFrameCapabilities } from "./frame-capabilities.ts";
 import { createScormWorker, type ScormWorker } from "./scorm-worker.ts";
 
@@ -95,6 +96,61 @@ export async function prepareCommentNavigationWithRetry(
     await refreshCourseBindingBeforeComment(send, context, expectedCourseId);
     return prepare();
   }
+}
+
+type CommentListArrivalStorage = Parameters<typeof writeCommentListArrival>[0];
+
+export async function navigateToPreparedComment(input: {
+  send: (message: unknown) => Promise<{ id?: unknown; destination_url?: string }>;
+  context: Pick<CourseContext, "course_url" | "title" | "moodle_course_id">;
+  courseId: string;
+  comment: { id: string; page_url: string; status?: string };
+  storage: CommentListArrivalStorage;
+  assign(url: string): void;
+}): Promise<void> {
+  const navigation = await prepareCommentNavigationWithRetry(
+    input.send,
+    input.context,
+    input.courseId,
+    input.comment.id,
+    input.comment.page_url,
+  );
+  if (!navigation.destination_url) return;
+  const arrival = input.comment.status === "open" || input.comment.status === "resolved"
+    ? writeCommentListArrival(input.storage, {
+      course_url: input.context.course_url,
+      page_url: input.comment.page_url,
+      comment_id: input.comment.id,
+      status: input.comment.status,
+    })
+    : undefined;
+  try {
+    input.assign(navigation.destination_url);
+  } catch (error) {
+    if (arrival) clearCommentListArrival(input.storage, arrival.token);
+    throw error;
+  }
+}
+
+export function restoreCommentListArrivalAfterRender(
+  storage: CommentListArrivalStorage,
+  courseUrl: string,
+  comments: Array<Pick<PageComment, "id" | "page_url" | "status">>,
+  overlay: Pick<ReviewOverlay, "restoreCommentListGroup">,
+  now: () => number = Date.now,
+): void {
+  const arrival = peekCommentListArrival(storage, now);
+  if (!arrival) return;
+  if (arrival.course_url !== courseUrl) {
+    clearCommentListArrival(storage, arrival.token);
+    return;
+  }
+  const exactComment = comments.some((comment) =>
+    comment.id === arrival.comment_id
+    && comment.page_url === arrival.page_url
+    && comment.status === arrival.status);
+  if (!exactComment || !overlay.restoreCommentListGroup(arrival.page_url, arrival.status)) return;
+  clearCommentListArrival(storage, arrival.token);
 }
 
 function matchPattern(url: string, pattern: string): boolean {
@@ -271,6 +327,10 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
   let overlay: ReviewOverlay;
   let commentNavigationRetryTimer: number | undefined;
   let commentNavigationAttempting = false;
+  const commentListArrivalStorage = (() => {
+    try { return targetWindow.sessionStorage; }
+    catch { return undefined; }
+  })();
   const waitingForApproval = "Waiting for approval — you can leave this page open or return later.";
   const checkPendingApproval = (): Promise<AuthenticationOutcome> => {
     if (!courseHandle) return Promise.resolve({ status: "signed-out", message: "Enter your invitation code to join this course review." });
@@ -320,12 +380,24 @@ export function startCourseReview(targetWindow: Window & typeof globalThis = win
     } catch { scheduleCommentNavigationRetry(); }
     finally { commentNavigationAttempting = false; }
   };
-  const loadPageComments = async (pageUrl: string, preserveOnError = false) => { const sequence = ++commentSequence; try { const comments = await send<PageComment[]>({ type: "LIST_COURSE_COMMENTS" }); if (sequence === commentSequence && context.page_url === pageUrl) { const signature = JSON.stringify(comments); latestComments = comments; if (signature !== latestCommentsSignature) { latestCommentsSignature = signature; if (scormRoute) { overlay.setRendererComments([]); overlay.setCommentList(comments); } else overlay.setPageComments(comments); if (scormRoute && embeddedPageUrl) void sendScormCommand("SCORM_SET_COMMENTS", { comments }).catch(() => undefined); } void attemptPendingCommentNavigation(); } } catch (error) { const current = sequence === commentSequence && context.page_url === pageUrl; if (preserveOnError && current) throw error; } };
+  const loadPageComments = async (pageUrl: string, preserveOnError = false) => { const sequence = ++commentSequence; try { const comments = await send<PageComment[]>({ type: "LIST_COURSE_COMMENTS" }); if (sequence === commentSequence && context.page_url === pageUrl) { const signature = JSON.stringify(comments); latestComments = comments; if (signature !== latestCommentsSignature) { latestCommentsSignature = signature; if (scormRoute) { overlay.setRendererComments([]); overlay.setCommentList(comments); } else overlay.setPageComments(comments); if (scormRoute && embeddedPageUrl) void sendScormCommand("SCORM_SET_COMMENTS", { comments }).catch(() => undefined); } restoreCommentListArrivalAfterRender(commentListArrivalStorage, context.course_url, comments, overlay); void attemptPendingCommentNavigation(); } } catch (error) { const current = sequence === commentSequence && context.page_url === pageUrl; if (preserveOnError && current) throw error; } };
   const refreshAfterMutation = async () => { try { await loadPageComments(context.page_url, true); } catch { throw new Error("Change saved, but comments could not be refreshed. Reload the page."); } };
   overlay = mountReviewOverlay(targetDocument, context, "connecting", { onRequestInteraction: (intent) => { interactionController.request(intent); }, onRequestPermission: () => new Promise<boolean>((resolve) => {
     if (!permissionOrigin) { resolve(false); return; }
     sendRuntimeMessage(runtime, { type: "REQUEST_SCORM_PERMISSION", origin: permissionOrigin }, (response) => { const outcome = response?.data as { granted?: boolean; reload_required?: boolean } | undefined; const granted = Boolean(response?.ok && outcome?.granted); if (granted) interactionController.permissionGranted(outcome?.reload_required === true); resolve(granted); });
-  }), onReloadRequired: () => targetWindow.location.reload(), submitEmbedded: async ({ capability, body, category, screenshot }: { capability: string; body: string; category: string; screenshot: boolean }) => { const saved = await send<{ id?: string; screenshot_available?: boolean }>({ type: "CREATE_EMBEDDED_COMMENT", capability, body, category, ...(screenshot ? { screenshot_requested: true } : {}) }); void loadPageComments(context.page_url); return saved; }, navigateToComment: async (commentId, pageUrl) => { if (!courseId) throw new Error("Course connection unavailable"); const navigation = await prepareCommentNavigationWithRetry(send, context, courseId, commentId, pageUrl); if (navigation.destination_url) targetWindow.location.assign(navigation.destination_url); }, useAccessForm: () => Boolean(courseHandle), onAccessSubmit: async (input) => {
+  }), onReloadRequired: () => targetWindow.location.reload(), submitEmbedded: async ({ capability, body, category, screenshot }: { capability: string; body: string; category: string; screenshot: boolean }) => { const saved = await send<{ id?: string; screenshot_available?: boolean }>({ type: "CREATE_EMBEDDED_COMMENT", capability, body, category, ...(screenshot ? { screenshot_requested: true } : {}) }); void loadPageComments(context.page_url); return saved; }, navigateToComment: async (commentId, pageUrl) => {
+    if (!courseId) throw new Error("Course connection unavailable");
+    const selected = latestComments.find((comment) => comment.id === commentId && comment.page_url === pageUrl);
+    const navigationContext = { course_url: context.course_url, title: context.title, moodle_course_id: context.moodle_course_id };
+    await navigateToPreparedComment({
+      send,
+      context: navigationContext,
+      courseId,
+      comment: { id: commentId, page_url: pageUrl, status: selected?.status },
+      storage: commentListArrivalStorage,
+      assign: (destination) => targetWindow.location.assign(destination),
+    });
+  }, useAccessForm: () => Boolean(courseHandle), onAccessSubmit: async (input) => {
     if (!courseHandle) throw new Error("Course not enabled for review");
     const response = await send<{ state: string }>({ type: "REDEEM_REVIEW_ACCESS", course_handle: courseHandle, display_name: input.displayName, email: input.email, role: input.role, invitation_code: input.code });
     if (response.state === "pending") { scheduleApprovalCheck(); return { status: "pending", message: waitingForApproval }; }

@@ -2,7 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Window } from "happy-dom";
 
-import { bootstrapContentScript, countInaccessibleFrames, createInteractionTargetController, createLifecycleController, isConfiguredFrame, prepareCommentNavigationWithRetry, refreshCourseBindingBeforeComment, sendRuntimeMessage, startCourseReview, startEmbeddedReview } from "../src/content.ts";
+import { bootstrapContentScript, countInaccessibleFrames, createInteractionTargetController, createLifecycleController, isConfiguredFrame, navigateToPreparedComment, prepareCommentNavigationWithRetry, refreshCourseBindingBeforeComment, restoreCommentListArrivalAfterRender, sendRuntimeMessage, startCourseReview, startEmbeddedReview } from "../src/content.ts";
+import { peekCommentListArrival, writeCommentListArrival } from "../src/comment-list-arrival.ts";
+
+class ArrivalStorage {
+  readonly values = new Map<string, string>();
+  reads = 0;
+  getItem(key: string) { this.reads += 1; return this.values.get(key) ?? null; }
+  setItem(key: string, value: string) { this.values.set(key, value); }
+  removeItem(key: string) { this.values.delete(key); }
+}
 
 test("invalidated extension contexts fail quietly instead of throwing from a stale page timer", () => {
   let response: unknown;
@@ -43,6 +52,96 @@ test("comment navigation does not retry a substantive destination failure", asyn
     throw new Error("This SCORM comment cannot be opened because its Moodle activity location is missing.");
   }, { course_url: "https://moodle.example.invalid/course/view.php?id=7", title: "Law" }, "course-1", "comment-1", "https://rise.example.invalid/lesson"), /Moodle activity location is missing/);
   assert.equal(calls, 1);
+});
+
+test("prepared cross-page navigation records the exact logical comment before assigning the destination", async () => {
+  const storage = new ArrivalStorage();
+  const assigned: string[] = [];
+  const logicalPageUrl = "https://rise.example.invalid/activity#moodle-review-page=Lesson%202";
+  await navigateToPreparedComment({
+    send: async () => ({ destination_url: "https://moodle.example.invalid/mod/scorm/player.php?cm=10&scoid=20" }),
+    context: { course_url: "https://moodle.example.invalid/course/view.php?id=7", title: "Law", moodle_course_id: 7 },
+    courseId: "course-1",
+    comment: { id: "comment-1", page_url: logicalPageUrl, status: "resolved" },
+    storage,
+    assign: (url) => { assert.ok(peekCommentListArrival(storage)); assigned.push(url); },
+  });
+  assert.deepEqual(assigned, ["https://moodle.example.invalid/mod/scorm/player.php?cm=10&scoid=20"]);
+  const arrival = peekCommentListArrival(storage)!;
+  assert.equal(arrival.version, 1);
+  assert.equal(arrival.course_url, "https://moodle.example.invalid/course/view.php?id=7");
+  assert.equal(arrival.page_url, logicalPageUrl);
+  assert.equal(arrival.comment_id, "comment-1");
+  assert.equal(arrival.status, "resolved");
+  assert.ok(Number.isFinite(arrival.created_at));
+  assert.ok(arrival.token);
+});
+
+test("prepared navigation continues when storage is blocked and clears its own record if assignment fails", async () => {
+  const blocked = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); }, removeItem: () => { throw new Error("blocked"); } };
+  let assigned = false;
+  const input = {
+    send: async () => ({ destination_url: "https://moodle.example.invalid/mod/page/view.php?id=8" }),
+    context: { course_url: "https://moodle.example.invalid/course/view.php?id=7", title: "Law" },
+    courseId: "course-1",
+    comment: { id: "comment-1", page_url: "https://moodle.example.invalid/mod/page/view.php?id=8", status: "open" },
+  };
+  await navigateToPreparedComment({ ...input, storage: blocked, assign: () => { assigned = true; } });
+  assert.equal(assigned, true);
+
+  const storage = new ArrivalStorage();
+  await assert.rejects(
+    () => navigateToPreparedComment({ ...input, storage, assign: () => { throw new Error("navigation blocked"); } }),
+    /navigation blocked/,
+  );
+  assert.equal(peekCommentListArrival(storage), undefined);
+});
+
+test("arrival restoration clears only an exact rendered tuple and retains a not-yet-rendered destination", () => {
+  const storage = new ArrivalStorage();
+  const input = { course_url: "https://moodle.example.invalid/course/view.php?id=7", page_url: "https://rise.example.invalid/activity#moodle-review-page=Lesson%202", comment_id: "comment-1", status: "resolved" as const };
+  const saved = writeCommentListArrival(storage, input, { now: () => 1_000, token: () => "arrival-token" })!;
+  const restored: Array<[string, string]> = [];
+  const overlay = { restoreCommentListGroup: (pageUrl: string, status: "open" | "resolved") => { restored.push([pageUrl, status]); return true; } };
+
+  restoreCommentListArrivalAfterRender(storage, input.course_url, [], overlay, () => 1_001);
+  assert.deepEqual(peekCommentListArrival(storage, () => 1_002), saved);
+  restoreCommentListArrivalAfterRender(storage, input.course_url, [{ id: input.comment_id, page_url: input.page_url, status: input.status }], overlay, () => 1_003);
+  assert.deepEqual(restored, [[input.page_url, input.status]]);
+  assert.equal(peekCommentListArrival(storage, () => 1_004), undefined);
+});
+
+test("arrival restoration token-clears a different course and retains an exact tuple until its group renders", () => {
+  const input = { course_url: "https://moodle.example.invalid/course/view.php?id=7", page_url: "https://rise.example.invalid/lesson", comment_id: "comment-1", status: "open" as const };
+  const storage = new ArrivalStorage();
+  writeCommentListArrival(storage, input, { now: () => 1_000, token: () => "first-token" });
+  restoreCommentListArrivalAfterRender(storage, "https://moodle.example.invalid/course/view.php?id=8", [], { restoreCommentListGroup: () => true }, () => 1_001);
+  assert.equal(peekCommentListArrival(storage, () => 1_002), undefined);
+
+  writeCommentListArrival(storage, input, { now: () => 2_000, token: () => "second-token" });
+  restoreCommentListArrivalAfterRender(storage, input.course_url, [{ id: input.comment_id, page_url: input.page_url, status: input.status }], { restoreCommentListGroup: () => false }, () => 2_001);
+  assert.ok(peekCommentListArrival(storage, () => 2_002));
+});
+
+test("course review does not read arrival storage until the authoritative comment list renders", async () => {
+  const window = new Window({ url: "https://moodle.example.invalid/course/view.php?id=7" });
+  window.document.body.innerHTML = "<h1>Law</h1>";
+  const storage = new ArrivalStorage();
+  Object.defineProperty(window, "sessionStorage", { configurable: true, value: storage });
+  let respondToList: ((response: any) => void) | undefined;
+  const runtime = { sendMessage: (message: any, callback: (response: any) => void) => {
+    if (message.type === "RESOLVE_COURSE") callback({ ok: true, data: { id: "course-1" } });
+    else if (message.type === "LIST_COURSE_COMMENTS") respondToList = callback;
+    else callback({ ok: true, data: {} });
+  } };
+  const cleanup = startCourseReview(window as any, window.document as any, runtime);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.ok(respondToList);
+  assert.equal(storage.reads, 0);
+  respondToList!({ ok: true, data: [] });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.ok(storage.reads > 0);
+  cleanup();
 });
 
 test("non-SCORM navigation stays pending until the late anchor scroll succeeds", async () => {
