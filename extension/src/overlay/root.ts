@@ -110,7 +110,6 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   const transientStatuses = new Map<string, { original: PageComment; nextStatus: "open" | "resolved"; timer: number }>();
   let commentListFilter: "open" | "resolved" = "open";
   let commentListScope: "course" | "page" = "course";
-  let pendingCommentListDestination: string | undefined;
   let renderer: CommentRenderer;
   let rendererOrder = new Map<string, number>();
   let panelOpen = false;
@@ -533,14 +532,8 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     currentViewer: () => currentViewer,
     navigateToComment: async (commentId, pageUrl) => {
       if (pageUrl === context.page_url) { renderer.takeToContext(commentId); return; }
-      pendingCommentListDestination = pageUrl;
-      try {
-        if (options.navigateToComment) await options.navigateToComment(commentId, pageUrl);
-        else ownerDocument.defaultView?.location.assign(pageUrl);
-      } catch (error) {
-        if (!isTransientInteractionNavigationError(error)) pendingCommentListDestination = undefined;
-        throw error;
-      }
+      if (options.navigateToComment) await options.navigateToComment(commentId, pageUrl);
+      else ownerDocument.defaultView?.location.assign(pageUrl);
     },
     onUnresolvedAnchors: renderUnresolvedAnchors,
   });
@@ -627,14 +620,10 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
           panelContent.querySelector("[data-comment-navigation-status]")?.remove();
           try {
             if (destination.page_url === context.page_url) renderer.takeToContext(destination.id);
-            else {
-              pendingCommentListDestination = destination.page_url;
-              if (options.navigateToComment) await options.navigateToComment(destination.id, destination.page_url);
-              else ownerDocument.defaultView?.location.assign(destination.page_url);
-            }
+            else if (options.navigateToComment) await options.navigateToComment(destination.id, destination.page_url);
+            else ownerDocument.defaultView?.location.assign(destination.page_url);
           } catch (error) {
             if (isTransientInteractionNavigationError(error)) return;
-            pendingCommentListDestination = undefined;
             const status = ownerDocument.createElement("p"); status.dataset.commentNavigationStatus = "true"; status.setAttribute("role", "status"); status.textContent = error instanceof Error && error.message ? error.message : "Unable to open this course page."; filterRow.after(status);
           }
         });
@@ -646,9 +635,8 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
         item.addEventListener("click", async () => {
           panelContent.querySelector("[data-comment-navigation-status]")?.remove();
           if (comment.page_url !== context.page_url) {
-            pendingCommentListDestination = comment.page_url;
             try { if (options.navigateToComment) await options.navigateToComment(comment.id, comment.page_url); else ownerDocument.defaultView?.location.assign(comment.page_url); }
-            catch (error) { if (isTransientInteractionNavigationError(error)) return; pendingCommentListDestination = undefined; const status = ownerDocument.createElement("p"); status.dataset.commentNavigationStatus = "true"; status.setAttribute("role", "status"); status.textContent = error instanceof Error && error.message ? error.message : "Unable to open this comment in context."; filterRow.after(status); }
+            catch (error) { if (isTransientInteractionNavigationError(error)) return; const status = ownerDocument.createElement("p"); status.dataset.commentNavigationStatus = "true"; status.setAttribute("role", "status"); status.textContent = error instanceof Error && error.message ? error.message : "Unable to open this comment in context."; filterRow.after(status); }
             return;
           }
           renderer.takeToContext(comment.id);
@@ -697,11 +685,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
       if (!comments.length) { empty.textContent = "No comments in this course yet."; empty.hidden = false; }
       renderer.setStatusFilter(commentListFilter);
       applyFilter();
-      const destinationGroup = pendingCommentListDestination === context.page_url ? groupContainers.get(context.page_url) : undefined;
-      if (destinationGroup) {
-        results.scrollTop = Math.max(0, destinationGroup.offsetTop - results.offsetTop);
-        pendingCommentListDestination = undefined;
-      } else results.scrollTop = previousScrollTop;
+      results.scrollTop = previousScrollTop;
       if (focusedCommentId) results.querySelector<HTMLElement>(`[data-comment-item="${focusedCommentId}"]`)?.focus();
     },
     setRendererComments(comments) {
