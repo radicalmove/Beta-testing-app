@@ -971,6 +971,22 @@ test("whole-course page groups provide heading links and independent disclosure"
   assert.equal(targetToggle.getAttribute("aria-expanded"), "false");
 });
 
+test("cross-page comment navigation restores the list to the destination page group", async () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const targetUrl = "https://learn.example/mod/page/view.php?id=3";
+  const targetId = "00000000-0000-4000-8000-000000000161";
+  const overlay = mountReviewOverlay(document, context, "connected", { navigateToComment: async () => {} }); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const base = { id: "00000000-0000-4000-8000-000000000160", body: "Feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Current page", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight" as const, selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } };
+  const comments = [base, { ...base, id: targetId, page_url: targetUrl, page_title: "Destination page" }];
+  overlay.setCommentList(comments);
+  shadow.querySelector<HTMLElement>(`[data-comment-item="${targetId}"]`)!.click(); await tick();
+  shadow.querySelector<HTMLElement>(".comment-results")!.scrollTop = 100;
+  overlay.update({ ...context, page_url: targetUrl, pageTitle: "Destination page" }, "connected");
+  overlay.setCommentList(comments);
+  assert.equal(shadow.querySelector<HTMLElement>(".comment-results")!.scrollTop, 0);
+  overlay.destroy();
+});
+
 test("transient Rise interaction readiness stays out of the visible navigation errors", () => {
   assert.equal(isTransientInteractionNavigationError(new Error("INTERACTION_NOT_READY")), true);
   assert.equal(isTransientInteractionNavigationError(new Error("INTERACTION_MISMATCH: changed")), false);
