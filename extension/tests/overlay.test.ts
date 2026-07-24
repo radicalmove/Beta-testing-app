@@ -946,6 +946,34 @@ test("whole-course list groups and canonically numbers comments in course order"
   overlay.destroy();
 });
 
+test("restores the comment list arrival to its expanded page group without scrolling the page", () => {
+  const window = new Window(); const document = window.document as unknown as Document;
+  const overlay = mountReviewOverlay(document, context, "connected"); const shadow = document.getElementById(OVERLAY_HOST_ID)!.shadowRoot!;
+  const targetUrl = "https://learn.example/mod/scorm/view.php?id=30";
+  const base = { id: "00000000-0000-4000-8000-000000000140", body: "Feedback", category: "general", status: "open", author: { display_name: "Reviewer", role: "beta_tester" }, page_url: context.page_url, page_title: "Current page", parent_activity_url: null, embedded_locator: null, anchor_type: "text_highlight" as const, selected_quote: "missing", prefix: "", suffix: "", css_selector: null, dom_selector: null, relative_x: null, relative_y: null, replies: [], status_history: [], capabilities: { can_reply: true, can_change_status: false, can_share_with_sme: false, can_delete: false } };
+  overlay.setCommentList([
+    base,
+    { ...base, id: "00000000-0000-4000-8000-000000000141", status: "resolved", page_url: targetUrl, page_title: "1.2.1 Participants and power" },
+  ]);
+  shadow.querySelector<HTMLButtonElement>("[data-collapse-groups]")!.click();
+  const results = shadow.querySelector<HTMLElement>(".comment-results")!;
+  const heading = shadow.querySelector<HTMLElement>(`[data-comment-group-container="${targetUrl}"] .comment-group-heading`)!;
+  Object.defineProperties(results, { scrollHeight: { value: 600 }, clientHeight: { value: 200 } });
+  results.scrollTop = 40;
+  results.getBoundingClientRect = () => ({ top: 100, bottom: 300, left: 0, right: 300, width: 300, height: 200, x: 0, y: 100, toJSON: () => ({}) });
+  heading.getBoundingClientRect = () => ({ top: 350, bottom: 370, left: 0, right: 300, width: 300, height: 20, x: 0, y: 350, toJSON: () => ({}) });
+  const pagePosition = [window.scrollX, window.scrollY];
+
+  assert.equal(overlay.restoreCommentListGroup(targetUrl, "resolved"), true);
+  assert.equal(results.scrollTop, 290);
+  assert.equal(shadow.querySelector<HTMLButtonElement>('[data-comment-scope="course"]')!.getAttribute("aria-pressed"), "true");
+  assert.equal(shadow.querySelector<HTMLButtonElement>('[data-comment-filter="resolved"]')!.getAttribute("aria-pressed"), "true");
+  assert.equal(shadow.querySelector<HTMLButtonElement>(`[data-comment-group-toggle="${targetUrl}"]`)!.getAttribute("aria-expanded"), "true");
+  assert.deepEqual([window.scrollX, window.scrollY], pagePosition);
+  assert.equal(overlay.restoreCommentListGroup("https://learn.example/missing", "open"), false);
+  overlay.destroy();
+});
+
 test("whole-course page groups provide heading links and independent disclosure", async () => {
   const window = new Window(); const document = window.document as unknown as Document;
   const navigations: Array<[string, string]> = [];

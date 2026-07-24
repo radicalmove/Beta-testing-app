@@ -60,7 +60,7 @@ export type AuthenticationOutcome = { status: ConnectionStatus; message?: string
 export type ReviewerAccessInput = { displayName: string; email: string; role: string; code: string };
 type SignOutOptions = { onSignOut?: () => Promise<void> };
 export type ReviewOverlayOptions = { panelStateStorage?: PanelStateStorage; onRequestInteraction?: (intent: "marker" | "selection") => void; onRequestPermission?: () => Promise<boolean>; onReloadRequired?: () => void; submitEmbedded?: (input: { capability: string; body: string; category: string; screenshot: boolean }) => Promise<{ id?: string; screenshot_available?: boolean } | void>; onAuthenticate?: () => Promise<AuthenticationOutcome>; onCheckApproval?: () => Promise<AuthenticationOutcome>; onAccessSubmit?: (input: ReviewerAccessInput) => Promise<AuthenticationOutcome>; findApprovedReviewer?: (email: string) => Promise<{ membershipId: string; label: string } | undefined>; onUseSavedReviewer?: (membershipId: string) => Promise<AuthenticationOutcome>; useAccessForm?: () => boolean; navigateToComment?: (commentId: string, pageUrl: string) => Promise<void>; submit?: (input: { body: string; category: string; anchor: CommentAnchor; screenshot: boolean; embeddedFrameUnavailable: boolean; contextSnapshot: CourseContext }) => Promise<{ id?: string; screenshot_available?: boolean } | void>; editThread?: (commentId: string, body: string) => Promise<void>; replyThread?: (commentId: string, body: string) => Promise<void>; changeStatus?: (commentId: string, status: string) => Promise<void>; refreshComments?: () => Promise<void>; manageSme?: (commentId: string, userIds?: string[]) => Promise<{ available_recipients: Array<{ id: string; display_name: string }>; selected_user_ids: string[] }>; deleteThread?: (commentId: string) => Promise<void>; uploadScreenshot?: (commentId: string, dataUrl: string) => Promise<void>; cancelScreenshot?: (commentId: string) => Promise<void>; captureScreenshot?: () => Promise<string>; onFrameFallback?: () => void; onTakeToContext?: (id: string) => void };
-export type ReviewOverlay = { update(context: CourseContext, status: ConnectionStatus): void; setInteractionState(state: "local" | "loading" | "embedded" | "permission-required" | "reload-required" | "unavailable", hasSelection?: boolean, markerActive?: boolean): void; setViewer(viewer?: { display_name: string | null; email: string; role: string }): void; setCommentList(comments: PageComment[]): void; setRendererComments(comments: PageComment[]): void; setPageComments(comments: PageComment[]): void; setCommentNavigationStatus(message?: string): void; takeToContext(id: string): boolean; showFrameFallback(): void; hideFrameFallback(): void; setPresentationVisible(visible: boolean): void; setPresentationPosition(position?: { left: number; top: number }): void; presentationSize(): { width: number; height: number }; setUnresolvedAnchors(anchors: UnresolvedAnchor[]): void; destroy(): void };
+export type ReviewOverlay = { update(context: CourseContext, status: ConnectionStatus): void; setInteractionState(state: "local" | "loading" | "embedded" | "permission-required" | "reload-required" | "unavailable", hasSelection?: boolean, markerActive?: boolean): void; setViewer(viewer?: { display_name: string | null; email: string; role: string }): void; setCommentList(comments: PageComment[]): void; setRendererComments(comments: PageComment[]): void; setPageComments(comments: PageComment[]): void; restoreCommentListGroup(pageUrl: string, status: "open" | "resolved"): boolean; setCommentNavigationStatus(message?: string): void; takeToContext(id: string): boolean; showFrameFallback(): void; hideFrameFallback(): void; setPresentationVisible(visible: boolean): void; setPresentationPosition(position?: { left: number; top: number }): void; presentationSize(): { width: number; height: number }; setUnresolvedAnchors(anchors: UnresolvedAnchor[]): void; destroy(): void };
 
 export function mountReviewOverlay(document: Document, context: CourseContext, status: ConnectionStatus = "connecting", options: ReviewOverlayOptions & SignOutOptions = {}, buildDiagnostics: BuildDiagnostics = defaultBuildDiagnostics): ReviewOverlay {
   const existing = document.getElementById(OVERLAY_HOST_ID) as HTMLElement | null;
@@ -112,6 +112,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
   let commentListScope: "course" | "page" = "course";
   let renderer: CommentRenderer;
   let rendererOrder = new Map<string, number>();
+  let restoreRenderedCommentListGroup: ((pageUrl: string, status: "open" | "resolved") => boolean) | undefined;
   let panelOpen = false;
   let panelOpenBeforeMarker: boolean | undefined;
   let panelTransitionTimer: number | undefined;
@@ -555,6 +556,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     },
     setViewer(viewer) { currentViewer = viewer; updateLabels(); },
     setCommentList(comments) {
+      restoreRenderedCommentListGroup = undefined;
       const previousResults = shadow.querySelector<HTMLElement>(".comment-results");
       const previousScrollTop = previousResults?.scrollTop ?? 0;
       const focusedCommentId = (shadow.activeElement as HTMLElement | null)?.closest<HTMLElement>("[data-comment-item]")?.dataset.commentItem;
@@ -686,6 +688,23 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
       renderer.setStatusFilter(commentListFilter);
       applyFilter();
       results.scrollTop = previousScrollTop;
+      restoreRenderedCommentListGroup = (pageUrl, arrivalStatus) => {
+        const container = groupContainers.get(pageUrl);
+        const heading = container?.querySelector<HTMLElement>(".comment-group-heading");
+        if (!container || !heading) return false;
+        commentListScope = "course";
+        commentListFilter = arrivalStatus;
+        renderer.setStatusFilter(arrivalStatus);
+        expandedGroups.add(pageUrl);
+        applyFilter();
+        if (container.hidden) return false;
+        setGroupExpanded(pageUrl, true);
+        const resultsRect = results.getBoundingClientRect();
+        const headingRect = heading.getBoundingClientRect();
+        const maximum = Math.max(0, results.scrollHeight - results.clientHeight);
+        results.scrollTop = Math.max(0, Math.min(results.scrollTop + headingRect.top - resultsRect.top, maximum));
+        return true;
+      };
       if (focusedCommentId) results.querySelector<HTMLElement>(`[data-comment-item="${focusedCommentId}"]`)?.focus();
     },
     setRendererComments(comments) {
@@ -693,6 +712,7 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
       rendererOrder = new Map(renderer.orderedCommentIds().map((id, index) => [id, index]));
     },
     setPageComments(comments) { this.setRendererComments(comments); this.setCommentList(comments); },
+    restoreCommentListGroup(pageUrl, arrivalStatus) { return restoreRenderedCommentListGroup?.(pageUrl, arrivalStatus) ?? false; },
     setCommentNavigationStatus(message) {
       shadow.querySelector("[data-comment-navigation-status]")?.remove();
       if (!message) return;
@@ -712,6 +732,6 @@ function createController(host: HTMLElement, shadow: ShadowRoot, initial: Course
     },
     presentationSize() { const shell = shadow.querySelector<HTMLElement>(".shell"); const rect = shell?.getBoundingClientRect(); return { width: rect?.width || shell?.offsetWidth || 600, height: rect?.height || shell?.offsetHeight || 150 }; },
     setUnresolvedAnchors(anchors) { renderUnresolvedAnchors(anchors); },
-    destroy() { clearPanelTransition(); clearAreaSelection(); closeChoice(false); for (const transient of transientStatuses.values()) ownerDocument.defaultView?.clearTimeout(transient.timer); transientStatuses.clear(); ownerDocument.removeEventListener("focusin", rememberPageFocus, true); ownerDocument.removeEventListener("selectionchange", selectionListener); ownerDocument.documentElement.removeEventListener("moodle-review:embedded-anchor", embeddedAnchorListener); cleanupPreview(); renderer.destroy(); host.remove(); },
+    destroy() { restoreRenderedCommentListGroup = undefined; clearPanelTransition(); clearAreaSelection(); closeChoice(false); for (const transient of transientStatuses.values()) ownerDocument.defaultView?.clearTimeout(transient.timer); transientStatuses.clear(); ownerDocument.removeEventListener("focusin", rememberPageFocus, true); ownerDocument.removeEventListener("selectionchange", selectionListener); ownerDocument.documentElement.removeEventListener("moodle-review:embedded-anchor", embeddedAnchorListener); cleanupPreview(); renderer.destroy(); host.remove(); },
   };
 }
